@@ -96,6 +96,28 @@ describe("PawPlan MCP server builder", () => {
     }
   });
 
+  it("publishes startup instructions pointing agents to daily guidance", async () => {
+    const { createPawPlanMcpServer } = await import("@/lib/mcp/server-builder");
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createPawPlanMcpServer({ workspaceId: "workspace-1", permission: "read_only" });
+    const client = new Client({ name: "schema-check", version: "0.0.0" });
+
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      expect(client.getInstructions()).toContain("get_agent_guidance");
+      expect(client.getInstructions()).toContain("Review draft");
+
+      const result = await client.listTools();
+      const tool = result.tools.find((candidate) => candidate.name === "get_agent_guidance");
+
+      expect(tool?.description).toContain("daily");
+      expect(tool?.description).toContain("PawPlan");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("publishes propose_daily_rebalance schema for read-write MCP clients", async () => {
     const { createPawPlanMcpServer } = await import("@/lib/mcp/server-builder");
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

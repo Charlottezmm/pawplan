@@ -111,6 +111,7 @@ const proposeRebalanceArgsSchema = z
   .strict();
 
 export const pawPlanToolSchemas = {
+  get_agent_guidance: emptyArgsSchema,
   get_today: emptyArgsSchema,
   get_week: emptyArgsSchema,
   get_month: rangeArgsSchema,
@@ -272,7 +273,53 @@ export type McpPermission = "read_only" | "read_write";
 
 export const pawPlanToolNames = Object.keys(pawPlanToolSchemas) as PawPlanToolName[];
 
+export const pawPlanAgentGuidance = {
+  purpose: "Use PawPlan MCP as a review-first planning interface. PawPlan owns validation, persistence, Review, audit, and readback.",
+  dailyPrompt: `You are my PawPlan daily task cleanup agent.
+
+Read first:
+- get_today
+- get_week
+- get_tasks
+- get_constraints
+- get_capacity
+- get_checkins
+
+Required workflow:
+1. Identify unfinished todo tasks from yesterday or earlier before looking at future capacity.
+2. Summarize today's risks: overdue work, overload, fixed-schedule conflicts, and recovery risk.
+3. If routine task movement is needed, call propose_daily_rebalance with an idempotency_key, a concise reason, and the smallest useful move set.
+4. Inspect the returned status before reporting outcome:
+   - draft_created: say a new Review draft was created and tell the user to open Review.
+   - duplicate with patchId: say an existing Review draft is already available.
+   - no_change: explain why no draft was created.
+   - failed: report the error and do not claim success.
+5. Do not apply changes automatically.
+6. Do not hand-write propose_patch for routine daily task movement.
+7. Do not edit constraints.
+8. Do not treat Review drafts, suggestions, briefs, or spoken advice as applied changes.`,
+  boundaries: [
+    "Read planning context before proposing changes.",
+    "Use propose_daily_rebalance for routine daily task moves.",
+    "Use propose_week_rebalance for routine weekly task moves.",
+    "Inspect the returned status before claiming a Review draft exists.",
+    "Do not apply changes automatically.",
+    "Do not edit constraints through MCP.",
+    "Use create_checkin, update_task_status, update_task_schedule, or update_task_notes only when the user explicitly asks to record a fact or make a trusted direct edit.",
+  ],
+  reviewStatusMeanings: {
+    draft_created: "A new Review draft was created.",
+    duplicate: "A matching existing Review draft is already available; do not claim a new draft.",
+    no_change: "No Review draft was created.",
+    failed: "The operation failed; report the error and do not claim success.",
+  },
+};
+
+export const pawPlanServerInstructions =
+  "PawPlan is review-first. Before daily planning or task cleanup, call get_agent_guidance and follow its daily prompt. Rebalance tools create Review drafts only; never claim changes are applied until the user approves them in PawPlan Review.";
+
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
+  get_agent_guidance: "Read PawPlan daily agent guidance, Review-first safety rules, and the recommended daily task cleanup prompt.",
   get_today: "Read today's PawPlan planning context for the configured workspace.",
   get_week: "Read this week's PawPlan planning context for the configured workspace.",
   get_month: "Read a minimal raw month/range task list for the configured workspace.",
@@ -299,6 +346,7 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
 };
 
 const pawPlanToolPermissions: Record<PawPlanToolName, "read" | "write"> = {
+  get_agent_guidance: "read",
   get_today: "read",
   get_week: "read",
   get_month: "read",
@@ -700,6 +748,11 @@ export async function runPawPlanTool(
   const toolName = name as PawPlanToolName;
   if (permission !== "read_write" && pawPlanToolPermissions[toolName] === "write") {
     throw new Error("MCP token does not allow write tools");
+  }
+
+  if (toolName === "get_agent_guidance") {
+    pawPlanToolSchemas.get_agent_guidance.parse(args);
+    return pawPlanAgentGuidance;
   }
 
   if (toolName === "get_today") {

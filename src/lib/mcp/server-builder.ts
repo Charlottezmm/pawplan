@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getDb } from "@/lib/db/client";
 import {
   allowedPawPlanToolNames,
+  pawPlanServerInstructions,
   pawPlanToolDescriptions,
   pawPlanToolSchemas,
   runPawPlanTool,
@@ -26,6 +27,8 @@ export function createPawPlanMcpServer(input: { workspaceId: string; permission:
   const server = new McpServer({
     name: "pawplan",
     version: "0.2.2",
+  }, {
+    instructions: pawPlanServerInstructions,
   });
 
   for (const name of allowedPawPlanToolNames(input.permission)) {

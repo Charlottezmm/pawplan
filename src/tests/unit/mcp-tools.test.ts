@@ -201,6 +201,7 @@ describe("MCP planning tools", () => {
 
   it("filters write tools out for read-only MCP tokens", () => {
     expect(allowedPawPlanToolNames("read_only")).toEqual([
+      "get_agent_guidance",
       "get_today",
       "get_week",
       "get_month",
@@ -219,6 +220,24 @@ describe("MCP planning tools", () => {
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_week_rebalance");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_daily_rebalance");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_week_rebalance");
+  });
+
+  it("exposes daily agent guidance to read-only MCP clients", async () => {
+    const db = createFakeDb();
+
+    const result = await runPawPlanTool(db, "workspace-1", "get_agent_guidance", {}, "read_only");
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        dailyPrompt: expect.stringContaining("propose_daily_rebalance"),
+        boundaries: expect.arrayContaining([
+          expect.stringContaining("Do not apply changes automatically"),
+          expect.stringContaining("Inspect the returned status"),
+        ]),
+      }),
+    );
+    expect(JSON.stringify(result)).toContain("get_tasks");
+    expect(JSON.stringify(result)).toContain("draft_created");
   });
 
   it("publishes propose_daily_rebalance moves as a strict structured schema", () => {
