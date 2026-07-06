@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronDown, Clock3, Plus, RotateCcw } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Clock3, Copy, Plus, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -51,6 +51,19 @@ function statusClass(status: DisplayStatus) {
   return "";
 }
 
+export function buildTaskCopyText(task: Pick<Task, "title" | "context" | "track" | "minutes" | "energy" | "priority" | "notes" | "detail">) {
+  const lines = [
+    task.title,
+    `${task.context} · ${task.track} · ${minutesLabel(task.minutes)} · 能量 ${task.energy} · 优先级 ${priorityLabel[task.priority]}`,
+  ];
+  if (task.notes?.trim()) lines.push("备注", task.notes.trim());
+  task.detail.sections.forEach((section) => {
+    lines.push(section.label);
+    section.lines.forEach((line) => lines.push(`- ${line}`));
+  });
+  return lines.join("\n");
+}
+
 export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTasks?: ReactNode }) {
   const [tasks, setTasks] = useState<Array<Task & { displayStatus: DisplayStatus }>>(
     data.tasks.map((task) => ({
@@ -61,6 +74,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [choreText, setChoreText] = useState("");
   const [choreSaving, setChoreSaving] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
 
   async function addChore(event: React.FormEvent) {
     event.preventDefault();
@@ -195,6 +209,15 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     );
     // 设真实状态时，若此前被标卡住，一并清掉 blocked
     void patchTask(id, wasBlocked ? { status: nextStatus, blocked: false } : { status: nextStatus });
+  }
+
+  async function copyTaskDetails(task: Task) {
+    try {
+      await navigator.clipboard.writeText(buildTaskCopyText(task));
+      setCopyFeedback({ taskId: task.id, message: "资料已复制。" });
+    } catch {
+      setCopyFeedback({ taskId: task.id, message: "复制失败，请手动选中文本。" });
+    }
   }
 
   return (
@@ -355,6 +378,13 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                       ))}
                     </div>
                   ) : null}
+                  <div className="paw-task-copy-row">
+                    <button type="button" onClick={() => void copyTaskDetails(task)} className="paw-secondary-btn !px-3 !py-1.5 !text-xs">
+                      <Copy size={14} />
+                      复制资料
+                    </button>
+                    {copyFeedback?.taskId === task.id ? <span className="paw-task-copy-feedback">{copyFeedback.message}</span> : null}
+                  </div>
                   <div className="paw-task-actions">
                     <button
                       type="button"
