@@ -46,6 +46,20 @@ describe("agent run and review long text wrapping", () => {
   });
 });
 
+describe("Today task detail copyability", () => {
+  it("keeps expanded task notes and resource sections selectable", () => {
+    const css = readFileSync("src/app/globals.css", "utf8");
+    const detailRule = css.match(/\.paw-task-detail \{[\s\S]*?\}/)?.[0] ?? "";
+    const notesRule = css.match(/\.paw-task-notes \{[\s\S]*?\}/)?.[0] ?? "";
+    const sectionsTextRule = css.match(/\.paw-task-sections :is\(h4, li\) \{[\s\S]*?\}/)?.[0] ?? "";
+
+    expect(detailRule).toContain("user-select: text;");
+    expect(detailRule).toContain("-webkit-user-select: text;");
+    expect(notesRule).toContain("cursor: text;");
+    expect(sectionsTextRule).toContain("cursor: text;");
+  });
+});
+
 describe("mobile Plan layout", () => {
   it("keeps Plan task detail and month detail in normal document flow", () => {
     const css = readFileSync("src/app/globals.css", "utf8");
