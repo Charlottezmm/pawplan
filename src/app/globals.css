@@ -2550,6 +2550,52 @@ input.paw-input[type="time"] {
   padding-bottom: 14px;
 }
 
+.paw-review-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.paw-review-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid color-mix(in srgb, var(--app-danger) 28%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-danger);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 7px 11px;
+  white-space: nowrap;
+  transition: background 150ms ease, border-color 150ms ease, transform 120ms ease;
+}
+
+.paw-review-clear-btn:hover {
+  border-color: color-mix(in srgb, var(--app-danger) 42%, transparent);
+  background: var(--app-danger-soft);
+}
+
+.paw-review-clear-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--app-danger) 42%, transparent);
+  outline-offset: 2px;
+}
+
+.paw-review-clear-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.paw-review-clear-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .paw-list-title {
   color: var(--app-ink);
   font-family: var(--app-font-display);
@@ -3286,6 +3332,10 @@ input.paw-input[type="time"] {
     display: flex;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .paw-review-queue-actions {
+    justify-content: flex-start;
   }
 
   .paw-row-actions {

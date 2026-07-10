@@ -46,6 +46,22 @@ describe("agent run and review long text wrapping", () => {
   });
 });
 
+describe("Review queue bulk action styling", () => {
+  it("keeps the destructive action compact and visually secondary", () => {
+    const css = readFileSync("src/app/globals.css", "utf8");
+    const reviewPreview = readFileSync("src/components/reschedule-preview.tsx", "utf8");
+    const rule = css.match(/\.paw-review-clear-btn \{[\s\S]*?\}/)?.[0] ?? "";
+
+    expect(rule).toContain("display: inline-flex;");
+    expect(rule).toContain("border-radius: 999px;");
+    expect(rule).toContain("background: transparent;");
+    expect(rule).toContain("font-size: 13px;");
+    expect(rule).toContain("white-space: nowrap;");
+    expect(reviewPreview).toContain('aria-label="清空全部待审核草稿"');
+    expect(reviewPreview).toContain('pendingAction === "bulk-reject" ? "清空中…" : "清空草稿"');
+  });
+});
+
 describe("Today task detail copyability", () => {
   it("keeps expanded task notes and resource sections selectable", () => {
     const css = readFileSync("src/app/globals.css", "utf8");

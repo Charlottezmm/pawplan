@@ -35,7 +35,7 @@ test("review route frames suggestions as user-reviewed drafts, not applied chang
   await expect(page.getByText("日程导入 0")).toBeVisible();
   await expect(page.getByText("冲突/阻止 0")).toBeVisible();
   await expect(page.getByText("0 份草稿 · 0 项建议")).toBeVisible();
-  await expect(page.getByRole("button", { name: "清空待审核草稿" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "清空全部待审核草稿" })).toHaveCount(0);
   await expect(page.getByText("提交前会重查任务状态和固定日程冲突。")).toBeVisible();
   await expect(page.getByText("已应用")).toHaveCount(0);
   await expect.poll(() => onboardingEvents).toEqual([{ eventKey: "review_opened" }]);

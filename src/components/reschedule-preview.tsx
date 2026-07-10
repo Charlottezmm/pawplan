@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Lock, RotateCcw, X } from "lucide-react";
+import { Check, Lock, RotateCcw, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CatIcon } from "./cat-icon";
@@ -232,12 +232,18 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
             <h2 className="paw-list-title">Review queue</h2>
             <p className="paw-list-subtitle">提交前会重查任务状态和固定日程冲突。</p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="paw-review-queue-actions">
             <span className="paw-status-pill">{draftCount} 份草稿 · {operationCount} 项建议</span>
             {draftCount > 0 ? (
-              <button type="button" onClick={dismissAllDrafts} disabled={isApplying} className="paw-sg-btn reject">
-                <X size={15} />
-                {pendingAction === "bulk-reject" ? "正在清空…" : "清空待审核草稿"}
+              <button
+                type="button"
+                onClick={dismissAllDrafts}
+                disabled={isApplying}
+                className="paw-review-clear-btn"
+                aria-label="清空全部待审核草稿"
+              >
+                <Trash2 size={14} />
+                {pendingAction === "bulk-reject" ? "清空中…" : "清空草稿"}
               </button>
             ) : null}
           </div>
