@@ -269,6 +269,7 @@ export type ReschedulePatchItemView = {
 
 export type RescheduleViewData = {
   dataUnavailable: boolean;
+  draftPatchIds: string[];
   patchItems: ReschedulePatchItemView[];
 };
 
@@ -353,7 +354,7 @@ function emptyMonthData(dataUnavailable = false): MonthViewData {
 }
 
 function emptyRescheduleData(dataUnavailable = false): RescheduleViewData {
-  return { dataUnavailable, patchItems: [] };
+  return { dataUnavailable, draftPatchIds: [], patchItems: [] };
 }
 
 function addDays(date: Date, days: number) {
@@ -1538,7 +1539,7 @@ export async function getReschedulePageData(workspaceId: string): Promise<Resche
       agentRuns: agentRunRows,
     });
 
-    return { dataUnavailable: false, patchItems };
+    return { dataUnavailable: false, draftPatchIds: patchIds, patchItems };
   } catch (error) {
     if (isMissingDatabase(error)) return emptyRescheduleData(true);
     throw error;

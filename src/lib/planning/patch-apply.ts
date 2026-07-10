@@ -1,8 +1,9 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { agentPatches, agentPatchReviews, changeLogs, plans, planVersions, tasks } from "@/lib/db/schema";
 import { materializeTimetableRows, saveTimetableRowsInTransaction } from "@/lib/imports/timetable-save";
 import { findTimetableImportConflicts } from "@/lib/mcp/timetable-import";
 import { agentPatchSchema, type AgentPatch } from "@/lib/patches/patch-schema";
+import { getActivePlanId } from "@/lib/planning/active-plan";
 
 type PatchApplyDb = {
   transaction<T>(callback: (tx: any) => Promise<T>): Promise<T>;
@@ -13,6 +14,11 @@ type ApplyAgentPatchInput = {
   patchId: string;
   acceptedOperationIndexes: number[];
   rejectedOperationIndexes?: number[];
+};
+
+type RejectReviewPatchesInput = {
+  workspaceId: string;
+  patchIds: string[];
 };
 
 type AppliedOperation = {
@@ -50,12 +56,106 @@ export class PatchApplyError extends Error {
   }
 }
 
+export type RejectReviewPatchesResult = {
+  status: "succeeded" | "no_change";
+  planId: string;
+  requestedPatchCount: number;
+  rejectedPatchCount: number;
+  rejectedOperationCount: number;
+  rejectedPatchIds: string[];
+  remainingDraftCount: number;
+};
+
 function uniqueIndexes(indexes: number[]) {
   const normalized = [...new Set(indexes)];
   if (normalized.some((index) => !Number.isInteger(index) || index < 0)) {
     throw new PatchApplyError("Invalid accepted operation indexes", 400);
   }
   return normalized;
+}
+
+function uniquePatchIds(patchIds: string[]) {
+  const normalized = [...new Set(patchIds)];
+  if (normalized.length === 0) {
+    throw new PatchApplyError("Select at least one Review draft to reject", 400);
+  }
+  return normalized;
+}
+
+export async function rejectReviewPatches(
+  db: PatchApplyDb,
+  input: RejectReviewPatchesInput,
+): Promise<RejectReviewPatchesResult> {
+  const patchIds = uniquePatchIds(input.patchIds);
+
+  return db.transaction(async (tx) => {
+    const planId = await getActivePlanId(tx, input.workspaceId);
+    if (!planId) throw new PatchApplyError("No active plan", 400);
+
+    // Claim only the drafts shown in the user's confirmation snapshot. A draft
+    // created concurrently remains in Review and is reported by readback below.
+    const rejectedPatches = await tx
+      .update(agentPatches)
+      .set({ status: "rejected" })
+      .where(
+        and(
+          eq(agentPatches.workspaceId, input.workspaceId),
+          eq(agentPatches.planId, planId),
+          eq(agentPatches.status, "draft"),
+          inArray(agentPatches.id, patchIds),
+        ),
+      )
+      .returning({
+        id: agentPatches.id,
+        planId: agentPatches.planId,
+        patchJson: agentPatches.patchJson,
+      });
+
+    const audits = rejectedPatches.map((patchRow: { id: string; planId: string; patchJson: unknown }) => {
+      const patchJson = patchRow.patchJson;
+      const operations =
+        patchJson && typeof patchJson === "object" && Array.isArray((patchJson as { operations?: unknown }).operations)
+          ? (patchJson as { operations: unknown[] }).operations
+          : null;
+      return {
+        workspaceId: input.workspaceId,
+        patchId: patchRow.id,
+        planId: patchRow.planId,
+        acceptedOperationIndexes: [],
+        rejectedOperationIndexes: operations?.map((_, index) => index) ?? [],
+        skippedJson: operations ? [] : [{ reason: "Draft operations were unavailable during rejection" }],
+        conflictJson: [],
+      };
+    });
+
+    if (audits.length > 0) {
+      await tx.insert(agentPatchReviews).values(audits);
+    }
+
+    const remainingDrafts = await tx
+      .select({ id: agentPatches.id })
+      .from(agentPatches)
+      .where(
+        and(
+          eq(agentPatches.workspaceId, input.workspaceId),
+          eq(agentPatches.planId, planId),
+          eq(agentPatches.status, "draft"),
+        ),
+      );
+
+    return {
+      status: rejectedPatches.length > 0 ? "succeeded" : "no_change",
+      planId,
+      requestedPatchCount: patchIds.length,
+      rejectedPatchCount: rejectedPatches.length,
+      rejectedOperationCount: audits.reduce(
+        (total: number, audit: { rejectedOperationIndexes: number[] }) => total + audit.rejectedOperationIndexes.length,
+        0,
+      ),
+      rejectedPatchIds: rejectedPatches.map((patch: { id: string }) => patch.id),
+      remainingDraftCount: remainingDrafts.length,
+    };
+  });
 }
 
 function normalizeReviewIndexes(input: ApplyAgentPatchInput, operationCount: number) {

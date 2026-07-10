@@ -2,7 +2,13 @@
 
 import { Check, Lock, RotateCcw, X } from "lucide-react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CatIcon } from "./cat-icon";
+import {
+  getRejectReviewPatchesNotice,
+  getReviewQueueSummary,
+  parseRejectReviewPatchesResponse,
+} from "@/lib/planning/review-queue";
 import type { RescheduleViewData } from "@/lib/planning/view-data";
 
 type Decision = "accepted" | "rejected";
@@ -13,12 +19,17 @@ type ApplyPatchResponse = {
   conflicts?: Array<{ index: number; reason?: string; expected?: Record<string, unknown>; actual?: Record<string, unknown> }>;
 };
 
+type PendingAction = "bulk-reject" | "single-reject" | "apply-selected";
+
 export function ReviewPreview({ data }: { data: RescheduleViewData }) {
+  const router = useRouter();
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
   const [closedPatchIds, setClosedPatchIds] = useState<string[]>([]);
   const [reviewResults, setReviewResults] = useState<Record<string, Pick<PatchItem, "skipped" | "skippedReason" | "conflict">>>({});
-  const [isApplying, setIsApplying] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [applyNotice, setApplyNotice] = useState<string | null>(null);
+  const isApplying = pendingAction !== null;
   const visiblePatchItems = data.patchItems
     .filter((item) => !closedPatchIds.includes(item.patchId))
     .map((item) => ({ ...item, ...reviewResults[item.id] }));
@@ -29,6 +40,11 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
   const taskChangeCount = visiblePatchItems.filter((item) => item.operationType !== "import_timetable").length;
   const timetableImportCount = visiblePatchItems.filter((item) => item.operationType === "import_timetable").length;
   const blockedCount = visiblePatchItems.filter((item) => item.protected || item.skipped || item.conflict).length;
+  const visibleDraftPatchIds = data.draftPatchIds.filter((patchId) => !closedPatchIds.includes(patchId));
+  const { patchIds: visiblePatchIds, draftCount, operationCount } = getReviewQueueSummary(
+    visiblePatchItems,
+    visibleDraftPatchIds,
+  );
 
   function decide(id: string, decision: Decision) {
     setDecisions((current) => {
@@ -46,14 +62,58 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
     setDecisions(Object.fromEntries(actionable.map((item) => [item.id, "accepted" as Decision])));
   }
 
+  async function dismissAllDrafts() {
+    if (draftCount === 0) return;
+    const confirmed = window.confirm(
+      `确认清空 Review 中的 ${draftCount} 份草稿（共 ${operationCount} 项建议）？\n\n草稿会标记为已拒绝并离开 Review；已生效日程不会改动。`,
+    );
+    if (!confirmed) return;
+
+    setPendingAction("bulk-reject");
+    setApplyError(null);
+    setApplyNotice(null);
+    try {
+      const response = await fetch("/api/patches/reject-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patchIds: visiblePatchIds }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body && typeof body === "object" && "error" in body && typeof body.error === "string"
+            ? body.error
+            : "清空待审核草稿失败",
+        );
+      }
+
+      const result = parseRejectReviewPatchesResponse(body);
+      if (!result) throw new Error("清空结果无法验证，请刷新页面确认 Review 状态");
+      const rejectedPatchIds = result.rejectedPatchIds;
+      setClosedPatchIds((current) => [...new Set([...current, ...rejectedPatchIds])]);
+      setDecisions((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([id]) => !rejectedPatchIds.some((patchId) => id.startsWith(`${patchId}:`))),
+        ),
+      );
+      setApplyNotice(getRejectReviewPatchesNotice(result));
+      router.refresh();
+    } catch (error) {
+      setApplyError(error instanceof Error ? error.message : "清空待审核草稿失败");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   // 丢弃整条草稿：拒绝该 patch 的全部 operation，绕过冲突/未应用态的死路
   async function dismissPatch(patchId: string) {
     const rejectedOperationIndexes = [
       ...new Set(data.patchItems.filter((entry) => entry.patchId === patchId).map((entry) => entry.operationIndex)),
     ];
     if (rejectedOperationIndexes.length === 0) return;
-    setIsApplying(true);
+    setPendingAction("single-reject");
     setApplyError(null);
+    setApplyNotice(null);
     try {
       const response = await fetch("/api/patches/apply", {
         method: "POST",
@@ -69,7 +129,7 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
     } catch (error) {
       setApplyError(error instanceof Error ? error.message : "丢弃草稿失败");
     } finally {
-      setIsApplying(false);
+      setPendingAction(null);
     }
   }
 
@@ -86,8 +146,9 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
     const patchIds = new Set([...acceptedByPatch.keys(), ...rejectedByPatch.keys()]);
     if (patchIds.size === 0 || pending > 0) return;
 
-    setIsApplying(true);
+    setPendingAction("apply-selected");
     setApplyError(null);
+    setApplyNotice(null);
     try {
       for (const patchId of patchIds) {
         const acceptedOperationIndexes = acceptedByPatch.get(patchId) ?? [];
@@ -138,7 +199,7 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
     } catch (error) {
       setApplyError(error instanceof Error ? error.message : "应用建议失败");
     } finally {
-      setIsApplying(false);
+      setPendingAction(null);
     }
   }
 
@@ -171,7 +232,15 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
             <h2 className="paw-list-title">Review queue</h2>
             <p className="paw-list-subtitle">提交前会重查任务状态和固定日程冲突。</p>
           </div>
-          <span className="paw-status-pill">{visiblePatchItems.length} drafts</span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="paw-status-pill">{draftCount} 份草稿 · {operationCount} 项建议</span>
+            {draftCount > 0 ? (
+              <button type="button" onClick={dismissAllDrafts} disabled={isApplying} className="paw-sg-btn reject">
+                <X size={15} />
+                {pendingAction === "bulk-reject" ? "正在清空…" : "清空待审核草稿"}
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="paw-status-pills mt-4">
           <span className="paw-status-pill">任务调整 {taskChangeCount}</span>
@@ -184,6 +253,12 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
       {applyError ? (
         <section className="paw-status-pill warn" role="status">
           {applyError}
+        </section>
+      ) : null}
+
+      {applyNotice ? (
+        <section className="paw-status-pill" role="status">
+          {applyNotice}
         </section>
       ) : null}
 
@@ -307,7 +382,7 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
           全部接受
         </button>
         <button type="button" onClick={applySelected} disabled={actionable.length === 0 || pending > 0 || isApplying} className="paw-primary-btn">
-          {isApplying ? "提交中" : accepted > 0 ? `提交审核：应用 ${accepted} 项` : "提交审核：全部拒绝"}
+          {pendingAction === "apply-selected" ? "提交中" : accepted > 0 ? `提交审核：应用 ${accepted} 项` : "提交审核：全部拒绝"}
         </button>
         <span className="paw-status-pill">
           {accepted} 接受 · {rejected} 拒绝 · {pending} 待定

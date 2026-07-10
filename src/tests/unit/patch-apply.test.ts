@@ -1,6 +1,6 @@
 import { getTableName } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { applyAgentPatch } from "@/lib/planning/patch-apply";
+import { applyAgentPatch, rejectReviewPatches } from "@/lib/planning/patch-apply";
 
 type PatchRow = {
   id: string;
@@ -11,6 +11,14 @@ type PatchRow = {
     operations: Array<Record<string, unknown>>;
   };
 };
+
+function objectContainsValue(value: unknown, expected: string, seen = new WeakSet<object>()): boolean {
+  if (value === expected) return true;
+  if (!value || typeof value !== "object") return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  return Object.values(value as Record<string, unknown>).some((child) => objectContainsValue(child, expected, seen));
+}
 
 function createFakeDb(
   patch: PatchRow,
@@ -31,14 +39,6 @@ function createFakeDb(
 
   function tableName(table: unknown) {
     return getTableName(table as Parameters<typeof getTableName>[0]);
-  }
-
-  function objectContainsValue(value: unknown, expected: string, seen = new WeakSet<object>()): boolean {
-    if (value === expected) return true;
-    if (!value || typeof value !== "object") return false;
-    if (seen.has(value)) return false;
-    seen.add(value);
-    return Object.values(value as Record<string, unknown>).some((child) => objectContainsValue(child, expected, seen));
   }
 
   const tx = {
@@ -140,6 +140,249 @@ function createFakeDb(
       taskUpdateWhereClauses.every((condition) => objectContainsValue(condition, expected)),
   };
 }
+
+function createBulkRejectDb(options: {
+  activePlanId?: string | null;
+  rejectedPatches?: PatchRow[];
+  remainingDrafts?: Array<{ id: string }>;
+  auditError?: Error;
+} = {}) {
+  const updates: Array<{ table: string; values: Record<string, unknown>; condition: unknown }> = [];
+  const inserts: Array<{ table: string; values: Record<string, unknown> }> = [];
+  const activePlanId = options.activePlanId === undefined ? "plan-1" : options.activePlanId;
+  const rejectedPatches = options.rejectedPatches ?? [];
+  let selectCount = 0;
+
+  function tableName(table: unknown) {
+    return getTableName(table as Parameters<typeof getTableName>[0]);
+  }
+
+  const tx = {
+    select() {
+      selectCount += 1;
+      const currentSelect = selectCount;
+      return {
+        from(table: unknown) {
+          return {
+            where() {
+              if (tableName(table) === "plans") {
+                return {
+                  limit: () => Promise.resolve(activePlanId ? [{ id: activePlanId }] : []),
+                };
+              }
+              if (tableName(table) === "agent_patches" && currentSelect > 1) {
+                return Promise.resolve(options.remainingDrafts ?? []);
+              }
+              return Promise.resolve([]);
+            },
+          };
+        },
+      };
+    },
+    update(table: unknown) {
+      return {
+        set(values: Record<string, unknown>) {
+          return {
+            where(condition: unknown) {
+              updates.push({ table: tableName(table), values, condition });
+              return {
+                returning: () => Promise.resolve(rejectedPatches),
+              };
+            },
+          };
+        },
+      };
+    },
+    insert(table: unknown) {
+      return {
+        values(values: Record<string, unknown> | Array<Record<string, unknown>>) {
+          if (options.auditError) return Promise.reject(options.auditError);
+          const rows = Array.isArray(values) ? values : [values];
+          inserts.push(...rows.map((row) => ({ table: tableName(table), values: row })));
+          return Promise.resolve();
+        },
+      };
+    },
+  };
+
+  return {
+    updates,
+    inserts,
+    transaction: async <T>(callback: (transaction: typeof tx) => Promise<T>) => callback(tx),
+  };
+}
+
+describe("rejectReviewPatches", () => {
+  it("atomically rejects the confirmed draft snapshot and persists one full rejection audit per patch", async () => {
+    const db = createBulkRejectDb({
+      rejectedPatches: [
+        {
+          id: "patch-1",
+          workspaceId: "workspace-1",
+          planId: "plan-1",
+          status: "draft",
+          patchJson: {
+            operations: [
+              {
+                type: "move_task",
+                task_id: "task-1",
+                from_date: "2026-07-10",
+                from_day_segment: "morning",
+                to_date: "2026-07-11",
+                to_day_segment: "afternoon",
+                reason: "Move it later",
+              },
+              {
+                type: "change_priority",
+                task_id: "task-2",
+                from_priority: "normal",
+                to_priority: "high",
+                reason: "Deadline is closer",
+              },
+            ],
+          },
+        },
+        {
+          id: "patch-2",
+          workspaceId: "workspace-1",
+          planId: "plan-1",
+          status: "draft",
+          patchJson: { operations: [] },
+        },
+      ],
+      remainingDrafts: [{ id: "concurrent-patch" }],
+    });
+
+    const result = await rejectReviewPatches(db, {
+      workspaceId: "workspace-1",
+      patchIds: ["patch-1", "patch-2", "patch-1"],
+    });
+
+    expect(result).toEqual({
+      status: "succeeded",
+      planId: "plan-1",
+      requestedPatchCount: 2,
+      rejectedPatchCount: 2,
+      rejectedOperationCount: 2,
+      rejectedPatchIds: ["patch-1", "patch-2"],
+      remainingDraftCount: 1,
+    });
+    expect(db.updates).toHaveLength(1);
+    expect(db.updates[0]).toEqual(expect.objectContaining({
+      table: "agent_patches",
+      values: { status: "rejected" },
+    }));
+    for (const expected of ["workspace-1", "plan-1", "draft", "patch-1", "patch-2"]) {
+      expect(objectContainsValue(db.updates[0].condition, expected)).toBe(true);
+    }
+    expect(db.inserts).toEqual([
+      {
+        table: "agent_patch_reviews",
+        values: expect.objectContaining({
+          workspaceId: "workspace-1",
+          patchId: "patch-1",
+          planId: "plan-1",
+          acceptedOperationIndexes: [],
+          rejectedOperationIndexes: [0, 1],
+          skippedJson: [],
+          conflictJson: [],
+        }),
+      },
+      {
+        table: "agent_patch_reviews",
+        values: expect.objectContaining({
+          workspaceId: "workspace-1",
+          patchId: "patch-2",
+          planId: "plan-1",
+          acceptedOperationIndexes: [],
+          rejectedOperationIndexes: [],
+          skippedJson: [],
+          conflictJson: [],
+        }),
+      },
+    ]);
+    expect([...db.updates, ...db.inserts].map((write) => write.table)).not.toEqual(
+      expect.arrayContaining(["tasks", "plans", "plan_versions", "change_logs", "time_blocks"]),
+    );
+  });
+
+  it("is idempotent when the confirmed drafts are already closed", async () => {
+    const db = createBulkRejectDb();
+
+    const result = await rejectReviewPatches(db, {
+      workspaceId: "workspace-1",
+      patchIds: ["patch-1"],
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "no_change",
+      rejectedPatchCount: 0,
+      rejectedOperationCount: 0,
+      rejectedPatchIds: [],
+      remainingDraftCount: 0,
+    }));
+    expect(db.inserts).toEqual([]);
+  });
+
+  it("fails before patch writes when the workspace has no active plan", async () => {
+    const db = createBulkRejectDb({ activePlanId: null });
+
+    await expect(
+      rejectReviewPatches(db, { workspaceId: "workspace-1", patchIds: ["patch-1"] }),
+    ).rejects.toThrow("No active plan");
+    expect(db.updates).toEqual([]);
+    expect(db.inserts).toEqual([]);
+  });
+
+  it("propagates audit failures so the transaction can roll back the claimed patches", async () => {
+    const db = createBulkRejectDb({
+      rejectedPatches: [
+        {
+          id: "patch-1",
+          workspaceId: "workspace-1",
+          planId: "plan-1",
+          status: "draft",
+          patchJson: { operations: [] },
+        },
+      ],
+      auditError: new Error("audit unavailable"),
+    });
+
+    await expect(
+      rejectReviewPatches(db, { workspaceId: "workspace-1", patchIds: ["patch-1"] }),
+    ).rejects.toThrow("audit unavailable");
+  });
+
+  it("rejects legacy malformed patch payloads without executing or strictly parsing their operations", async () => {
+    const db = createBulkRejectDb({
+      rejectedPatches: [
+        {
+          id: "patch-legacy",
+          workspaceId: "workspace-1",
+          planId: "plan-1",
+          status: "draft",
+          patchJson: { operations: "legacy-json" } as unknown as PatchRow["patchJson"],
+        },
+      ],
+    });
+
+    const result = await rejectReviewPatches(db, {
+      workspaceId: "workspace-1",
+      patchIds: ["patch-legacy"],
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "succeeded",
+      rejectedPatchCount: 1,
+      rejectedOperationCount: 0,
+    }));
+    expect(db.inserts[0].values).toEqual(expect.objectContaining({
+      patchId: "patch-legacy",
+      rejectedOperationIndexes: [],
+      skippedJson: [{ reason: "Draft operations were unavailable during rejection" }],
+    }));
+  });
+});
 
 describe("applyAgentPatch", () => {
   it("rejects empty accepted operation lists", async () => {

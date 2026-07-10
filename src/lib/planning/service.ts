@@ -1,7 +1,11 @@
 import { and, eq, isNull, or } from "drizzle-orm";
 import { agentPatches, changeLogs, checkins, inboxItems, routines, tasks, timeBlocks } from "@/lib/db/schema";
 import { validatePatchAgainstProtectedBlocks, type AgentPatch } from "@/lib/patches/patch-schema";
-import { applyAgentPatch as applyReviewPatch, PatchApplyError } from "@/lib/planning/patch-apply";
+import {
+  applyAgentPatch as applyReviewPatch,
+  PatchApplyError,
+  rejectReviewPatches,
+} from "@/lib/planning/patch-apply";
 import { getActivePlanId } from "@/lib/planning/active-plan";
 
 type PlanningDb = {
@@ -53,7 +57,7 @@ type ProcessInboxInput =
       estimatedMinutes: number;
     };
 
-export { applyReviewPatch, PatchApplyError };
+export { applyReviewPatch, PatchApplyError, rejectReviewPatches };
 export { getActivePlanId } from "@/lib/planning/active-plan";
 
 export class PlanningServiceError extends Error {
