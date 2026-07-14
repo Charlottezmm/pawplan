@@ -1,7 +1,8 @@
 import { getTableName } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { allowedPawPlanToolNames, pawPlanToolSchemas, runPawPlanTool } from "@/lib/mcp/tools";
+import { allowedPawPlanToolNames, pawPlanAgentGuidance, pawPlanToolSchemas, runPawPlanTool } from "@/lib/mcp/tools";
+import { pawPlanToolPermissions, pawPlanWriteToolNames } from "@/lib/mcp/tool-metadata";
 
 type TableWrite = {
   table: string;
@@ -202,6 +203,7 @@ describe("MCP planning tools", () => {
   it("filters write tools out for read-only MCP tokens", () => {
     expect(allowedPawPlanToolNames("read_only")).toEqual([
       "get_agent_guidance",
+      "get_mcp_usage",
       "get_today",
       "get_week",
       "get_month",
@@ -218,8 +220,16 @@ describe("MCP planning tools", () => {
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_timetable_import");
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_daily_rebalance");
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_week_rebalance");
+    expect(allowedPawPlanToolNames("read_write")).toContain("update_tasks_batch");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_daily_rebalance");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_week_rebalance");
+  });
+
+  it("keeps every published tool in the single permission metadata source", () => {
+    expect(Object.keys(pawPlanToolPermissions).sort()).toEqual(Object.keys(pawPlanToolSchemas).sort());
+    expect([...pawPlanWriteToolNames].sort()).toEqual(
+      allowedPawPlanToolNames("read_write").filter((name) => !allowedPawPlanToolNames("read_only").includes(name)).sort(),
+    );
   });
 
   it("exposes daily agent guidance to read-only MCP clients", async () => {
@@ -238,6 +248,29 @@ describe("MCP planning tools", () => {
     );
     expect(JSON.stringify(result)).toContain("get_tasks");
     expect(JSON.stringify(result)).toContain("draft_created");
+    expect(JSON.stringify(result)).toContain("update_tasks_batch");
+  });
+
+  it("publishes a narrow atomic task batch schema without weakening Review-first guidance", () => {
+    const jsonSchema = zodToJsonSchema(pawPlanToolSchemas.update_tasks_batch, {
+      strictUnions: true,
+      pipeStrategy: "input",
+    }) as any;
+
+    expect(jsonSchema.properties.operations).toMatchObject({ minItems: 1, maxItems: 50 });
+    expect(jsonSchema.properties.operations.items).toMatchObject({
+      type: "object",
+      properties: {
+        task_id: { type: "string", minLength: 1 },
+        status: { type: "string", enum: ["todo", "done", "skipped", "backlog"] },
+        date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        day_segment: { type: "string", enum: ["morning", "afternoon", "evening"] },
+      },
+      additionalProperties: false,
+    });
+    expect(pawPlanAgentGuidance.boundaries).toEqual(
+      expect.arrayContaining([expect.stringContaining("Routine planning still uses Review-first rebalance tools")]),
+    );
   });
 
   it("publishes propose_daily_rebalance moves as a strict structured schema", () => {

@@ -434,6 +434,26 @@ export const mcpUsageEvents = pgTable("mcp_usage_events", {
   tokenIdx: index("mcp_usage_events_token_idx").on(table.tokenId),
 }));
 
+export const mcpTaskWriteBatches = pgTable("mcp_task_write_batches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull(),
+  resultJson: jsonb("result_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  uniqueWorkspaceIdempotency: uniqueIndex("mcp_task_write_batches_workspace_key_unique").on(
+    table.workspaceId,
+    table.idempotencyKey,
+  ),
+  workspaceCreatedIdx: index("mcp_task_write_batches_workspace_created_idx").on(
+    table.workspaceId,
+    table.createdAt,
+  ),
+}));
+
 export const mcpPlanImports = pgTable("mcp_plan_imports", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),

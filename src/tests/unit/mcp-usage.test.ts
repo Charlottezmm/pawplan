@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTableName } from "drizzle-orm";
 import { mcpUsageEvents } from "@/lib/db/schema";
 import {
@@ -6,7 +6,11 @@ import {
   McpUsageLimitError,
   assertHostedMcpWriteAllowed,
   extractMcpUsageToolName,
+  getHostedMcpUsageSnapshot,
   recordHostedMcpUsage,
+  releaseHostedMcpWriteReservation,
+  reserveHostedMcpWrite,
+  retryAfterSeconds,
 } from "@/lib/mcp/usage";
 
 function createUsageDb(options: { writeCount?: number } = {}) {
@@ -104,5 +108,81 @@ describe("hosted MCP usage audit", () => {
         now: new Date("2026-06-12T12:00:00.000+08:00"),
       }),
     ).rejects.toBeInstanceOf(McpUsageLimitError);
+  });
+
+  it("reports remaining quota and the next Shanghai midnight", async () => {
+    const db = createUsageDb({ writeCount: 49 });
+    const now = new Date("2026-06-12T12:00:00.000+08:00");
+
+    const quota = await getHostedMcpUsageSnapshot(db, { workspaceId: "workspace-1", now });
+
+    expect(quota).toEqual({
+      limit: 50,
+      used: 49,
+      remaining: 1,
+      resetAt: new Date("2026-06-12T16:00:00.000Z"),
+    });
+    expect(retryAfterSeconds(quota, now)).toBe(43_200);
+  });
+
+  it("serializes concurrent final-slot reservations and releases failed calls", async () => {
+    let writeCount = 49;
+    let sequence = Promise.resolve();
+    const updates: Array<Record<string, unknown>> = [];
+    const reservationDb: any = {
+      transaction<T>(callback: (tx: any) => Promise<T>) {
+        const run = sequence.then(() => callback(reservationDb));
+        sequence = run.then(() => undefined, () => undefined);
+        return run;
+      },
+      execute: vi.fn(),
+      select() {
+        return { from: () => ({ where: () => Promise.resolve([{ value: writeCount }]) }) };
+      },
+      insert() {
+        return {
+          values() {
+            return {
+              returning() {
+                writeCount += 1;
+                return Promise.resolve([{ id: `usage-${writeCount}` }]);
+              },
+            };
+          },
+        };
+      },
+      update() {
+        return {
+          set(values: Record<string, unknown>) {
+            updates.push(values);
+            return { where: () => Promise.resolve() };
+          },
+        };
+      },
+    };
+
+    const attempts = await Promise.allSettled([
+      reserveHostedMcpWrite(reservationDb, {
+        workspaceId: "workspace-1",
+        tokenId: "token-1",
+        toolName: "create_checkin",
+        permission: "read_write",
+        now: new Date("2026-06-12T12:00:00.000+08:00"),
+      }),
+      reserveHostedMcpWrite(reservationDb, {
+        workspaceId: "workspace-1",
+        tokenId: "token-2",
+        toolName: "update_task_status",
+        permission: "read_write",
+        now: new Date("2026-06-12T12:00:00.000+08:00"),
+      }),
+    ]);
+
+    expect(attempts.map((attempt) => attempt.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(reservationDb.execute).toHaveBeenCalledTimes(2);
+    const success = attempts.find((attempt): attempt is PromiseFulfilledResult<any> => attempt.status === "fulfilled")!;
+    expect(success.value.quota.remaining).toBe(0);
+    await releaseHostedMcpWriteReservation(reservationDb, success.value.reservationId);
+    expect(updates).toContainEqual({ success: false });
   });
 });

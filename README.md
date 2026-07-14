@@ -148,7 +148,9 @@ The surface is intentionally narrow: agents read context, write audited low-risk
 
 **Read** — `get_today` · `get_week` · `get_month` · `get_constraints` · `get_capacity` · `get_decisions` · `get_conversations` · `get_checkins` · `get_tasks`
 
-**Write & draft** — `create_inbox_item` · `create_checkin` · `update_task_status` · `update_task_schedule` · `update_task_notes` · `save_conversation_summary` · `record_decision` · `propose_patch` · `propose_daily_rebalance` · `propose_week_rebalance` · `propose_timetable_import` · `import_plan_bundle`
+**Write & draft** — `create_inbox_item` · `create_checkin` · `update_task_status` · `update_task_schedule` · `update_task_notes` · `update_tasks_batch` · `save_conversation_summary` · `record_decision` · `propose_patch` · `propose_daily_rebalance` · `propose_week_rebalance` · `propose_timetable_import` · `import_plan_bundle`
+
+Hosted clients can call `get_mcp_usage` before a trusted write to read the 50-call daily quota and Shanghai-midnight reset. Multiple user-confirmed direct status/schedule edits must use one idempotent `update_tasks_batch` call instead of looping low-level writes. Routine planning changes remain Review-first through the rebalance tools.
 
 </details>
 

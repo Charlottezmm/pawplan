@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const handleRequestMock = vi.hoisted(() => vi.fn(() => Response.json({ ok: true })));
+const reserveHostedMcpWriteMock = vi.hoisted(() => vi.fn());
+const releaseHostedMcpWriteReservationMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js", () => ({
   WebStandardStreamableHTTPServerTransport: vi.fn(() => ({
@@ -34,12 +36,18 @@ vi.mock("@/lib/mcp/server-builder", () => ({
 vi.mock("@/lib/mcp/usage", () => ({
   McpUsageLimitError: class McpUsageLimitError extends Error {
     status = 429;
+    code = "hosted_mcp_daily_write_limit_reached";
+    constructor(public quota: { limit: number; used: number; remaining: number; resetAt: Date }) {
+      super("Hosted MCP daily write limit reached");
+    }
   },
-  assertHostedMcpWriteAllowed: vi.fn(),
   extractMcpUsageToolName: vi.fn((payload) =>
     payload?.method === "tools/call" ? payload.params?.name ?? "tools/call" : payload?.method ?? "unknown",
   ),
   recordHostedMcpUsage: vi.fn(),
+  reserveHostedMcpWrite: reserveHostedMcpWriteMock,
+  releaseHostedMcpWriteReservation: releaseHostedMcpWriteReservationMock,
+  retryAfterSeconds: vi.fn(() => 3600),
 }));
 
 describe("hosted MCP route", () => {
@@ -47,6 +55,8 @@ describe("hosted MCP route", () => {
     vi.resetModules();
     vi.clearAllMocks();
     handleRequestMock.mockResolvedValue(Response.json({ ok: true }));
+    reserveHostedMcpWriteMock.mockReset().mockResolvedValue(null);
+    releaseHostedMcpWriteReservationMock.mockReset().mockResolvedValue(undefined);
   });
 
   it("requires bearer token", async () => {
@@ -123,8 +133,8 @@ describe("hosted MCP route", () => {
     expect(createPawPlanMcpServer).toHaveBeenCalledWith({ workspaceId: "workspace-1", permission: "read_only" });
   });
 
-  it("enforces the hosted daily write cap before write tool calls", async () => {
-    const { assertHostedMcpWriteAllowed } = await import("@/lib/mcp/usage");
+  it("reserves hosted daily write quota before write tool calls", async () => {
+    const { reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
     const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
     vi.mocked(verifyMcpBearerToken).mockResolvedValue({
       workspaceId: "workspace-1",
@@ -146,9 +156,9 @@ describe("hosted MCP route", () => {
       }),
     );
 
-    expect(assertHostedMcpWriteAllowed).toHaveBeenCalledWith(
+    expect(reserveHostedMcpWrite).toHaveBeenCalledWith(
       {},
-      expect.objectContaining({ workspaceId: "workspace-1", toolName: "create_checkin" }),
+      expect.objectContaining({ workspaceId: "workspace-1", tokenId: "token-1", toolName: "create_checkin" }),
     );
   });
 
@@ -182,13 +192,17 @@ describe("hosted MCP route", () => {
     );
   });
 
-  it("records JSON-RPC error responses as failed usage even when HTTP status is 200", async () => {
-    const { recordHostedMcpUsage } = await import("@/lib/mcp/usage");
+  it("releases reserved quota for JSON-RPC error responses even when HTTP status is 200", async () => {
+    const { releaseHostedMcpWriteReservation, reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
     const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
     vi.mocked(verifyMcpBearerToken).mockResolvedValue({
       workspaceId: "workspace-1",
       permission: "read_write",
       tokenId: "token-1",
+    });
+    vi.mocked(reserveHostedMcpWrite).mockResolvedValue({
+      reservationId: "usage-1",
+      quota: { limit: 50, used: 1, remaining: 49, resetAt: new Date("2026-06-13T16:00:00.000Z") },
     });
     handleRequestMock.mockResolvedValue(
       Response.json({
@@ -212,16 +226,128 @@ describe("hosted MCP route", () => {
       }),
     );
 
-    expect(recordHostedMcpUsage).toHaveBeenCalledWith(
-      {},
-      expect.objectContaining({
-        workspaceId: "workspace-1",
-        tokenId: "token-1",
-        toolName: "create_checkin",
-        permission: "read_write",
-        success: false,
+    expect(releaseHostedMcpWriteReservation).toHaveBeenCalledWith({}, "usage-1");
+  });
+
+  it("releases reserved quota when an MCP tool returns result.isError", async () => {
+    const { releaseHostedMcpWriteReservation, reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({
+      workspaceId: "workspace-1",
+      permission: "read_write",
+      tokenId: "token-1",
+    });
+    vi.mocked(reserveHostedMcpWrite).mockResolvedValue({
+      reservationId: "usage-2",
+      quota: { limit: 50, used: 1, remaining: 49, resetAt: new Date("2026-06-13T16:00:00.000Z") },
+    });
+    handleRequestMock.mockResolvedValue(
+      Response.json({ jsonrpc: "2.0", id: 1, result: { isError: true, structuredContent: { status: "failed" } } }),
+    );
+    const { POST } = await import("@/app/api/mcp/route");
+
+    await POST(
+      new Request("https://pawplan.test/api/mcp", {
+        method: "POST",
+        headers: { Authorization: "Bearer pwp_live_secret" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "update_tasks_batch", arguments: {} } }),
       }),
     );
+
+    expect(releaseHostedMcpWriteReservation).toHaveBeenCalledWith({}, "usage-2");
+  });
+
+  it("does not charge quota again when an idempotent task batch returns duplicate", async () => {
+    const { releaseHostedMcpWriteReservation, reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({
+      workspaceId: "workspace-1",
+      permission: "read_write",
+      tokenId: "token-1",
+    });
+    vi.mocked(reserveHostedMcpWrite).mockResolvedValue({
+      reservationId: "usage-duplicate",
+      quota: { limit: 50, used: 2, remaining: 48, resetAt: new Date("2026-06-13T16:00:00.000Z") },
+    });
+    handleRequestMock.mockResolvedValue(
+      Response.json({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { structuredContent: { status: "duplicate", completedTaskIds: ["task-1"], pendingTaskIds: [] } },
+      }),
+    );
+    const { POST } = await import("@/app/api/mcp/route");
+
+    await POST(
+      new Request("https://pawplan.test/api/mcp", {
+        method: "POST",
+        headers: { Authorization: "Bearer pwp_live_secret" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "update_tasks_batch", arguments: { idempotency_key: "batch-retry", operations: [] } },
+        }),
+      }),
+    );
+
+    expect(releaseHostedMcpWriteReservation).toHaveBeenCalledWith({}, "usage-duplicate");
+  });
+
+  it("returns structured quota recovery metadata without invoking the tool", async () => {
+    const { McpUsageLimitError, reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({
+      workspaceId: "workspace-1",
+      permission: "read_write",
+      tokenId: "token-1",
+    });
+    vi.mocked(reserveHostedMcpWrite).mockRejectedValue(
+      new McpUsageLimitError({ limit: 50, used: 50, remaining: 0, resetAt: new Date("2026-06-13T16:00:00.000Z") }),
+    );
+    const { POST } = await import("@/app/api/mcp/route");
+    const response = await POST(
+      new Request("https://pawplan.test/api/mcp", {
+        method: "POST",
+        headers: { Authorization: "Bearer pwp_live_secret" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "create_checkin", arguments: {} } }),
+      }),
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("3600");
+    await expect(response.json()).resolves.toEqual({
+      error: "hosted_mcp_daily_write_limit_reached",
+      message: "Hosted MCP daily write limit reached",
+      retry_after: 3600,
+      reset_at: "2026-06-13T16:00:00.000Z",
+      limit: 50,
+      remaining: 0,
+    });
+    expect(handleRequestMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects JSON-RPC array bodies before quota or tool execution", async () => {
+    const { reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({
+      workspaceId: "workspace-1",
+      permission: "read_write",
+      tokenId: "token-1",
+    });
+    const { POST } = await import("@/app/api/mcp/route");
+    const response = await POST(
+      new Request("https://pawplan.test/api/mcp", {
+        method: "POST",
+        headers: { Authorization: "Bearer pwp_live_secret" },
+        body: JSON.stringify([{ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "create_checkin" } }]),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "JSON-RPC batch requests are not supported" });
+    expect(reserveHostedMcpWrite).not.toHaveBeenCalled();
+    expect(handleRequestMock).not.toHaveBeenCalled();
   });
 
   it("accepts OAuth connector access tokens and builds the shared MCP server with workspace permission", async () => {

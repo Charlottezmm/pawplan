@@ -27,6 +27,13 @@ import {
   saveConversationSummary,
 } from "@/lib/mcp/conversation-tools";
 import { proposeTimetableImport, proposeTimetableImportArgsSchema } from "@/lib/mcp/timetable-import";
+import { updateTasksBatch } from "@/lib/mcp/task-batch";
+import { getHostedMcpUsageSnapshot } from "@/lib/mcp/usage";
+import {
+  isPawPlanWriteTool,
+  pawPlanWriteToolNames,
+  type McpPermission,
+} from "@/lib/mcp/tool-metadata";
 
 type PlanningDb = {
   transaction<T>(callback: (tx: any) => Promise<T>): Promise<T>;
@@ -109,9 +116,31 @@ const proposeRebalanceArgsSchema = z
     created_by: createdBySchema.optional(),
   })
   .strict();
+const taskBatchOperationSchema = z
+  .object({
+    task_id: z.string().min(1),
+    status: taskStatusSchema.optional(),
+    date: dateStringSchema.optional(),
+    day_segment: daySegmentSchema.optional(),
+    blocked: z.boolean().optional(),
+    expected_status: taskStatusSchema.optional(),
+    expected_date: dateStringSchema.optional(),
+    expected_day_segment: daySegmentSchema.optional(),
+    expected_blocked: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (operation) =>
+      operation.status !== undefined ||
+      operation.date !== undefined ||
+      operation.day_segment !== undefined ||
+      operation.blocked !== undefined,
+    { message: "Each batch operation must update status, date, day_segment, or blocked" },
+  );
 
 export const pawPlanToolSchemas = {
   get_agent_guidance: emptyArgsSchema,
+  get_mcp_usage: emptyArgsSchema,
   get_today: emptyArgsSchema,
   get_week: emptyArgsSchema,
   get_month: rangeArgsSchema,
@@ -180,6 +209,12 @@ export const pawPlanToolSchemas = {
         .min(1)
         .max(2000)
         .describe("Structured Markdown notes. Prefer labels: 目标, 完成标准, 资源, 下一步, 备注."),
+    })
+    .strict(),
+  update_tasks_batch: z
+    .object({
+      idempotency_key: z.string().trim().min(8).max(200),
+      operations: z.array(taskBatchOperationSchema).min(1).max(50),
     })
     .strict(),
   save_conversation_summary: z
@@ -269,7 +304,8 @@ export const pawPlanToolSchemas = {
 };
 
 export type PawPlanToolName = keyof typeof pawPlanToolSchemas;
-export type McpPermission = "read_only" | "read_write";
+export type { McpPermission } from "@/lib/mcp/tool-metadata";
+export { isPawPlanWriteTool, pawPlanWriteToolNames };
 
 export const pawPlanToolNames = Object.keys(pawPlanToolSchemas) as PawPlanToolName[];
 
@@ -306,6 +342,7 @@ Required workflow:
     "Do not apply changes automatically.",
     "Do not edit constraints through MCP.",
     "Use create_checkin, update_task_status, update_task_schedule, or update_task_notes only when the user explicitly asks to record a fact or make a trusted direct edit.",
+    "For multiple trusted direct task edits, use one update_tasks_batch call; do not loop low-level writes. Routine planning still uses Review-first rebalance tools.",
   ],
   reviewStatusMeanings: {
     draft_created: "A new Review draft was created.",
@@ -320,6 +357,7 @@ export const pawPlanServerInstructions =
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_agent_guidance: "Read PawPlan daily agent guidance, Review-first safety rules, and the recommended daily task cleanup prompt.",
+  get_mcp_usage: "Read the current workspace Hosted MCP daily write quota and Shanghai-midnight reset time.",
   get_today: "Read today's PawPlan planning context for the configured workspace.",
   get_week: "Read this week's PawPlan planning context for the configured workspace.",
   get_month: "Read a minimal raw month/range task list for the configured workspace.",
@@ -334,6 +372,8 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   update_task_status: "Update a task status with MCP source attribution.",
   update_task_schedule: "Update a task date or day segment with MCP source attribution.",
   update_task_notes: "Update only a task's notes/details with MCP source attribution; this does not change schedule, status, priority, or title.",
+  update_tasks_batch:
+    "Atomically apply up to 50 trusted direct task status/schedule edits with idempotency and final readback. Routine planning must use Review-first rebalance tools.",
   save_conversation_summary: "Save a structured conversation summary without storing raw transcript, with MCP provenance.",
   record_decision: "Record a structured workspace decision with MCP provenance.",
   propose_patch: "Create a preview-only agent patch draft; this never applies the patch.",
@@ -345,41 +385,8 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   import_plan_bundle: "Import a trusted structured plan bundle into real PawPlan tasks with MCP provenance.",
 };
 
-const pawPlanToolPermissions: Record<PawPlanToolName, "read" | "write"> = {
-  get_agent_guidance: "read",
-  get_today: "read",
-  get_week: "read",
-  get_month: "read",
-  get_constraints: "read",
-  get_capacity: "read",
-  get_decisions: "read",
-  get_conversations: "read",
-  get_checkins: "read",
-  get_tasks: "read",
-  create_inbox_item: "write",
-  create_checkin: "write",
-  update_task_status: "write",
-  update_task_schedule: "write",
-  update_task_notes: "write",
-  save_conversation_summary: "write",
-  record_decision: "write",
-  propose_patch: "write",
-  propose_daily_rebalance: "write",
-  propose_week_rebalance: "write",
-  propose_timetable_import: "write",
-  import_plan_bundle: "write",
-};
-
-export const pawPlanWriteToolNames = pawPlanToolNames.filter(
-  (name) => pawPlanToolPermissions[name] === "write",
-);
-
-export function isPawPlanWriteTool(name: string) {
-  return Object.hasOwn(pawPlanToolSchemas, name) && pawPlanToolPermissions[name as PawPlanToolName] === "write";
-}
-
 export function allowedPawPlanToolNames(permission: McpPermission) {
-  return pawPlanToolNames.filter((name) => permission === "read_write" || pawPlanToolPermissions[name] === "read");
+  return pawPlanToolNames.filter((name) => permission === "read_write" || !isPawPlanWriteTool(name));
 }
 
 function addDays(date: Date, days: number) {
@@ -741,18 +748,29 @@ export async function runPawPlanTool(
   name: string,
   args: unknown = {},
   permission: McpPermission = "read_write",
-) {
+): Promise<any> {
   if (!workspaceId) throw new Error("PAWPLAN_WORKSPACE_ID is required");
   if (!Object.hasOwn(pawPlanToolSchemas, name)) throw new Error(`Unknown PawPlan MCP tool: ${name}`);
 
   const toolName = name as PawPlanToolName;
-  if (permission !== "read_write" && pawPlanToolPermissions[toolName] === "write") {
+  if (permission !== "read_write" && isPawPlanWriteTool(toolName)) {
     throw new Error("MCP token does not allow write tools");
   }
 
   if (toolName === "get_agent_guidance") {
     pawPlanToolSchemas.get_agent_guidance.parse(args);
     return pawPlanAgentGuidance;
+  }
+
+  if (toolName === "get_mcp_usage") {
+    pawPlanToolSchemas.get_mcp_usage.parse(args);
+    const quota = await getHostedMcpUsageSnapshot(db, { workspaceId });
+    return {
+      limit: quota.limit,
+      used: quota.used,
+      remaining: quota.remaining,
+      reset_at: quota.resetAt.toISOString(),
+    };
   }
 
   if (toolName === "get_today") {
@@ -881,6 +899,25 @@ export async function runPawPlanTool(
     if (!task) throw new Error("Task not found");
 
     return { task };
+  }
+
+  if (toolName === "update_tasks_batch") {
+    const parsed = pawPlanToolSchemas.update_tasks_batch.parse(args);
+    return updateTasksBatch(db, {
+      workspaceId,
+      idempotencyKey: parsed.idempotency_key,
+      operations: parsed.operations.map((operation) => ({
+        taskId: operation.task_id,
+        status: operation.status,
+        date: operation.date,
+        daySegment: operation.day_segment,
+        blocked: operation.blocked,
+        expectedStatus: operation.expected_status,
+        expectedDate: operation.expected_date,
+        expectedDaySegment: operation.expected_day_segment,
+        expectedBlocked: operation.expected_blocked,
+      })),
+    });
   }
 
   if (toolName === "save_conversation_summary") {

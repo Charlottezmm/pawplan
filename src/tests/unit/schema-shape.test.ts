@@ -9,6 +9,7 @@ import {
   dayCapacities,
   inboxItems,
   mcpPlanImports,
+  mcpTaskWriteBatches,
   mcpTokens,
   mcpUsageEvents,
   oauthAuthorizationCodes,
@@ -80,6 +81,19 @@ describe("schema shape", () => {
     expect(index?.config.columns.map((column) => column.name)).toEqual(["workspace_id", "idempotency_key"]);
   });
 
+  it("tracks atomic MCP task batches by workspace idempotency key", () => {
+    const config = getTableConfig(mcpTaskWriteBatches);
+    const index = config.indexes.find(
+      (candidate) => candidate.config.name === "mcp_task_write_batches_workspace_key_unique",
+    );
+
+    expect(index?.config.unique).toBe(true);
+    expect(index?.config.columns.map((column) => "name" in column ? column.name : undefined)).toEqual([
+      "workspace_id",
+      "idempotency_key",
+    ]);
+  });
+
   it("keeps tenant-owned data tables scoped by workspace_id", () => {
     const tenantTables = [
       plans,
@@ -101,6 +115,7 @@ describe("schema shape", () => {
       changeLogs,
       mcpTokens,
       mcpUsageEvents,
+      mcpTaskWriteBatches,
       mcpPlanImports,
       oauthAuthorizationCodes,
       claudeConnectorAuthorizations,

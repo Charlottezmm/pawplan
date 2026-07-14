@@ -4,13 +4,21 @@ import { createPawPlanMcpServer } from "@/lib/mcp/server-builder";
 import { McpTokenError, verifyMcpBearerToken } from "@/lib/mcp/tokens";
 import {
   McpUsageLimitError,
-  assertHostedMcpWriteAllowed,
   extractMcpUsageToolName,
   recordHostedMcpUsage,
+  releaseHostedMcpWriteReservation,
+  reserveHostedMcpWrite,
+  retryAfterSeconds,
 } from "@/lib/mcp/usage";
 import { verifyConnectorAccessToken } from "@/lib/oauth/connector-auth";
 
 export const dynamic = "force-dynamic";
+
+class McpRequestError extends Error {
+  constructor(message: string, public status = 400) {
+    super(message);
+  }
+}
 
 function bearerToken(request: Request) {
   const header = request.headers.get("authorization");
@@ -42,6 +50,20 @@ function errorResponse(request: Request, error: unknown) {
     );
   }
   if (error instanceof McpUsageLimitError) {
+    const retryAfter = retryAfterSeconds(error.quota);
+    return Response.json(
+      {
+        error: error.code,
+        message: error.message,
+        retry_after: retryAfter,
+        reset_at: error.quota.resetAt.toISOString(),
+        limit: error.quota.limit,
+        remaining: error.quota.remaining,
+      },
+      { status: error.status, headers: { "Retry-After": String(retryAfter) } },
+    );
+  }
+  if (error instanceof McpRequestError) {
     return Response.json({ error: error.message }, { status: error.status });
   }
 
@@ -58,9 +80,12 @@ async function resolveMcpAuth(db: ReturnType<typeof getDb>, token: string) {
 async function requestToolName(request: Request) {
   if (request.method === "GET") return "GET";
   try {
-    return extractMcpUsageToolName(await request.clone().json());
-  } catch {
-    return "unknown";
+    const payload = await request.clone().json();
+    if (Array.isArray(payload)) throw new McpRequestError("JSON-RPC batch requests are not supported", 400);
+    return extractMcpUsageToolName(payload);
+  } catch (error) {
+    if (error instanceof McpRequestError) throw error;
+    throw new McpRequestError("Invalid MCP JSON request", 400);
   }
 }
 
@@ -68,20 +93,31 @@ function hasJsonRpcError(payload: unknown): boolean {
   if (Array.isArray(payload)) {
     return payload.some((item) => hasJsonRpcError(item));
   }
-  return Boolean(
-    payload &&
-      typeof payload === "object" &&
-      "error" in payload &&
-      (payload as Record<string, unknown>).error,
-  );
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  if (record.isError === true) return true;
+  if (record.error) return true;
+  return "result" in record && hasJsonRpcError(record.result);
 }
 
-async function responseSucceeded(response: Response) {
-  if (response.status >= 400) return false;
+function hasStructuredStatus(payload: unknown, status: string): boolean {
+  if (Array.isArray(payload)) return payload.some((item) => hasStructuredStatus(item, status));
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  if (record.status === status) return true;
+  return Object.values(record).some((value) => hasStructuredStatus(value, status));
+}
+
+async function responseOutcome(response: Response) {
+  if (response.status >= 400) return { succeeded: false, duplicate: false };
   try {
-    return !hasJsonRpcError(await response.clone().json());
+    const payload = await response.clone().json();
+    return {
+      succeeded: !hasJsonRpcError(payload),
+      duplicate: hasStructuredStatus(payload, "duplicate"),
+    };
   } catch {
-    return true;
+    return { succeeded: true, duplicate: false };
   }
 }
 
@@ -98,9 +134,11 @@ async function handle(request: Request) {
       permission: auth.permission,
     };
 
+    let reservationId: string | null = null;
     try {
       if (auth.permission === "read_write") {
-        await assertHostedMcpWriteAllowed(db, { workspaceId: auth.workspaceId, toolName });
+        const reservation = await reserveHostedMcpWrite(db, usageInput);
+        reservationId = reservation?.reservationId ?? null;
       }
 
       const server = createPawPlanMcpServer({ workspaceId: auth.workspaceId, permission: auth.permission });
@@ -117,10 +155,20 @@ async function handle(request: Request) {
           clientId: auth.tokenId,
         },
       });
-      await recordHostedMcpUsage(db, { ...usageInput, success: await responseSucceeded(response) });
+      const outcome = await responseOutcome(response);
+      const duplicateBatch = toolName === "update_tasks_batch" && outcome.duplicate;
+      if (reservationId && (!outcome.succeeded || duplicateBatch)) {
+        await releaseHostedMcpWriteReservation(db, reservationId);
+      } else if (!reservationId) {
+        await recordHostedMcpUsage(db, { ...usageInput, success: outcome.succeeded });
+      }
       return response;
     } catch (error) {
-      await recordHostedMcpUsage(db, { ...usageInput, success: false });
+      if (reservationId) {
+        await releaseHostedMcpWriteReservation(db, reservationId);
+      } else if (!(error instanceof McpUsageLimitError)) {
+        await recordHostedMcpUsage(db, { ...usageInput, success: false });
+      }
       throw error;
     }
   } catch (error) {

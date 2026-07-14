@@ -90,6 +90,8 @@ npm run mcp
 - `create_inbox_item`：创建 inbox item，并记录 MCP 审计来源。
 - `create_checkin`：创建或更新 daily check-in，用于记录用户明确提供的事实。
 - `update_task_status`：更新任务状态，只用于记录事实，例如用户明确说某任务已完成、跳过或回 backlog。
+- `get_mcp_usage`：读取 Hosted MCP 当日写调用额度、剩余次数和上海零点重置时间。
+- `update_tasks_batch`：原子写入最多 50 个用户明确确认的 task status / schedule 事实；必须传稳定幂等键并检查结构化状态与最终 readback。日常重排不得借此绕过 Review。
 - `propose_patch`：创建 preview-only agent patch draft；只写 Review preview，绝不 apply。
 - `propose_daily_rebalance`：为日常任务移动创建 Review draft。Agent 只提供目标日期、时段和原因；PawPlan 补全旧位置、做冲突检查、记录 agent run，并返回结构化 `status`。
 - `propose_week_rebalance`：为每周任务移动创建 Review draft，语义同 `propose_daily_rebalance`，但用于 weekly rebalance。
@@ -132,6 +134,7 @@ npm run mcp
 - 不得直接改 task date。
 - 不得直接改 task status，除非用户明确是在记录事实；`update_task_status` 不能用于重排。
 - 不得用 `import_plan_bundle` 做后续破坏性覆盖或重排；导入后的 routine movement 必须走 high-level rebalance tool 和 Review，其他非 routine draft 才使用低层 `propose_patch`。
+- 多个可信 direct edits 不得循环调用单条 update 工具；先读 `get_mcp_usage`，再用一次 `update_tasks_batch`。若工具返回 `failed`，按返回的 pending IDs 处理；若 HTTP 429，整批尚未开工，按 `reset_at` 等待。两种情况都不得声称整批完成。
 - 无足够数据时不写 patch，改为说明缺少哪些数据。
 - 不覆盖 routine / recovery / fixed time block。
 - 不伪造已完成；没有用户事实依据时，不把任务标记为 `done`。
