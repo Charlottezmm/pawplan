@@ -646,6 +646,136 @@ describe("applyAgentPatch", () => {
     expect(db.updates.filter((update) => update.table === "plans" || update.table === "agent_patches")).toEqual([]);
   });
 
+  it("increments rollover metadata only after an overdue Review move is accepted and reads back capacity", async () => {
+    const targetDate = new Date("2026-08-15T16:00:00.000Z");
+    const db = createFakeDb({
+      id: "patch-overdue",
+      workspaceId: "workspace-1",
+      planId: "plan-1",
+      status: "draft",
+      patchJson: {
+        operations: [{
+          type: "move_task",
+          task_id: "task-overdue",
+          from_date: "2026-08-14",
+          from_day_segment: "morning",
+          to_date: "2026-08-16",
+          to_day_segment: "morning",
+          overdue_rollover: true,
+          expected_rollover_count: 0,
+          reason: "首次逾期，安排到下一个安全时段。",
+        }],
+      },
+    }, 0, {
+      taskSelectResults: [[{
+        id: "task-overdue",
+        date: new Date("2026-08-13T16:00:00.000Z"),
+        daySegment: "morning",
+        status: "todo",
+        rolloverCount: 0,
+        estimatedMinutes: 60,
+      }]],
+      selectRows: { tasks: [], time_blocks: [], routines: [], day_capacities: [] },
+      taskUpdateResults: [[{
+        id: "task-overdue",
+        date: targetDate,
+        daySegment: "morning",
+        status: "todo",
+        rolloverCount: 1,
+        lastRolloverAt: new Date("2026-08-15T10:00:00.000Z"),
+      }]],
+    });
+
+    const result = await applyAgentPatch(db, {
+      workspaceId: "workspace-1",
+      patchId: "patch-overdue",
+      acceptedOperationIndexes: [0],
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.applied[0]).toEqual(expect.objectContaining({
+      taskId: "task-overdue",
+      readback: expect.objectContaining({
+        date: "2026-08-16",
+        daySegment: "morning",
+        status: "todo",
+        rolloverCount: 1,
+        targetCapacityAfterMinutes: 120,
+      }),
+    }));
+    expect(db.updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "tasks",
+        values: expect.objectContaining({
+          date: targetDate,
+          daySegment: "morning",
+          rolloverCount: 1,
+          lastRolloverAt: expect.any(Date),
+        }),
+      }),
+    ]));
+  });
+
+  it("keeps an overdue Review move unapplied when target capacity changed", async () => {
+    const db = createFakeDb({
+      id: "patch-overdue",
+      workspaceId: "workspace-1",
+      planId: "plan-1",
+      status: "draft",
+      patchJson: {
+        operations: [{
+          type: "move_task",
+          task_id: "task-overdue",
+          from_date: "2026-08-14",
+          from_day_segment: "morning",
+          to_date: "2026-08-16",
+          to_day_segment: "morning",
+          overdue_rollover: true,
+          expected_rollover_count: 0,
+          reason: "首次逾期，安排到下一个安全时段。",
+        }],
+      },
+    }, 0, {
+      taskSelectResults: [[{
+        id: "task-overdue",
+        date: new Date("2026-08-13T16:00:00.000Z"),
+        daySegment: "morning",
+        status: "todo",
+        rolloverCount: 0,
+        estimatedMinutes: 60,
+      }]],
+      selectRows: {
+        tasks: [{
+          id: "task-new-conflict",
+          title: "New conflicting work",
+          date: new Date("2026-08-15T16:00:00.000Z"),
+          daySegment: "morning",
+          estimatedMinutes: 180,
+          status: "todo",
+        }],
+        time_blocks: [],
+        routines: [],
+        day_capacities: [],
+      },
+    });
+
+    const result = await applyAgentPatch(db, {
+      workspaceId: "workspace-1",
+      patchId: "patch-overdue",
+      acceptedOperationIndexes: [0],
+    });
+
+    expect(result.status).toBe("conflicted");
+    expect(result.conflicts).toEqual([
+      expect.objectContaining({
+        reason: "Target capacity changed since patch was proposed",
+        expected: { remainingMinutesAtLeast: 60 },
+        actual: { remainingMinutes: 0 },
+      }),
+    ]);
+    expect(db.updates.filter((update) => update.table === "tasks")).toEqual([]);
+  });
+
   it("returns conflicts when a selected change_priority is stale", async () => {
     const db = createFakeDb({
       id: "patch-1",

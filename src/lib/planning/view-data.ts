@@ -258,6 +258,7 @@ export type ReschedulePatchItemView = {
     status: AgentRunStatus;
   };
   agentRunLabel?: string;
+  requiresRolloverReadback?: boolean;
   skipped?: boolean;
   skippedReason?: string;
   conflict?: {
@@ -1348,6 +1349,7 @@ function reviewEventsByIndex(value: unknown) {
 function agentRunLabel(kind: AgentRunKind) {
   if (kind === "weekly_rebalance") return "Created by weekly rebalance";
   if (kind === "evening_review") return "Created by evening review";
+  if (kind === "overdue_replan") return "Created by overdue replan";
   return "Created by daily rebalance";
 }
 
@@ -1394,7 +1396,7 @@ export function buildReschedulePatchItems(input: {
         patchId: patch.id,
         operationIndex: index,
         operationType: operation.type,
-        kind: operationKind(operation.type),
+        kind: operation.type === "move_task" && operation.overdue_rollover ? "逾期顺延" : operationKind(operation.type),
         title,
         reason: operation.reason,
         capacity: "应用前会重新计算相关日期容量。",
@@ -1408,6 +1410,7 @@ export function buildReschedulePatchItems(input: {
         },
         agentRun: run ? { id: run.id, kind: run.kind, status: run.status } : undefined,
         agentRunLabel: run ? agentRunLabel(run.kind) : undefined,
+        requiresRolloverReadback: operation.type === "move_task" && Boolean(operation.overdue_rollover),
         skipped: Boolean(skipped),
         skippedReason: typeof skipped?.reason === "string" ? skipped.reason : undefined,
         conflict: conflict

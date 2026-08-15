@@ -1,4 +1,4 @@
-import { Archive, ChevronRight, Download, KeyRound, Settings, ShieldCheck } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronRight, Download, FolderKanban, KeyRound, Settings, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { CatIcon } from "./cat-icon";
 import { LogoutButton } from "./logout-button";
@@ -13,6 +13,26 @@ type Tool = {
 };
 
 const sections: Array<{ title: string; tools: Tool[] }> = [
+  {
+    title: "计划结构",
+    tools: [
+      {
+        href: "/projects",
+        title: "Project Portfolio",
+        text: "查看并定义并行项目的类别、目标、完成标准和优先级。",
+        icon: FolderKanban,
+        active: true,
+        featured: true,
+      },
+      {
+        href: "/backlog",
+        title: "Backlog",
+        text: "查看已明确移出排期、但仍被保留的任务。",
+        icon: ArchiveRestore,
+        active: true,
+      },
+    ],
+  },
   {
     title: "收集",
     tools: [
@@ -53,13 +73,16 @@ const sections: Array<{ title: string; tools: Tool[] }> = [
   },
 ];
 
-export function MoreView({ showAdminInvites = false }: { showAdminInvites?: boolean }) {
+export function MoreView({ showAdminInvites = false, backlogCount = 0 }: { showAdminInvites?: boolean; backlogCount?: number }) {
   const visibleSections = sections.map((section) => {
-    if (section.title !== "连接" || !showAdminInvites) return section;
+    const tools = section.tools.map((tool) =>
+      tool.href === "/backlog" ? { ...tool, text: `${tool.text} 当前 ${backlogCount} 条。` } : tool,
+    );
+    if (section.title !== "连接" || !showAdminInvites) return { ...section, tools };
     return {
       ...section,
       tools: [
-        ...section.tools,
+        ...tools,
         {
           href: "/admin/invites",
           title: "邀请管理",

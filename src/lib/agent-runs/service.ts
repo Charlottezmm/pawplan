@@ -42,11 +42,12 @@ type CompleteAgentRunInput = {
   workspaceId: string;
   runId: string;
   idempotencyKey: string;
-  status: "draft_created" | "no_change";
+  status: "draft_created" | "needs_decision" | "no_change";
   patchId?: string;
   operationCount: number;
   skipped: AgentRunWarning[];
   warnings: AgentRunWarning[];
+  needsDecision?: AgentRunWarning[];
 };
 
 type FailAgentRunInput = {
@@ -79,6 +80,11 @@ function operationCountFrom(value: unknown) {
 function skippedFrom(value: unknown) {
   if (!value || typeof value !== "object") return [];
   return asWarningArray((value as { skipped?: unknown }).skipped);
+}
+
+function needsDecisionFrom(value: unknown) {
+  if (!value || typeof value !== "object") return [];
+  return asWarningArray((value as { needsDecision?: unknown }).needsDecision);
 }
 
 function sanitizeInputJson(value: unknown, seen = new WeakSet<object>()): unknown {
@@ -175,6 +181,8 @@ function duplicateResult(row: AgentRunRow): AgentRunResult {
     idempotencyKey: row.idempotencyKey,
   };
   if (row.patchId) result.patchId = row.patchId;
+  const needsDecision = needsDecisionFrom(row.resultJson);
+  if (needsDecision.length > 0) result.needsDecision = needsDecision;
   if (row.errorJson && typeof row.errorJson === "object") {
     result.error = compactError(row.errorJson as AgentRunError);
   }
@@ -192,6 +200,8 @@ function resultFromExistingRun(row: AgentRunRow): AgentRunResult {
     idempotencyKey: row.idempotencyKey,
   };
   if (row.patchId) result.patchId = row.patchId;
+  const needsDecision = needsDecisionFrom(row.resultJson);
+  if (needsDecision.length > 0) result.needsDecision = needsDecision;
   if (row.errorJson && typeof row.errorJson === "object") {
     result.error = compactError(row.errorJson as AgentRunError);
   }
@@ -199,7 +209,7 @@ function resultFromExistingRun(row: AgentRunRow): AgentRunResult {
 }
 
 function isTerminalStatus(status: AgentRunStatus) {
-  return status === "draft_created" || status === "no_change" || status === "failed";
+  return status === "draft_created" || status === "needs_decision" || status === "no_change" || status === "failed";
 }
 
 async function returnExistingTerminalOrThrow(
@@ -271,6 +281,7 @@ export async function completeAgentRun(db: PlanningDb, input: CompleteAgentRunIn
     idempotencyKey: input.idempotencyKey,
   };
   if (input.patchId) result.patchId = input.patchId;
+  if (input.needsDecision && input.needsDecision.length > 0) result.needsDecision = input.needsDecision;
 
   const [run] = await db
     .update(agentRuns)

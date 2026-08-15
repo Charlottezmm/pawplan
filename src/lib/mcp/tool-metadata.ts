@@ -11,6 +11,7 @@ export const pawPlanToolPermissions = {
   get_decisions: "read",
   get_conversations: "read",
   get_checkins: "read",
+  get_project_portfolio: "read",
   get_tasks: "read",
   create_inbox_item: "write",
   create_checkin: "write",
@@ -23,6 +24,7 @@ export const pawPlanToolPermissions = {
   propose_patch: "write",
   propose_daily_rebalance: "write",
   propose_week_rebalance: "write",
+  propose_overdue_replan: "write",
   propose_timetable_import: "write",
   import_plan_bundle: "write",
 } as const satisfies Record<string, "read" | "write">;

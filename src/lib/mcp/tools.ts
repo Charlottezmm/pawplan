@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, lt } from "drizzle-orm";
 import { z } from "zod";
 import { checkins, courses, dayCapacities, routines, tasks, timeBlocks } from "@/lib/db/schema";
 import { buildCapacityModel } from "@/lib/planning/capacity-model";
@@ -19,6 +19,7 @@ import {
   updateTaskStatus,
 } from "@/lib/planning/service";
 import { proposeRebalancePatch } from "@/lib/planning/rebalance";
+import { proposeOverdueReplan } from "@/lib/planning/overdue-replan";
 import { saveMcpPlanImport } from "@/lib/mcp/plan-import";
 import {
   getConversationSummaries,
@@ -29,6 +30,10 @@ import {
 import { proposeTimetableImport, proposeTimetableImportArgsSchema } from "@/lib/mcp/timetable-import";
 import { updateTasksBatch } from "@/lib/mcp/task-batch";
 import { getHostedMcpUsageSnapshot } from "@/lib/mcp/usage";
+import {
+  getProjectPortfolio,
+  getTasksWithProjectContext as readTasks,
+} from "@/lib/mcp/project-context";
 import {
   isPawPlanWriteTool,
   pawPlanWriteToolNames,
@@ -46,6 +51,7 @@ type PlanningDb = {
 type SerializedTask = ReturnType<typeof serializeTask>;
 
 const taskStatusSchema = z.enum(["todo", "done", "skipped", "backlog"]);
+const projectStatusSchema = z.enum(["active", "paused", "completed", "archived"]);
 const prioritySchema = z.enum(["low", "normal", "high", "urgent"]);
 const energyLevelSchema = z.enum(["low", "medium", "high"]);
 const daySegmentSchema = z.enum(["morning", "afternoon", "evening"]);
@@ -116,6 +122,17 @@ const proposeRebalanceArgsSchema = z
     created_by: createdBySchema.optional(),
   })
   .strict();
+const proposeOverdueReplanArgsSchema = z
+  .object({
+    idempotency_key: z.string().trim().min(8).max(200),
+    as_of_date: dateStringSchema,
+    task_ids: z.array(z.string().min(1)).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, {
+      message: "task_ids must be unique",
+    }),
+    reason: z.string().trim().min(1).max(4000),
+    created_by: createdBySchema.optional(),
+  })
+  .strict();
 const taskBatchOperationSchema = z
   .object({
     task_id: z.string().min(1),
@@ -163,11 +180,23 @@ export const pawPlanToolSchemas = {
       days: z.number().int().min(1).max(90).optional(),
     })
     .strict(),
+  get_project_portfolio: z
+    .object({
+      status: z.array(projectStatusSchema).min(1).max(4).optional(),
+      category: z.array(z.string().trim().min(1).max(80)).min(1).max(20).optional(),
+      include_milestones: z.boolean().default(true),
+      include_task_summary: z.boolean().default(true),
+    })
+    .strict(),
   get_tasks: z
     .object({
       status: taskStatusSchema.optional(),
       date_from: dateStringSchema.optional(),
       date_to: dateStringSchema.optional(),
+      project_ids: z.array(z.string().uuid()).min(1).max(50).optional(),
+      milestone_ids: z.array(z.string().uuid()).min(1).max(50).optional(),
+      parent_task_id: z.string().uuid().optional(),
+      overdue_as_of: dateStringSchema.optional(),
     })
     .strict(),
   create_inbox_item: z
@@ -251,6 +280,7 @@ export const pawPlanToolSchemas = {
   propose_patch: proposePatchArgsSchema,
   propose_daily_rebalance: proposeRebalanceArgsSchema,
   propose_week_rebalance: proposeRebalanceArgsSchema,
+  propose_overdue_replan: proposeOverdueReplanArgsSchema,
   propose_timetable_import: proposeTimetableImportArgsSchema,
   import_plan_bundle: z
     .object({
@@ -316,18 +346,21 @@ export const pawPlanAgentGuidance = {
 Read first:
 - get_today
 - get_week
+- get_month
 - get_tasks
-- get_constraints
+- get_project_portfolio
 - get_capacity
+- get_constraints
 - get_checkins
 
 Required workflow:
 1. Identify unfinished todo tasks from yesterday or earlier before looking at future capacity.
 2. Summarize today's risks: overdue work, overload, fixed-schedule conflicts, and recovery risk.
-3. If routine task movement is needed, call propose_daily_rebalance with an idempotency_key, a concise reason, and the smallest useful move set.
+3. For unfinished tasks from yesterday or earlier, call propose_overdue_replan. PawPlan chooses capacity-aware dates but creates a Review draft only. Use propose_daily_rebalance only when exact move targets are already known for other routine work.
 4. Inspect the returned status before reporting outcome:
    - draft_created: say a new Review draft was created and tell the user to open Review.
    - duplicate with patchId: say an existing Review draft is already available.
+   - needs_decision: do not move the task or put it in backlog; present it for user choice.
    - no_change: explain why no draft was created.
    - failed: report the error and do not claim success.
 5. Do not apply changes automatically.
@@ -338,6 +371,7 @@ Required workflow:
     "Read planning context before proposing changes.",
     "Use propose_daily_rebalance for routine daily task moves.",
     "Use propose_week_rebalance for routine weekly task moves.",
+    "Use propose_overdue_replan for overdue todo tasks; repeated overdue tasks require a user decision and must not be moved to backlog automatically.",
     "Inspect the returned status before claiming a Review draft exists.",
     "Do not apply changes automatically.",
     "Do not edit constraints through MCP.",
@@ -347,6 +381,7 @@ Required workflow:
   reviewStatusMeanings: {
     draft_created: "A new Review draft was created.",
     duplicate: "A matching existing Review draft is already available; do not claim a new draft.",
+    needs_decision: "No move was applied; one or more tasks need an explicit user decision.",
     no_change: "No Review draft was created.",
     failed: "The operation failed; report the error and do not claim success.",
   },
@@ -366,7 +401,10 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_decisions: "Read recent workspace-scoped structured decisions, optionally filtered by status.",
   get_conversations: "Read recent workspace-scoped structured conversation summaries, optionally filtered by context type.",
   get_checkins: "Read recent daily check-ins for the configured workspace.",
-  get_tasks: "Read workspace-scoped tasks, optionally filtered by status and date range.",
+  get_project_portfolio:
+    "Read workspace-scoped Projects with their definitions, optional Milestones, task status counts, overdue counts, and unassigned-task summary.",
+  get_tasks:
+    "Read workspace-scoped tasks with Project, Milestone, and parent-task context, optionally filtered by status, date range, hierarchy, or overdue date.",
   create_inbox_item: "Create an inbox item and record an MCP audit changelog.",
   create_checkin: "Create or update a daily check-in with MCP source attribution.",
   update_task_status: "Update a task status with MCP source attribution.",
@@ -381,6 +419,8 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
     "Create an idempotent Review draft from task move intent for daily planning. PawPlan fills current from_date/from_day_segment.",
   propose_week_rebalance:
     "Create an idempotent Review draft from task move intent for weekly planning. PawPlan fills current from_date/from_day_segment.",
+  propose_overdue_replan:
+    "Create an idempotent, capacity-aware Review draft for first-time overdue tasks. Repeated overdue or unresolved Project context returns needs_decision and never sends tasks to backlog.",
   propose_timetable_import: "Create a preview-only timetable import draft for user review; this never writes constraints directly.",
   import_plan_bundle: "Import a trusted structured plan bundle into real PawPlan tasks with MCP provenance.",
 };
@@ -458,43 +498,6 @@ function datesInRange(start: Date, end: Date) {
     dates.push(cursor);
   }
   return dates;
-}
-
-function buildTaskFilters(
-  workspaceId: string,
-  args: {
-    status?: "todo" | "done" | "skipped" | "backlog";
-    date_from?: string;
-    date_to?: string;
-  },
-) {
-  const filters: SQL[] = [eq(tasks.workspaceId, workspaceId)];
-  if (args.status) filters.push(eq(tasks.status, args.status));
-  if (args.date_from) filters.push(gte(tasks.date, parseDateBoundary(args.date_from)));
-  if (args.date_to) filters.push(lt(tasks.date, parseDateBoundary(args.date_to)));
-  return filters;
-}
-
-async function readTasks(
-  db: PlanningDb,
-  workspaceId: string,
-  args: {
-    status?: "todo" | "done" | "skipped" | "backlog";
-    date_from?: string;
-    date_to?: string;
-  },
-) {
-  const rows = await db
-    .select()
-    .from(tasks)
-    .where(and(...buildTaskFilters(workspaceId, args)))
-    .orderBy(tasks.date, tasks.daySegment, tasks.createdAt);
-
-  return {
-    workspaceId,
-    filters: args,
-    tasks: rows.map(serializeTask),
-  };
 }
 
 async function readCheckins(db: PlanningDb, workspaceId: string, days = 7) {
@@ -742,6 +745,63 @@ async function runRebalanceTool(
   }
 }
 
+async function runOverdueReplanTool(db: PlanningDb, workspaceId: string, args: unknown) {
+  if (process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED !== "true") {
+    throw new Error("Overdue replan is disabled until migration and shadow verification are complete");
+  }
+  const parsed = proposeOverdueReplanArgsSchema.parse(args);
+  const planId = await getActivePlanId(db, workspaceId);
+  if (!planId) throw new Error("No active plan");
+  const createdBy = parsed.created_by ?? "codex";
+  const run = await startAgentRun(db, {
+    workspaceId,
+    planId,
+    kind: "overdue_replan",
+    idempotencyKey: parsed.idempotency_key,
+    reason: parsed.reason,
+    inputJson: {
+      tool: "propose_overdue_replan",
+      asOfDate: parsed.as_of_date,
+      taskIds: parsed.task_ids,
+    },
+    createdBy,
+  });
+  if (run.duplicate) return run.result;
+
+  try {
+    const proposal = await proposeOverdueReplan(db, {
+      workspaceId,
+      asOfDate: parsed.as_of_date,
+      taskIds: parsed.task_ids,
+      reason: parsed.reason,
+      createdBy,
+    });
+    const status = proposal.patchId && proposal.operationCount > 0
+      ? "draft_created"
+      : proposal.needsDecision.length > 0
+        ? "needs_decision"
+        : "no_change";
+    return completeAgentRun(db, {
+      workspaceId,
+      runId: run.runId,
+      idempotencyKey: parsed.idempotency_key,
+      status,
+      patchId: proposal.patchId,
+      operationCount: proposal.operationCount,
+      skipped: proposal.skipped,
+      warnings: proposal.warnings,
+      needsDecision: proposal.needsDecision,
+    });
+  } catch (error) {
+    return failAgentRun(db, {
+      workspaceId,
+      runId: run.runId,
+      idempotencyKey: parsed.idempotency_key,
+      error: compactRebalanceError(error),
+    });
+  }
+}
+
 export async function runPawPlanTool(
   db: PlanningDb,
   workspaceId: string,
@@ -807,6 +867,10 @@ export async function runPawPlanTool(
   if (toolName === "get_checkins") {
     const parsed = pawPlanToolSchemas.get_checkins.parse(args);
     return readCheckins(db, workspaceId, parsed.days ?? 7);
+  }
+  if (toolName === "get_project_portfolio") {
+    const parsed = pawPlanToolSchemas.get_project_portfolio.parse(args);
+    return getProjectPortfolio(db, workspaceId, parsed);
   }
   if (toolName === "get_tasks") {
     const parsed = pawPlanToolSchemas.get_tasks.parse(args);
@@ -986,6 +1050,10 @@ export async function runPawPlanTool(
 
   if (toolName === "propose_week_rebalance") {
     return runRebalanceTool(db, workspaceId, "propose_week_rebalance", "week", "weekly_rebalance", args);
+  }
+
+  if (toolName === "propose_overdue_replan") {
+    return runOverdueReplanTool(db, workspaceId, args);
   }
 
   const parsed = pawPlanToolSchemas.propose_patch.parse(args);

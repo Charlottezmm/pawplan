@@ -18,6 +18,8 @@ const moveTaskSchema = z.object({
   to_date: z.string(),
   to_day_segment: daySegmentSchema,
   reason: z.string(),
+  overdue_rollover: z.boolean().optional(),
+  expected_rollover_count: z.number().int().nonnegative().optional(),
   ...evidenceFields,
 });
 

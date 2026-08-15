@@ -1,5 +1,6 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   index,
   integer,
@@ -16,6 +17,8 @@ import {
 export const planStatus = pgEnum("plan_status", ["active", "archived"]);
 export const planVersionSource = pgEnum("plan_version_source", ["baseline", "manual_edit", "agent_patch", "mcp"]);
 export const taskStatus = pgEnum("task_status", ["todo", "done", "skipped", "backlog"]);
+export const projectStatus = pgEnum("project_status", ["active", "paused", "completed", "archived"]);
+export const milestoneStatus = pgEnum("milestone_status", ["planned", "in_progress", "completed", "skipped"]);
 export const priority = pgEnum("priority", ["low", "normal", "high", "urgent"]);
 export const energyLevel = pgEnum("energy_level", ["low", "medium", "high"]);
 export const daySegment = pgEnum("day_segment", ["morning", "afternoon", "evening"]);
@@ -27,6 +30,7 @@ export const agentRunKind = pgEnum("agent_run_kind", [
   "morning_rebalance",
   "evening_review",
   "weekly_rebalance",
+  "overdue_replan",
 ]);
 export const agentRunStatus = pgEnum("agent_run_status", [
   "started",
@@ -34,6 +38,7 @@ export const agentRunStatus = pgEnum("agent_run_status", [
   "no_change",
   "duplicate",
   "failed",
+  "needs_decision",
 ]);
 export const inboxSource = pgEnum("inbox_source", ["manual", "imported"]);
 export const checkinTaskStatus = pgEnum("checkin_task_status", ["done", "not_done", "partial", "skipped"]);
@@ -124,9 +129,43 @@ export const projects = pgTable("projects", {
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 120 }).notNull(),
   color: varchar("color", { length: 32 }).notNull().default("#71717a"),
+  category: varchar("category", { length: 80 }),
+  objective: text("objective"),
+  successCriteria: text("success_criteria"),
+  status: projectStatus("status").notNull().default("active"),
+  priority: priority("priority").notNull().default("normal"),
+  startDate: timestamp("start_date", { withTimezone: true }),
+  targetDate: timestamp("target_date", { withTimezone: true }),
+  weeklyTargetMinutes: integer("weekly_target_minutes"),
+  needsDefinition: boolean("needs_definition").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const projectMilestones = pgTable("project_milestones", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 180 }).notNull(),
+  objective: text("objective"),
+  successCriteria: text("success_criteria"),
+  targetDate: timestamp("target_date", { withTimezone: true }),
+  status: milestoneStatus("status").notNull().default("planned"),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  workspaceProjectPositionIdx: index("project_milestones_workspace_project_position_idx").on(
+    table.workspaceId,
+    table.projectId,
+    table.position,
+  ),
+  workspaceStatusTargetIdx: index("project_milestones_workspace_status_target_idx").on(
+    table.workspaceId,
+    table.status,
+    table.targetDate,
+  ),
+}));
 
 export const courses = pgTable("courses", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -174,12 +213,22 @@ export const tasks = pgTable("tasks", {
   isChore: boolean("is_chore").notNull().default(false),
   movable: boolean("movable").notNull().default(true),
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  milestoneId: uuid("milestone_id").references(() => projectMilestones.id, { onDelete: "set null" }),
   courseId: uuid("course_id").references(() => courses.id, { onDelete: "set null" }),
   trackId: uuid("track_id").references(() => tracks.id, { onDelete: "set null" }),
-  parentTaskId: uuid("parent_task_id"),
+  parentTaskId: uuid("parent_task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
+  originalDate: timestamp("original_date", { withTimezone: true }),
+  rolloverCount: integer("rollover_count").notNull().default(0),
+  lastRolloverAt: timestamp("last_rollover_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  workspaceProjectIdx: index("tasks_workspace_project_idx").on(table.workspaceId, table.projectId),
+  workspaceMilestoneIdx: index("tasks_workspace_milestone_idx").on(table.workspaceId, table.milestoneId),
+  overdueCandidateIdx: index("tasks_overdue_candidate_idx")
+    .on(table.workspaceId, table.status, table.date)
+    .where(sql`${table.status} = 'todo'`),
+}));
 
 export const taskTags = pgTable("task_tags", {
   taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),

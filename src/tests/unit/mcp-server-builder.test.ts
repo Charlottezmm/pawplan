@@ -133,6 +133,7 @@ describe("PawPlan MCP server builder", () => {
 
       expect(tool).toBeDefined();
       expect(toolNames).toContain("propose_week_rebalance");
+      expect(toolNames).toContain("propose_overdue_replan");
       expect(moveSchema).toMatchObject({
         type: "object",
         properties: {
@@ -161,6 +162,7 @@ describe("PawPlan MCP server builder", () => {
       const result = await client.listTools();
       expect(result.tools.map((tool) => tool.name)).not.toContain("propose_daily_rebalance");
       expect(result.tools.map((tool) => tool.name)).not.toContain("propose_week_rebalance");
+      expect(result.tools.map((tool) => tool.name)).not.toContain("propose_overdue_replan");
     } finally {
       await client.close();
       await server.close();

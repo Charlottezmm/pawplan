@@ -206,4 +206,40 @@ describe("review view data", () => {
       }),
     );
   });
+
+  it("marks overdue rollover drafts as requiring final rollover readback", () => {
+    const items = buildReschedulePatchItems({
+      patches: [{
+        id: "patch-overdue",
+        createdBy: "codex",
+        createdAt: new Date("2026-08-15T08:00:00.000Z"),
+        patchJson: {
+          operations: [{
+            type: "move_task",
+            task_id: "task-overdue",
+            from_date: "2026-08-14",
+            from_day_segment: "morning",
+            to_date: "2026-08-16",
+            to_day_segment: "afternoon",
+            overdue_rollover: true,
+            expected_rollover_count: 0,
+            reason: "首次逾期，安排到安全时段。",
+          }],
+        },
+      }],
+      tasks: [{ id: "task-overdue", title: "Run experiment" }],
+      agentRuns: [{
+        id: "run-overdue",
+        kind: "overdue_replan",
+        status: "draft_created",
+        patchId: "patch-overdue",
+      }],
+    });
+
+    expect(items[0]).toEqual(expect.objectContaining({
+      kind: "逾期顺延",
+      requiresRolloverReadback: true,
+      agentRunLabel: "Created by overdue replan",
+    }));
+  });
 });
