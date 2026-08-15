@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { AgentRunWarning } from "@/lib/agent-runs/types";
 import { tasks } from "@/lib/db/schema";
 import { PlanningServiceError, proposeAgentPatch } from "@/lib/planning/service";
@@ -90,7 +90,7 @@ export async function proposeRebalancePatch(
             movable: tasks.movable,
           })
           .from(tasks)
-          .where(and(eq(tasks.workspaceId, input.workspaceId), inArray(tasks.id, taskIds)));
+          .where(and(eq(tasks.workspaceId, input.workspaceId), inArray(tasks.id, taskIds), isNull(tasks.archivedAt)));
   const tasksById = new Map(taskRows.map((task) => [task.id, task]));
   const skippedMoves: AgentRunWarning[] = [];
   const operations = [];

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import {
   agentPatches,
   agentPatchReviews,
@@ -8,13 +8,13 @@ import {
   planVersions,
   routines,
   tasks,
-  timeBlocks,
 } from "@/lib/db/schema";
 import { materializeTimetableRows, saveTimetableRowsInTransaction } from "@/lib/imports/timetable-save";
 import { findTimetableImportConflicts } from "@/lib/mcp/timetable-import";
 import { agentPatchSchema, type AgentPatch } from "@/lib/patches/patch-schema";
 import { getActivePlanId } from "@/lib/planning/active-plan";
 import { buildCapacityModel, type CapacitySegment } from "@/lib/planning/capacity-model";
+import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 
 type PatchApplyDb = {
   transaction<T>(callback: (tx: any) => Promise<T>): Promise<T>;
@@ -224,7 +224,14 @@ async function findTask(tx: any, workspaceId: string, planId: string, taskId: st
   const [task] = await tx
     .select()
     .from(tasks)
-    .where(and(eq(tasks.id, taskId), eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId)))
+    .where(
+      and(
+        eq(tasks.id, taskId),
+        eq(tasks.workspaceId, workspaceId),
+        eq(tasks.planId, planId),
+        isNull(tasks.archivedAt),
+      ),
+    )
     .limit(1);
   return task as Record<string, unknown> | undefined;
 }
@@ -248,20 +255,16 @@ async function readTargetCapacity(
         and(
           eq(tasks.workspaceId, input.workspaceId),
           eq(tasks.planId, input.planId),
+          isNull(tasks.archivedAt),
           gte(tasks.date, input.targetDate),
           lt(tasks.date, rangeEnd),
         ),
       ),
-    tx
-      .select()
-      .from(timeBlocks)
-      .where(
-        and(
-          eq(timeBlocks.workspaceId, input.workspaceId),
-          lt(timeBlocks.startsAt, rangeEnd),
-          gte(timeBlocks.endsAt, input.targetDate),
-        ),
-      ),
+    loadEffectiveTimeBlocks(tx, {
+      workspaceId: input.workspaceId,
+      rangeStart: input.targetDate,
+      rangeEnd,
+    }).then((snapshot) => snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null }))),
     tx.select().from(routines).where(eq(routines.workspaceId, input.workspaceId)),
     tx
       .select()

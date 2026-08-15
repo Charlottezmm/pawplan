@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   courses,
@@ -7,6 +7,7 @@ import {
   routines,
   segmentEnergySettings,
   tasks,
+  timeBlockExceptions,
   timeBlocks,
   tracks,
   workspaces,
@@ -21,6 +22,7 @@ const energyLevelSchema = z.enum(["low", "medium", "high"]);
 const routineTimeSegmentSchema = z.enum(["morning", "afternoon", "evening", "specific_window"]);
 const trackKindSchema = z.enum(["main", "work", "side", "recovery", "custom"]);
 const timeBlockKindSchema = z.enum(["course", "meeting", "unavailable", "routine", "recovery"]);
+const timeBlockExceptionActionSchema = z.enum(["cancel", "override"]);
 const taskStatusSchema = z.enum(["todo", "done", "skipped", "backlog"]);
 const prioritySchema = z.enum(["low", "normal", "high", "urgent"]);
 const projectStatusSchema = z.enum(["active", "paused", "completed", "archived"]);
@@ -64,11 +66,25 @@ const timeBlockTemplateSchema = z.object({
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime(),
   recurrenceRule: z.string().nullable(),
+  recurrenceWeekdayMask: z.number().int().min(0).max(127).nullable().optional(),
   courseId: z.string().nullable(),
   trackId: z.string().nullable(),
   movable: z.boolean(),
+  protected: z.boolean().optional(),
   estimatedMinutes: z.number().int().nullable(),
   energyLevel: energyLevelSchema.nullable(),
+});
+
+const timeBlockExceptionTemplateSchema = z.object({
+  id: z.string().min(1),
+  seriesId: z.string().min(1),
+  occurrenceDate: z.string().date(),
+  action: timeBlockExceptionActionSchema,
+  overrideTitle: z.string().min(1).max(180).nullable(),
+  overrideKind: timeBlockKindSchema.nullable(),
+  overrideStartsAt: z.string().datetime().nullable(),
+  overrideEndsAt: z.string().datetime().nullable(),
+  overrideProtected: z.boolean().nullable(),
 });
 
 const legacyTaskTemplateSchema = z.object({
@@ -97,6 +113,7 @@ const templateBase = {
   routines: z.array(routineTemplateSchema),
   segmentEnergySettings: z.array(segmentEnergyTemplateSchema),
   timeBlocks: z.array(timeBlockTemplateSchema),
+  timeBlockExceptions: z.array(timeBlockExceptionTemplateSchema).optional(),
 };
 
 export const pawPlanTemplateV04Schema = z
@@ -174,7 +191,7 @@ export async function exportWorkspaceTemplate(
   const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
   if (!workspace) throw new TemplateExportError("Workspace not found", 404);
 
-  const [projectRows, milestoneRows, trackRows, courseRows, routineRows, energyRows, timeBlockRows, taskRows] = await Promise.all([
+  const [projectRows, milestoneRows, trackRows, courseRows, routineRows, energyRows, timeBlockRows, exceptionRows, taskRows] = await Promise.all([
     db.select().from(projects).where(eq(projects.workspaceId, workspaceId)).orderBy(asc(projects.createdAt)),
     db
       .select()
@@ -192,10 +209,19 @@ export async function exportWorkspaceTemplate(
     db.select().from(timeBlocks).where(eq(timeBlocks.workspaceId, workspaceId)).orderBy(asc(timeBlocks.startsAt)),
     db
       .select()
+      .from(timeBlockExceptions)
+      .where(eq(timeBlockExceptions.workspaceId, workspaceId))
+      .orderBy(asc(timeBlockExceptions.occurrenceDate), asc(timeBlockExceptions.createdAt)),
+    db
+      .select()
       .from(tasks)
-      .where(and(eq(tasks.workspaceId, workspaceId)))
+      .where(and(eq(tasks.workspaceId, workspaceId), isNull(tasks.archivedAt)))
       .orderBy(asc(tasks.date), asc(tasks.createdAt)),
   ]);
+
+  // Keep the exported hierarchy valid when an active child still points at an archived parent.
+  const activeTaskRows = taskRows.filter((task: typeof tasks.$inferSelect) => task.archivedAt == null);
+  const activeTaskIds = new Set(activeTaskRows.map((task: typeof tasks.$inferSelect) => task.id));
 
   return pawPlanTemplateV05Schema.parse({
     schemaVersion: "pawplan.template.v0.5",
@@ -259,13 +285,26 @@ export async function exportWorkspaceTemplate(
       startsAt: iso(block.startsAt),
       endsAt: iso(block.endsAt),
       recurrenceRule: block.recurrenceRule,
+      recurrenceWeekdayMask: block.recurrenceWeekdayMask,
       courseId: block.courseId,
       trackId: block.trackId,
       movable: block.movable,
+      protected: block.protected,
       estimatedMinutes: block.estimatedMinutes,
       energyLevel: block.energyLevel,
     })),
-    tasks: taskRows.map((task: typeof tasks.$inferSelect) => ({
+    timeBlockExceptions: exceptionRows.map((exception: typeof timeBlockExceptions.$inferSelect) => ({
+      id: exception.id,
+      seriesId: exception.seriesId,
+      occurrenceDate: exception.occurrenceDate,
+      action: exception.action,
+      overrideTitle: exception.overrideTitle,
+      overrideKind: exception.overrideKind,
+      overrideStartsAt: exception.overrideStartsAt ? iso(exception.overrideStartsAt) : null,
+      overrideEndsAt: exception.overrideEndsAt ? iso(exception.overrideEndsAt) : null,
+      overrideProtected: exception.overrideProtected,
+    })),
+    tasks: activeTaskRows.map((task: typeof tasks.$inferSelect) => ({
       id: task.id,
       title: task.title,
       notes: task.notes,
@@ -280,7 +319,7 @@ export async function exportWorkspaceTemplate(
       milestoneId: task.milestoneId,
       courseId: task.courseId,
       trackId: task.trackId,
-      parentTaskId: task.parentTaskId,
+      parentTaskId: task.parentTaskId && activeTaskIds.has(task.parentTaskId) ? task.parentTaskId : null,
     })),
   });
 }

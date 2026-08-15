@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getWorkspaceIdFromSession } from "@/lib/auth/session";
@@ -46,13 +46,23 @@ export async function GET(request: Request) {
     const [task] = await db
       .select()
       .from(tasks)
-      .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), eq(tasks.id, taskIdValue)))
+      .where(
+        and(
+          eq(tasks.workspaceId, workspaceId),
+          eq(tasks.planId, planId),
+          eq(tasks.id, taskIdValue),
+          isNull(tasks.archivedAt),
+        ),
+      )
       .limit(1);
     if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
     return NextResponse.json({ task });
   }
 
-  const items = await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId)));
+  const items = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), isNull(tasks.archivedAt)));
   return NextResponse.json({ tasks: items });
 }
 

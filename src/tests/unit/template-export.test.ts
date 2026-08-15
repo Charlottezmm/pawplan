@@ -12,6 +12,7 @@ import {
   routines,
   segmentEnergySettings,
   tasks,
+  timeBlockExceptions,
   timeBlocks,
   tracks,
   workspaces,
@@ -108,11 +109,28 @@ function createExportDb() {
         startsAt: new Date("2026-09-07T01:00:00.000Z"),
         endsAt: new Date("2026-09-07T03:00:00.000Z"),
         recurrenceRule: "weekly",
+        recurrenceWeekdayMask: 2,
         courseId: "course-1",
         trackId: "track-1",
         movable: false,
+        protected: false,
         estimatedMinutes: null,
         energyLevel: null,
+      },
+    ],
+    [getTableName(timeBlockExceptions)]: [
+      {
+        id: "exception-1",
+        workspaceId: "workspace-1",
+        seriesId: "block-1",
+        occurrenceDate: "2026-09-14",
+        action: "override",
+        overrideTitle: "Lecture moved",
+        overrideKind: "course",
+        overrideStartsAt: new Date("2026-09-14T03:00:00.000Z"),
+        overrideEndsAt: new Date("2026-09-14T05:00:00.000Z"),
+        overrideProtected: false,
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
       },
     ],
     [getTableName(tasks)]: [
@@ -134,6 +152,28 @@ function createExportDb() {
         courseId: "course-1",
         trackId: "track-1",
         parentTaskId: null,
+        archivedAt: null,
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      },
+      {
+        id: "task-archived",
+        workspaceId: "workspace-1",
+        planId: "plan-1",
+        title: "Archived history",
+        notes: null,
+        date: new Date("2026-09-09T00:00:00.000Z"),
+        daySegment: "morning",
+        status: "todo",
+        priority: "normal",
+        estimatedMinutes: 30,
+        energyLevel: "medium",
+        movable: true,
+        projectId: null,
+        milestoneId: null,
+        courseId: null,
+        trackId: null,
+        parentTaskId: null,
+        archivedAt: new Date("2026-08-01T00:00:00.000Z"),
         createdAt: new Date("2026-06-01T00:00:00.000Z"),
       },
     ],
@@ -205,7 +245,23 @@ describe("template export", () => {
       expect.arrayContaining([expect.objectContaining({ segment: "morning", energyLevel: "high" })]),
     );
     expect(template.timeBlocks).toEqual([
-      expect.objectContaining({ id: "block-1", title: "Deep Learning Lecture", courseId: "course-1", trackId: "track-1" }),
+      expect.objectContaining({
+        id: "block-1",
+        title: "Deep Learning Lecture",
+        courseId: "course-1",
+        trackId: "track-1",
+        recurrenceWeekdayMask: 2,
+        protected: false,
+      }),
+    ]);
+    expect(template.timeBlockExceptions).toEqual([
+      expect.objectContaining({
+        id: "exception-1",
+        seriesId: "block-1",
+        occurrenceDate: "2026-09-14",
+        action: "override",
+        overrideProtected: false,
+      }),
     ]);
     expect(template.tasks).toEqual([
       expect.objectContaining({
@@ -218,6 +274,7 @@ describe("template export", () => {
         trackId: "track-1",
       }),
     ]);
+    expect(JSON.stringify(template)).not.toContain("Archived history");
 
     expect(db.selectedTables).not.toEqual(
       expect.arrayContaining([

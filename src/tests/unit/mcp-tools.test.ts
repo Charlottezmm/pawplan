@@ -1,5 +1,5 @@
 import { getTableName } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { allowedPawPlanToolNames, pawPlanAgentGuidance, pawPlanToolSchemas, runPawPlanTool } from "@/lib/mcp/tools";
 import { pawPlanToolPermissions, pawPlanWriteToolNames } from "@/lib/mcp/tool-metadata";
@@ -223,6 +223,14 @@ describe("MCP planning tools", () => {
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_week_rebalance");
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_overdue_replan");
     expect(allowedPawPlanToolNames("read_write")).toContain("update_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("archive_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("restore_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("delete_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("update_time_block_series");
+    expect(allowedPawPlanToolNames("read_write")).toContain("delete_time_block_series");
+    expect(allowedPawPlanToolNames("read_write")).toContain("replace_plan_window");
+    expect(allowedPawPlanToolNames("read_only")).not.toContain("preview_task_batch");
+    expect(allowedPawPlanToolNames("read_only")).not.toContain("archive_tasks_batch");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_daily_rebalance");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_week_rebalance");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_overdue_replan");
@@ -347,10 +355,46 @@ describe("MCP planning tools", () => {
         milestone_ids: { type: "array", minItems: 1, maxItems: 50, items: { type: "string", format: "uuid" } },
         parent_task_id: { type: "string", format: "uuid" },
         overdue_as_of: expect.any(Object),
+        archive_state: { type: "string", enum: ["active", "archived", "all"] },
       },
     });
     expect(() => pawPlanToolSchemas.get_tasks.parse({ unknown_filter: true })).toThrow();
     expect(() => pawPlanToolSchemas.get_tasks.parse({ overdue_as_of: "2026/08/15" })).toThrow();
+  });
+
+  it("publishes strict Clean Slate schemas with preview and confirmation gates", () => {
+    const previewSchema = zodToJsonSchema(pawPlanToolSchemas.preview_task_batch) as any;
+    const archiveSchema = zodToJsonSchema(pawPlanToolSchemas.archive_tasks_batch) as any;
+    const deleteSchema = zodToJsonSchema(pawPlanToolSchemas.delete_tasks_batch) as any;
+    const seriesSchema = zodToJsonSchema(pawPlanToolSchemas.update_time_block_series) as any;
+    const replaceSchema = zodToJsonSchema(pawPlanToolSchemas.replace_plan_window) as any;
+
+    expect(previewSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["action", "filters"],
+    });
+    expect(archiveSchema.required).toContain("approval_id");
+    expect(archiveSchema.properties.approval_id).toMatchObject({ type: "string", format: "uuid" });
+    expect(deleteSchema.required).toContain("approval_id");
+    expect(deleteSchema.properties.approval_id).toMatchObject({ type: "string", format: "uuid" });
+    expect(deleteSchema.properties.confirmation).toMatchObject({ const: "PERMANENT_DELETE" });
+    expect(deleteSchema.properties.confirm_task_count).toMatchObject({ maximum: 50 });
+    expect(seriesSchema.properties.scope.enum).toEqual(["occurrence", "following", "series"]);
+    expect(replaceSchema.properties.retire_scope.enum).toEqual(["source_managed", "all_non_completed"]);
+    expect(replaceSchema.properties.tasks.maxItems).toBe(500);
+    expect(() => pawPlanToolSchemas.archive_tasks_batch.parse({
+      preview_token: "x".repeat(40),
+      confirm_task_count: 1,
+      idempotency_key: "archive-1",
+    })).toThrow();
+    expect(() => pawPlanToolSchemas.delete_tasks_batch.parse({
+      preview_token: "x".repeat(40),
+      confirm_task_count: 1,
+      confirmation: "DELETE",
+      idempotency_key: "delete-1",
+      operation_id: "6db5e0e5-8a14-4d76-93ea-9d36cb07ef7d",
+    })).toThrow();
   });
 
   it("reads tasks scoped to the requested workspace", async () => {
@@ -489,8 +533,9 @@ describe("MCP planning tools", () => {
         parentTask: null,
       }),
     ]);
-    expect(db.selects.map((select) => select.table)).toEqual(["tasks", "projects", "project_milestones"]);
+    expect(db.selects.map((select) => select.table)).toEqual(["plans", "tasks", "projects", "project_milestones"]);
     expect(db.selects.every((select) => containsDeepValue(select.predicate, "workspace-1"))).toBe(true);
+    expect(containsDeepValue(db.selects.find((select) => select.table === "tasks")?.predicate, "archived_at")).toBe(true);
     expect(db.inserts).toEqual([]);
     expect(db.updates).toEqual([]);
   });
@@ -1050,6 +1095,8 @@ describe("MCP planning tools", () => {
   it("returns needs_decision for a repeated overdue task without creating a Review draft", async () => {
     const previousFlag = process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED;
     process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED = "true";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-15T04:00:00.000Z"));
     try {
       const db = createFakeDb({
         activePlanId: "plan-1",
@@ -1108,6 +1155,7 @@ describe("MCP planning tools", () => {
         }),
       ]);
     } finally {
+      vi.useRealTimers();
       if (previousFlag === undefined) delete process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED;
       else process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED = previousFlag;
     }

@@ -13,7 +13,11 @@ import {
   mcpTokens,
   mcpUsageEvents,
   oauthAuthorizationCodes,
+  operationApprovals,
+  planOperations,
   planVersions,
+  planWindowRevisions,
+  planWindowTaskRefs,
   plans,
   projectMilestones,
   projects,
@@ -24,6 +28,7 @@ import {
   taskTags,
   tasks,
   timeBlocks,
+  timeBlockExceptions,
   tracks,
 } from "@/lib/db/schema";
 
@@ -34,6 +39,34 @@ describe("schema shape", () => {
 
   it("supports routine and recovery time blocks", () => {
     expect(timeBlocks.kind).toBeDefined();
+  });
+
+  it("supports task archival, recurring block exceptions, and plan-window operations", () => {
+    expect(tasks.archivedAt).toBeDefined();
+    expect(timeBlocks.protected).toBeDefined();
+    expect(timeBlocks.revision).toBeDefined();
+    expect(timeBlockExceptions.seriesId).toBeDefined();
+    expect(timeBlockExceptions.occurrenceDate).toBeDefined();
+    expect(planOperations.idempotencyKey).toBeDefined();
+    expect(planOperations.requestHash).toBeDefined();
+    expect(operationApprovals.operationKind).toBeDefined();
+    expect(operationApprovals.requestHash).toBeDefined();
+    expect(operationApprovals.previewHash).toBeDefined();
+    expect(operationApprovals.status).toBeDefined();
+    expect(operationApprovals.expiresAt).toBeDefined();
+    expect(operationApprovals.consumedAt).toBeDefined();
+    expect(planWindowRevisions.operationId).toBeDefined();
+    expect(planWindowTaskRefs.externalTaskKey).toBeDefined();
+
+    const operationConfig = getTableConfig(planOperations);
+    expect(operationConfig.indexes.find(
+      (candidate) => candidate.config.name === "plan_operations_workspace_idempotency_unique",
+    )?.config.unique).toBe(true);
+
+    const exceptionConfig = getTableConfig(timeBlockExceptions);
+    expect(exceptionConfig.indexes.find(
+      (candidate) => candidate.config.name === "time_block_exceptions_workspace_series_occurrence_unique",
+    )?.config.unique).toBe(true);
   });
 
   it("supports inbox capture", () => {
@@ -142,6 +175,9 @@ describe("schema shape", () => {
     const tenantTables = [
       plans,
       planVersions,
+      planOperations,
+      planWindowRevisions,
+      planWindowTaskRefs,
       projects,
       projectMilestones,
       tracks,
@@ -149,6 +185,7 @@ describe("schema shape", () => {
       taskTags,
       tasks,
       timeBlocks,
+      timeBlockExceptions,
       routines,
       routineCompletions,
       dayCapacities,

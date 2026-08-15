@@ -392,6 +392,10 @@ export function ConstraintsView() {
   }
 
   function editExistingTimeBlock(block: TimeBlock) {
+    if (block.recurrenceRule || block.recurrenceWeekdayMask) {
+      setMessage("循环安排不能直接覆盖；请先生成 Preview，选择“仅本次 / 本次及以后 / 整个系列”，再到 Review 批准。");
+      return;
+    }
     const start = shanghaiInputParts(block.startsAt);
     const end = shanghaiInputParts(block.endsAt);
     setForm({
@@ -408,6 +412,10 @@ export function ConstraintsView() {
   }
 
   async function deleteExistingTimeBlock(block: TimeBlock) {
+    if (block.recurrenceRule || block.recurrenceWeekdayMask) {
+      setMessage("循环安排不能直接删除；请先生成 Preview，选择“仅本次 / 本次及以后 / 整个系列”，再到 Review 批准。");
+      return;
+    }
     setPending(block.id);
     const response = await fetch("/api/constraints", {
       method: "PATCH",
@@ -417,7 +425,8 @@ export function ConstraintsView() {
     setPending(null);
 
     if (!response.ok) {
-      setMessage("约束删除失败。");
+      const data = await response.json().catch(() => null);
+      setMessage(data?.error ?? "约束删除失败。");
       return;
     }
 

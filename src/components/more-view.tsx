@@ -31,6 +31,13 @@ const sections: Array<{ title: string; tools: Tool[] }> = [
         icon: ArchiveRestore,
         active: true,
       },
+      {
+        href: "/archive",
+        title: "历史归档",
+        text: "查看已退出当前计划、但仍可恢复的历史任务。",
+        icon: Archive,
+        active: true,
+      },
     ],
   },
   {

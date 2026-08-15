@@ -66,7 +66,7 @@ describe("PawPlan MCP server builder", () => {
 
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     try {
-      expect(client.getServerVersion()).toEqual({ name: "pawplan", version: "0.2.2" });
+      expect(client.getServerVersion()).toEqual({ name: "pawplan", version: "0.3.0" });
 
       const result = await client.listTools();
       const tool = result.tools.find((candidate) => candidate.name === "propose_patch");
@@ -105,7 +105,8 @@ describe("PawPlan MCP server builder", () => {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     try {
       expect(client.getInstructions()).toContain("get_agent_guidance");
-      expect(client.getInstructions()).toContain("Review draft");
+      expect(client.getInstructions()).toContain("pending approval");
+      expect(client.getInstructions()).toContain("approval_id");
 
       const result = await client.listTools();
       const tool = result.tools.find((candidate) => candidate.name === "get_agent_guidance");

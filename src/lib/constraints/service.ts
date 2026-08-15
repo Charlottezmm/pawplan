@@ -1,8 +1,11 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { editableTimeBlockKinds, type EditableTimeBlockKind, type TimeBlockInput } from "@/lib/constraints/schema";
 import { weekdayMaskFromRecurrence } from "@/lib/constraints/recurrence";
-import { changeLogs, courses, plans, timeBlocks } from "@/lib/db/schema";
-import { expandRecurringBlocks } from "@/lib/planning/recurring-time-blocks";
+import { changeLogs, courses, plans, timeBlockExceptions, timeBlocks } from "@/lib/db/schema";
+import {
+  expandEffectiveRecurringBlocks,
+  type TimeBlockExceptionInput,
+} from "@/lib/planning/recurring-time-blocks";
 
 const editableTimeBlockKindValues = [...editableTimeBlockKinds];
 
@@ -32,6 +35,7 @@ type TimeBlockRow = {
   recurrenceWeekdayMask: number | null;
   courseId: string | null;
   movable: boolean;
+  protected: boolean;
 };
 
 export class ConstraintsServiceError extends Error {
@@ -102,11 +106,11 @@ function buildConstraintConflicts(blocks: TimeBlockRow[]) {
   return conflicts;
 }
 
-function expandBlocksForConflictCheck(blocks: TimeBlockRow[]) {
+function expandBlocksForConflictCheck(blocks: TimeBlockRow[], exceptions: TimeBlockExceptionInput[]) {
   if (blocks.length === 0) return [];
   const rangeStart = new Date(Math.min(...blocks.map((block) => block.startsAt.getTime())));
   const rangeEnd = new Date(Math.max(...blocks.map((block) => block.endsAt.getTime())));
-  return expandRecurringBlocks(blocks, rangeStart, rangeEnd);
+  return expandEffectiveRecurringBlocks(blocks, exceptions, rangeStart, rangeEnd);
 }
 
 async function getActivePlanId(tx: DbLike, workspaceId: string) {
@@ -150,13 +154,18 @@ async function writeManualChangeLog(
 }
 
 export async function getConstraints(db: DbLike, workspaceId: string) {
-  const [courseRows, rawBlocks] = await Promise.all([
+  const [courseRows, rawBlocks, exceptionRows] = await Promise.all([
     db.select().from(courses).where(eq(courses.workspaceId, workspaceId)).orderBy(asc(courses.name)),
     db
       .select()
       .from(timeBlocks)
       .where(and(eq(timeBlocks.workspaceId, workspaceId), inArray(timeBlocks.kind, editableTimeBlockKindValues)))
       .orderBy(asc(timeBlocks.startsAt)),
+    db
+      .select()
+      .from(timeBlockExceptions)
+      .where(eq(timeBlockExceptions.workspaceId, workspaceId))
+      .orderBy(asc(timeBlockExceptions.occurrenceDate)),
   ]);
 
   const courseNames = new Map<string, string>();
@@ -165,7 +174,9 @@ export async function getConstraints(db: DbLike, workspaceId: string) {
   const sortedBlocks = (rawBlocks as TimeBlockRow[])
     .filter((block) => isEditableKind(block.kind))
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-  const conflicts = buildConstraintConflicts(expandBlocksForConflictCheck(sortedBlocks));
+  const conflicts = buildConstraintConflicts(
+    expandBlocksForConflictCheck(sortedBlocks, exceptionRows as TimeBlockExceptionInput[]),
+  );
 
   return {
     workspaceId,
@@ -212,10 +223,16 @@ export async function upsertTimeBlock(db: DbLike, workspaceId: string, input: Ti
 
       if (!existing) throw new ConstraintsServiceError("Time block not found", 404);
       if (!isEditableKind(existing.kind)) throw new ConstraintsServiceError("Time block is not editable here", 403);
+      if (existing.recurrenceRule || existing.recurrenceWeekdayMask) {
+        throw new ConstraintsServiceError(
+          "Recurring time blocks must be changed with an explicit occurrence, following, or series scope",
+          409,
+        );
+      }
 
       const [updated] = await tx
         .update(timeBlocks)
-        .set(values)
+        .set({ ...values, revision: sql`${timeBlocks.revision} + 1`, updatedAt: new Date() })
         .where(and(eq(timeBlocks.id, input.id), eq(timeBlocks.workspaceId, workspaceId)))
         .returning();
       timeBlock = updated as TimeBlockRow;
@@ -253,6 +270,12 @@ export async function deleteTimeBlock(db: DbLike, workspaceId: string, id: strin
 
     if (!existing) throw new ConstraintsServiceError("Time block not found", 404);
     if (!isEditableKind(existing.kind)) throw new ConstraintsServiceError("Time block is not editable here", 403);
+    if (existing.recurrenceRule || existing.recurrenceWeekdayMask) {
+      throw new ConstraintsServiceError(
+        "Recurring time blocks must be deleted with an explicit occurrence, following, or series scope",
+        409,
+      );
+    }
 
     const [deleted] = await tx
       .delete(timeBlocks)

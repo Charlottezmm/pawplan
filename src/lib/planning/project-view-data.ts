@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, lt, type SQL } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { projectMilestones, projects, tasks } from "@/lib/db/schema";
 import { getActivePlanId } from "@/lib/planning/active-plan";
@@ -110,6 +110,35 @@ export type BacklogViewData = {
       priority: Priority;
       estimatedMinutes: number;
       updatedLabel: string;
+    }>;
+  }>;
+};
+
+export type ArchiveHistoryFilters = {
+  status?: TaskStatus;
+  projectId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+export type ArchiveHistoryViewData = {
+  dataUnavailable: boolean;
+  totalCount: number;
+  totalMinutes: number;
+  filters: ArchiveHistoryFilters;
+  projects: Array<{ id: string; name: string }>;
+  groups: Array<{
+    projectId: string | null;
+    projectName: string;
+    category: string | null;
+    color: string;
+    tasks: Array<{
+      id: string;
+      title: string;
+      status: TaskStatus;
+      date: string | null;
+      estimatedMinutes: number;
+      archivedLabel: string;
     }>;
   }>;
 };
@@ -273,7 +302,7 @@ export async function getProjectPortfolioData(workspaceId: string): Promise<Proj
               date: tasks.date,
             })
             .from(tasks)
-            .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId)))
+            .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), isNull(tasks.archivedAt)))
         : Promise.resolve([]),
     ]);
     return { dataUnavailable: false, projects: buildProjectPortfolioData(projectRows, milestoneRows, taskRows) };
@@ -304,7 +333,14 @@ export async function getBacklogPageData(workspaceId: string): Promise<BacklogVi
           updatedAt: tasks.updatedAt,
         })
         .from(tasks)
-        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), eq(tasks.status, "backlog")))
+        .where(
+          and(
+            eq(tasks.workspaceId, workspaceId),
+            eq(tasks.planId, planId),
+            eq(tasks.status, "backlog"),
+            isNull(tasks.archivedAt),
+          ),
+        )
         .orderBy(desc(tasks.updatedAt)),
     ]);
     return buildBacklogData(projectRows, taskRows);
@@ -317,4 +353,89 @@ export async function getBacklogPageData(workspaceId: string): Promise<BacklogVi
 export async function getBacklogCount(workspaceId: string) {
   const data = await getBacklogPageData(workspaceId);
   return { dataUnavailable: data.dataUnavailable, count: data.totalCount };
+}
+
+function parseArchiveBoundary(value: string | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00.000+08:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export async function getArchiveHistoryPageData(
+  workspaceId: string,
+  filters: ArchiveHistoryFilters = {},
+): Promise<ArchiveHistoryViewData> {
+  try {
+    const db = getDb();
+    const planId = await getActivePlanId(db, workspaceId);
+    if (!planId) {
+      return { dataUnavailable: false, totalCount: 0, totalMinutes: 0, filters, projects: [], groups: [] };
+    }
+    const conditions: SQL[] = [
+      eq(tasks.workspaceId, workspaceId),
+      eq(tasks.planId, planId),
+      isNotNull(tasks.archivedAt),
+    ];
+    if (filters.status) conditions.push(eq(tasks.status, filters.status));
+    if (filters.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
+    const dateFrom = parseArchiveBoundary(filters.dateFrom);
+    const dateTo = parseArchiveBoundary(filters.dateTo);
+    if (dateFrom) conditions.push(gte(tasks.date, dateFrom));
+    if (dateTo) conditions.push(lt(tasks.date, dateTo));
+
+    const [projectRows, taskRows] = await Promise.all([
+      db
+        .select({ id: projects.id, name: projects.name, category: projects.category, color: projects.color })
+        .from(projects)
+        .where(eq(projects.workspaceId, workspaceId)),
+      db
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          status: tasks.status,
+          date: tasks.date,
+          projectId: tasks.projectId,
+          estimatedMinutes: tasks.estimatedMinutes,
+          archivedAt: tasks.archivedAt,
+        })
+        .from(tasks)
+        .where(and(...conditions))
+        .orderBy(desc(tasks.archivedAt), tasks.date),
+    ]);
+    const projectMap = new Map(projectRows.map((project) => [project.id, project]));
+    const groups = new Map<string, ArchiveHistoryViewData["groups"][number]>();
+    for (const task of taskRows) {
+      const project = task.projectId ? projectMap.get(task.projectId) : null;
+      const key = project?.id ?? "unassigned";
+      const group = groups.get(key) ?? {
+        projectId: project?.id ?? null,
+        projectName: project?.name ?? "未关联 Project",
+        category: project?.category ?? null,
+        color: project?.color ?? "#a89f8d",
+        tasks: [],
+      };
+      group.tasks.push({
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        date: dateKey(task.date),
+        estimatedMinutes: task.estimatedMinutes,
+        archivedLabel: updatedLabel(task.archivedAt!),
+      });
+      groups.set(key, group);
+    }
+    return {
+      dataUnavailable: false,
+      totalCount: taskRows.length,
+      totalMinutes: taskRows.reduce((sum, task) => sum + task.estimatedMinutes, 0),
+      filters,
+      projects: projectRows.map((project) => ({ id: project.id, name: project.name })),
+      groups: [...groups.values()],
+    };
+  } catch (error) {
+    if (isMissingDatabase(error)) {
+      return { dataUnavailable: true, totalCount: 0, totalMinutes: 0, filters, projects: [], groups: [] };
+    }
+    throw error;
+  }
 }

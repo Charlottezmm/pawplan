@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import {
   dayCapacities,
   plans,
@@ -7,7 +7,6 @@ import {
   routines,
   segmentEnergySettings,
   tasks,
-  timeBlocks,
 } from "@/lib/db/schema";
 import { type AgentRunWarning } from "@/lib/agent-runs/types";
 import {
@@ -17,6 +16,7 @@ import {
   type CapacitySegment,
 } from "@/lib/planning/capacity-model";
 import { proposeAgentPatch } from "@/lib/planning/service";
+import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 
 type PlanningDb = {
   select: (...args: any[]) => any;
@@ -194,6 +194,7 @@ export async function proposeOverdueReplan(
       and(
         eq(tasks.workspaceId, input.workspaceId),
         eq(tasks.planId, plan.id),
+        isNull(tasks.archivedAt),
         inArray(tasks.id, requestedTaskIds),
       ),
     );
@@ -307,11 +308,20 @@ export async function proposeOverdueReplan(
     db
       .select()
       .from(tasks)
-      .where(and(eq(tasks.workspaceId, input.workspaceId), gte(tasks.date, asOf), lt(tasks.date, rangeEnd))),
-    db
-      .select()
-      .from(timeBlocks)
-      .where(and(eq(timeBlocks.workspaceId, input.workspaceId), lt(timeBlocks.startsAt, rangeEnd), gte(timeBlocks.endsAt, asOf))),
+      .where(
+        and(
+          eq(tasks.workspaceId, input.workspaceId),
+          eq(tasks.planId, plan.id),
+          isNull(tasks.archivedAt),
+          gte(tasks.date, asOf),
+          lt(tasks.date, rangeEnd),
+        ),
+      ),
+    loadEffectiveTimeBlocks(db, {
+      workspaceId: input.workspaceId,
+      rangeStart: asOf,
+      rangeEnd,
+    }).then((snapshot) => snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null }))),
     db.select().from(routines).where(eq(routines.workspaceId, input.workspaceId)),
     db
       .select()

@@ -14,6 +14,7 @@ import {
   routines,
   segmentEnergySettings,
   tasks,
+  timeBlockExceptions,
   timeBlocks,
   tracks,
 } from "@/lib/db/schema";
@@ -26,7 +27,7 @@ type TableWrite = {
   inTransaction: boolean;
 };
 
-function createImportDb() {
+function createImportDb(options: { activePlanIds?: string[] } = {}) {
   const inserts: TableWrite[] = [];
   const updates: TableWrite[] = [];
   let inTransaction = false;
@@ -43,6 +44,24 @@ function createImportDb() {
 
   function createClient() {
     return {
+      select() {
+        return {
+          from(table: unknown) {
+            const rows = tableName(table) === "plans"
+              ? (options.activePlanIds ?? []).map((id) => ({ id }))
+              : [];
+            return {
+              where() {
+                return {
+                  limit(count: number) {
+                    return Promise.resolve(rows.slice(0, count));
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
       insert(table: unknown) {
         const tableNameValue = tableName(table);
         return {
@@ -241,6 +260,7 @@ describe("template import", () => {
             title: "Deep Learning Lecture",
             courseId: "courses-1",
             trackId: "tracks-1",
+            protected: true,
           }),
         }),
         expect.objectContaining({
@@ -262,6 +282,48 @@ describe("template import", () => {
         values: expect.objectContaining({ currentVersionId: "plan_versions-1" }),
       }),
     ]);
+  });
+
+  it("preserves protected time blocks and remaps their exceptions", async () => {
+    const db = createImportDb();
+    const templateWithException: PawPlanTemplate = {
+      ...template,
+      timeBlocks: [{
+        ...template.timeBlocks[0],
+        recurrenceWeekdayMask: 2,
+        protected: false,
+      }],
+      timeBlockExceptions: [{
+        id: "source-exception",
+        seriesId: "source-block",
+        occurrenceDate: "2026-09-14",
+        action: "override",
+        overrideTitle: "Lecture moved",
+        overrideKind: "course",
+        overrideStartsAt: "2026-09-14T03:00:00.000Z",
+        overrideEndsAt: "2026-09-14T05:00:00.000Z",
+        overrideProtected: false,
+      }],
+    };
+
+    await importWorkspaceTemplate(db, "target-workspace", { template: templateWithException, mode: "new_plan" });
+
+    expect(db.inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: getTableName(timeBlocks),
+        values: expect.objectContaining({ recurrenceWeekdayMask: 2, protected: false }),
+      }),
+      expect.objectContaining({
+        table: getTableName(timeBlockExceptions),
+        values: expect.objectContaining({
+          workspaceId: "target-workspace",
+          seriesId: "time_blocks-1",
+          occurrenceDate: "2026-09-14",
+          action: "override",
+          overrideProtected: false,
+        }),
+      }),
+    ]));
   });
 
   it("imports v0.5 projects, milestones, and task hierarchy with remapped ids", async () => {
@@ -383,5 +445,19 @@ describe("template import", () => {
       importWorkspaceTemplate(db, "target-workspace", { template: invalidTemplate, mode: "new_plan" }),
     ).rejects.toThrow("Template milestone references an unknown project");
     expect(db.inserts).toEqual([]);
+  });
+
+  it("rejects new-plan import when the workspace already has an active plan", async () => {
+    const db = createImportDb({ activePlanIds: ["existing-plan"] });
+
+    await expect(
+      importWorkspaceTemplate(db, "target-workspace", { template, mode: "new_plan" }),
+    ).rejects.toMatchObject({
+      code: "active_plan_conflict",
+      status: 409,
+      details: { workspaceId: "target-workspace", activePlanIds: ["existing-plan"] },
+    });
+    expect(db.inserts).toEqual([]);
+    expect(db.updates).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
-import { and, eq, gte, inArray, lt, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, type SQL } from "drizzle-orm";
 import { projectMilestones, projects, tasks } from "@/lib/db/schema";
+import { getActivePlanId } from "@/lib/planning/active-plan";
 
 export type ProjectPortfolioFilters = {
   status?: Array<"active" | "paused" | "completed" | "archived">;
@@ -16,6 +17,7 @@ export type TaskContextFilters = {
   milestone_ids?: string[];
   parent_task_id?: string;
   overdue_as_of?: string;
+  archive_state?: "active" | "archived" | "all";
 };
 
 type ReadDb = {
@@ -56,8 +58,15 @@ function taskCounts() {
   return { todo: 0, done: 0, skipped: 0, backlog: 0 };
 }
 
-function buildTaskFilters(workspaceId: string, args: TaskContextFilters) {
-  const filters: SQL[] = [eq(tasks.workspaceId, workspaceId)];
+function archiveFilter(archiveState: TaskContextFilters["archive_state"] = "active") {
+  if (archiveState === "all") return undefined;
+  return archiveState === "archived" ? isNotNull(tasks.archivedAt) : isNull(tasks.archivedAt);
+}
+
+function buildTaskFilters(workspaceId: string, planId: string, args: TaskContextFilters) {
+  const filters: SQL[] = [eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId)];
+  const archived = archiveFilter(args.archive_state);
+  if (archived) filters.push(archived);
   if (args.status) filters.push(eq(tasks.status, args.status));
   if (args.date_from) filters.push(gte(tasks.date, parseDateBoundary(args.date_from)));
   if (args.date_to) filters.push(lt(tasks.date, parseDateBoundary(args.date_to)));
@@ -76,10 +85,12 @@ export async function getTasksWithProjectContext(
   workspaceId: string,
   args: TaskContextFilters,
 ) {
+  const planId = await getActivePlanId(db, workspaceId);
+  if (!planId) return { workspaceId, filters: args, tasks: [] };
   const rows = await db
     .select()
     .from(tasks)
-    .where(and(...buildTaskFilters(workspaceId, args)))
+    .where(and(...buildTaskFilters(workspaceId, planId, args)))
     .orderBy(tasks.date, tasks.daySegment, tasks.createdAt);
 
   const projectIds = [...new Set(rows.map((row: any) => row.projectId).filter(Boolean))] as string[];
@@ -103,7 +114,13 @@ export async function getTasksWithProjectContext(
       ? db
           .select()
           .from(tasks)
-          .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, parentTaskIds)))
+          .where(
+            and(
+              eq(tasks.workspaceId, workspaceId),
+              eq(tasks.planId, planId),
+              inArray(tasks.id, parentTaskIds),
+            ),
+          )
       : Promise.resolve([]),
   ]);
 
@@ -158,6 +175,7 @@ export async function getProjectPortfolio(
   workspaceId: string,
   args: ProjectPortfolioFilters,
 ) {
+  const planId = await getActivePlanId(db, workspaceId);
   const projectFilters: SQL[] = [eq(projects.workspaceId, workspaceId)];
   if (args.status) projectFilters.push(inArray(projects.status, args.status));
   if (args.category) projectFilters.push(inArray(projects.category, args.category));
@@ -177,8 +195,11 @@ export async function getProjectPortfolio(
           .where(and(eq(projectMilestones.workspaceId, workspaceId), inArray(projectMilestones.projectId, projectIds)))
           .orderBy(projectMilestones.position, projectMilestones.targetDate, projectMilestones.createdAt)
       : Promise.resolve([]),
-    args.include_task_summary
-      ? db.select().from(tasks).where(eq(tasks.workspaceId, workspaceId))
+    args.include_task_summary && planId
+      ? db
+          .select()
+          .from(tasks)
+          .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), isNull(tasks.archivedAt)))
       : Promise.resolve([]),
   ]);
 

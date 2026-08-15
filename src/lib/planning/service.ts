@@ -1,4 +1,4 @@
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { agentPatches, changeLogs, checkins, inboxItems, routines, tasks, timeBlocks } from "@/lib/db/schema";
 import { validatePatchAgainstProtectedBlocks, type AgentPatch } from "@/lib/patches/patch-schema";
 import {
@@ -147,7 +147,7 @@ async function getProtectedBlockIds(db: PlanningDb, workspaceId: string) {
     .where(
       and(
         eq(timeBlocks.workspaceId, workspaceId),
-        or(eq(timeBlocks.kind, "routine"), eq(timeBlocks.kind, "recovery")),
+        eq(timeBlocks.protected, true),
       ),
     );
 
@@ -187,7 +187,7 @@ export async function updateTaskStatus(
     const [task] = await tx
       .update(tasks)
       .set(values)
-      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId)))
+      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId), isNull(tasks.archivedAt)))
       .returning();
 
     if (!task) return null;
@@ -251,7 +251,7 @@ export async function updateTaskSchedule(
     const [task] = await tx
       .update(tasks)
       .set(values)
-      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId)))
+      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId), isNull(tasks.archivedAt)))
       .returning();
 
     if (!task) return null;
@@ -284,7 +284,7 @@ export async function updateTaskNotes(
     const [task] = await tx
       .update(tasks)
       .set({ notes, updatedAt: new Date() })
-      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId)))
+      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId), isNull(tasks.archivedAt)))
       .returning();
 
     if (!task) return null;

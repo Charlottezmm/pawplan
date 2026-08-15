@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { changeLogs, mcpTaskWriteBatches, tasks } from "@/lib/db/schema";
 
 type TaskStatus = "todo" | "done" | "skipped" | "backlog";
@@ -105,7 +105,7 @@ async function readTasks(tx: any, workspaceId: string, taskIds: string[], lock =
       blocked: tasks.blocked,
     })
     .from(tasks)
-    .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, taskIds)));
+    .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, taskIds), isNull(tasks.archivedAt)));
   const rows = lock ? await query.orderBy(tasks.id).for("update") : await query;
   return (rows as Array<Record<string, any>>).filter((row) => taskIds.includes(String(row.id)));
 }

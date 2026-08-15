@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   courses,
@@ -9,12 +9,14 @@ import {
   routines,
   segmentEnergySettings,
   tasks,
+  timeBlockExceptions,
   timeBlocks,
   tracks,
 } from "@/lib/db/schema";
 import { pawPlanTemplateSchema, type PawPlanTemplate } from "@/lib/templates/export";
 
 type TxLike = {
+  select: (...args: any[]) => any;
   insert: (...args: any[]) => any;
   update: (...args: any[]) => any;
 };
@@ -33,12 +35,31 @@ export const templateImportRequestSchema = z
 export type TemplateImportRequest = z.infer<typeof templateImportRequestSchema>;
 
 export class TemplateImportError extends Error {
-  constructor(message: string, public status = 400) {
+  constructor(
+    message: string,
+    public status = 400,
+    public code = "template_import_failed",
+    public details: Record<string, unknown> = {},
+  ) {
     super(message);
   }
 }
 
 function validateTemplateReferences(template: PawPlanTemplate) {
+  const timeBlockIds = new Set(template.timeBlocks.map((block) => block.id));
+  const exceptionIds = new Set((template.timeBlockExceptions ?? []).map((exception) => exception.id));
+  if (timeBlockIds.size !== template.timeBlocks.length) {
+    throw new TemplateImportError("Template contains duplicate time block ids");
+  }
+  if (exceptionIds.size !== (template.timeBlockExceptions ?? []).length) {
+    throw new TemplateImportError("Template contains duplicate time block exception ids");
+  }
+  for (const exception of template.timeBlockExceptions ?? []) {
+    if (!timeBlockIds.has(exception.seriesId)) {
+      throw new TemplateImportError("Template time block exception references an unknown series");
+    }
+  }
+
   if (template.schemaVersion !== "pawplan.template.v0.5") return;
 
   const projectIds = new Set(template.projects.map((project) => project.id));
@@ -155,11 +176,26 @@ export async function importWorkspaceTemplate(
       courses: template.courses.length,
       routines: template.routines.length,
       timeBlocks: template.timeBlocks.length,
+      timeBlockExceptions: (template.timeBlockExceptions ?? []).length,
       tasks: template.tasks.length,
     },
   };
 
   return db.transaction(async (tx) => {
+    const activePlans = await tx
+      .select({ id: plans.id })
+      .from(plans)
+      .where(and(eq(plans.workspaceId, workspaceId), eq(plans.status, "active")))
+      .limit(2);
+    if (activePlans.length > 0) {
+      throw new TemplateImportError(
+        "Workspace already has an active plan; choose how to handle it before importing a new plan",
+        409,
+        "active_plan_conflict",
+        { workspaceId, activePlanIds: activePlans.map((plan: { id: string }) => plan.id) },
+      );
+    }
+
     const [plan] = await tx
       .insert(plans)
       .values({
@@ -302,8 +338,8 @@ export async function importWorkspaceTemplate(
       );
     }
 
-    if (template.timeBlocks.length > 0) {
-      await tx.insert(timeBlocks).values(
+    const timeBlockRows = template.timeBlocks.length > 0
+      ? await tx.insert(timeBlocks).values(
         template.timeBlocks.map((block) => ({
           workspaceId,
           title: block.title,
@@ -311,12 +347,36 @@ export async function importWorkspaceTemplate(
           startsAt: parseDate(block.startsAt),
           endsAt: parseDate(block.endsAt),
           recurrenceRule: block.recurrenceRule,
+          recurrenceWeekdayMask: block.recurrenceWeekdayMask ?? null,
           courseId: mappedId(courseIdMap, block.courseId),
           trackId: mappedId(trackIdMap, block.trackId),
           movable: block.movable,
+          protected: block.protected ?? true,
           estimatedMinutes: block.estimatedMinutes,
           energyLevel: block.energyLevel,
         })),
+      ).returning()
+      : [];
+    const timeBlockIdMap = new Map(template.timeBlocks.map((block, index) => [block.id, timeBlockRows[index]?.id]));
+
+    if ((template.timeBlockExceptions ?? []).length > 0) {
+      await tx.insert(timeBlockExceptions).values(
+        (template.timeBlockExceptions ?? []).flatMap((exception) => {
+          const seriesId = mappedId(timeBlockIdMap, exception.seriesId);
+          return seriesId
+            ? [{
+                workspaceId,
+                seriesId,
+                occurrenceDate: exception.occurrenceDate,
+                action: exception.action,
+                overrideTitle: exception.overrideTitle,
+                overrideKind: exception.overrideKind,
+                overrideStartsAt: exception.overrideStartsAt ? parseDate(exception.overrideStartsAt) : null,
+                overrideEndsAt: exception.overrideEndsAt ? parseDate(exception.overrideEndsAt) : null,
+                overrideProtected: exception.overrideProtected,
+              }]
+            : [];
+        }),
       );
     }
 

@@ -333,6 +333,39 @@ describe("constraints service", () => {
     expect(db.deletes).toEqual([]);
   });
 
+  it("requires an explicit scope before updating or deleting a recurring block", async () => {
+    const db = createFakeDb({
+      timeBlocks: [{
+        id: "block-1",
+        workspaceId: "workspace-1",
+        title: "Weekly meeting",
+        kind: "meeting",
+        recurrenceRule: "weekly",
+        recurrenceWeekdayMask: 1 << 1,
+      }],
+    });
+
+    await expect(upsertTimeBlock(db, "workspace-1", {
+      id: "block-1",
+      title: "Updated weekly meeting",
+      kind: "meeting",
+      startsAt: new Date("2026-06-15T01:00:00.000Z"),
+      endsAt: new Date("2026-06-15T03:00:00.000Z"),
+      recurrenceRule: "weekly",
+    })).rejects.toEqual(new ConstraintsServiceError(
+      "Recurring time blocks must be changed with an explicit occurrence, following, or series scope",
+      409,
+    ));
+    await expect(deleteTimeBlock(db, "workspace-1", "block-1")).rejects.toEqual(
+      new ConstraintsServiceError(
+        "Recurring time blocks must be deleted with an explicit occurrence, following, or series scope",
+        409,
+      ),
+    );
+    expect(db.updates).toEqual([]);
+    expect(db.deletes).toEqual([]);
+  });
+
   it("deletes editable blocks with the stable API response", async () => {
     const db = createFakeDb({
       timeBlocks: [{ id: "block-1", workspaceId: "workspace-1", title: "Class", kind: "course" }],

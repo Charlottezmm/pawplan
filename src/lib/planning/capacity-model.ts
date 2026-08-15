@@ -20,6 +20,7 @@ export type CapacityTimeBlockInput = {
   startsAt: Date;
   endsAt: Date;
   recurrenceWeekdayMask?: number | null;
+  protected?: boolean;
 };
 
 export type CapacityRoutineInput = {
@@ -278,7 +279,7 @@ export function buildCapacityModel(input: CapacityModelInput): CapacityModelResu
             title: block.title,
             kind: block.kind,
             minutes,
-            protected: true,
+            protected: block.protected ?? true,
           },
           block.kind === "routine" ? "capacity_window" : "blocked",
         );
