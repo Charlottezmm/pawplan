@@ -10,6 +10,11 @@ import {
   type PawPlanToolName,
 } from "@/lib/mcp/tools";
 import { McpTaskBatchError } from "@/lib/mcp/task-batch";
+import { McpTaskArchiveError } from "@/lib/mcp/task-archive";
+import { ReplacePlanWindowError } from "@/lib/mcp/replace-plan-window";
+import { TimeBlockSeriesError } from "@/lib/constraints/time-block-series";
+import { ActivePlanError } from "@/lib/planning/active-plan";
+import { OperationApprovalError } from "@/lib/approvals/service";
 
 function jsonToolResult(value: unknown) {
   return {
@@ -39,11 +44,23 @@ function jsonToolError(error: McpTaskBatchError, args: unknown) {
   return { ...jsonToolResult(value), isError: true as const };
 }
 
+function jsonOperationError(error: {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}) {
+  const value = {
+    status: "failed" as const,
+    error: { code: error.code, message: error.message, details: error.details },
+  };
+  return { ...jsonToolResult(value), isError: true as const };
+}
+
 export function createPawPlanMcpServer(input: { workspaceId: string; permission: McpPermission }) {
   const db = getDb();
   const server = new McpServer({
     name: "pawplan",
-    version: "0.2.2",
+    version: "0.3.0",
   }, {
     instructions: pawPlanServerInstructions,
   });
@@ -61,6 +78,15 @@ export function createPawPlanMcpServer(input: { workspaceId: string; permission:
           return jsonToolResult(await runPawPlanTool(db, input.workspaceId, toolName, args, input.permission));
         } catch (error) {
           if (error instanceof McpTaskBatchError) return jsonToolError(error, args);
+          if (
+            error instanceof McpTaskArchiveError ||
+            error instanceof ReplacePlanWindowError ||
+            error instanceof TimeBlockSeriesError ||
+            error instanceof ActivePlanError ||
+            error instanceof OperationApprovalError
+          ) {
+            return jsonOperationError(error);
+          }
           throw error;
         }
       },

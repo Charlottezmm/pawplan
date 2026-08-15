@@ -5,6 +5,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CatIcon } from "./cat-icon";
 import {
+  OperationApprovalList,
+  type PendingOperationApproval,
+} from "./operation-approval-list";
+import {
   getRejectReviewPatchesNotice,
   getReviewQueueSummary,
   parseRejectReviewPatchesResponse,
@@ -15,13 +19,26 @@ type Decision = "accepted" | "rejected";
 type PatchItem = RescheduleViewData["patchItems"][number];
 type ApplyPatchResponse = {
   status?: "applied" | "rejected" | "conflicted";
+  applied?: Array<{
+    index: number;
+    type: string;
+    taskId?: string;
+    action: string;
+    readback?: Record<string, unknown>;
+  }>;
   skipped?: Array<{ index: number; reason?: string }>;
   conflicts?: Array<{ index: number; reason?: string; expected?: Record<string, unknown>; actual?: Record<string, unknown> }>;
 };
 
 type PendingAction = "bulk-reject" | "single-reject" | "apply-selected";
 
-export function ReviewPreview({ data }: { data: RescheduleViewData }) {
+export function ReviewPreview({
+  data,
+  approvals = [],
+}: {
+  data: RescheduleViewData;
+  approvals?: PendingOperationApproval[];
+}) {
   const router = useRouter();
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
   const [closedPatchIds, setClosedPatchIds] = useState<string[]>([]);
@@ -163,12 +180,9 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
           throw new Error(body?.error ?? "应用建议失败");
         }
         const body = (await response.json().catch(() => null)) as ApplyPatchResponse | null;
+        const applied = body?.applied ?? [];
         const skipped = body?.skipped ?? [];
         const conflicts = body?.conflicts ?? [];
-        if (body?.status === "applied" || body?.status === "rejected") {
-          setClosedPatchIds((current) => [...current, patchId]);
-          setDecisions((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !id.startsWith(`${patchId}:`))));
-        }
         if (skipped.length > 0 || conflicts.length > 0) {
           setReviewResults((current) => {
             const next = { ...current };
@@ -194,6 +208,46 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
           const reasons = [...new Set([...skipped, ...conflicts].map((item) => item.reason).filter(Boolean))];
           setApplyError(`有 ${Math.max(skipped.length, conflicts.length)} 条建议未应用${reasons.length > 0 ? `：${reasons.join("；")}` : ""}`);
           continue;
+        }
+
+        if (body?.status === "applied") {
+          const acceptedItems = actionable.filter(
+            (item) => item.patchId === patchId && acceptedOperationIndexes.includes(item.operationIndex),
+          );
+          const appliedByIndex = new Map(applied.map((item) => [item.index, item]));
+          const missingReadbacks = acceptedItems.filter((item) => {
+            const appliedItem = appliedByIndex.get(item.operationIndex);
+            if (!appliedItem) return true;
+            if (item.operationType !== "move_task") return false;
+            const readback = appliedItem.readback;
+            if (!readback || typeof readback.date !== "string" || typeof readback.daySegment !== "string") return true;
+            if (`${readback.date} ${readback.daySegment}` !== item.to) return true;
+            if (!item.requiresRolloverReadback) return false;
+            return typeof readback.rolloverCount !== "number" || !readback.lastRolloverAt;
+          });
+          if (missingReadbacks.length > 0) {
+            throw new Error("写入返回成功，但最终状态读回不完整；草稿仍保留，请刷新后核对。");
+          }
+          const moveReadbacks = acceptedItems
+            .map((item) => ({ item, applied: appliedByIndex.get(item.operationIndex) }))
+            .filter((entry) => entry.item.operationType === "move_task" && entry.applied?.readback)
+            .map((entry) => {
+              const readback = entry.applied!.readback!;
+              const rollover = entry.item.requiresRolloverReadback ? `，顺延次数 ${String(readback.rolloverCount)}` : "";
+              return `${entry.item.title} → ${String(readback.date)} ${String(readback.daySegment)}${rollover}`;
+            });
+          setApplyNotice(
+            moveReadbacks.length > 0
+              ? `已写入并读回最终状态：${moveReadbacks.join("；")}`
+              : `已写入并读回 ${applied.length} 项最终状态。`,
+          );
+          setClosedPatchIds((current) => [...current, patchId]);
+          setDecisions((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !id.startsWith(`${patchId}:`))));
+        } else if (body?.status === "rejected") {
+          setClosedPatchIds((current) => [...current, patchId]);
+          setDecisions((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !id.startsWith(`${patchId}:`))));
+        } else {
+          throw new Error("审核结果无法确认，草稿仍保留，请刷新后核对。");
         }
       }
     } catch (error) {
@@ -225,6 +279,8 @@ export function ReviewPreview({ data }: { data: RescheduleViewData }) {
       ) : null}
 
       <div className="paw-trust-banner">Routine 和 Recovery 受保护；Agent 可以提任务调整或日程导入草稿，但只有你确认后才会写入。</div>
+
+      <OperationApprovalList approvals={approvals} />
 
       <section className="paw-list-card mb-4">
         <div className="paw-list-header">

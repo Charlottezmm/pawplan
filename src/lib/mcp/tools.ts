@@ -1,8 +1,8 @@
-import { and, desc, eq, gte, lt, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
-import { checkins, courses, dayCapacities, routines, tasks, timeBlocks } from "@/lib/db/schema";
+import { checkins, courses, dayCapacities, routines, tasks } from "@/lib/db/schema";
 import { buildCapacityModel } from "@/lib/planning/capacity-model";
-import { expandRecurringBlocks } from "@/lib/planning/recurring-time-blocks";
+import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 import {
   completeAgentRun,
   failAgentRun,
@@ -19,6 +19,7 @@ import {
   updateTaskStatus,
 } from "@/lib/planning/service";
 import { proposeRebalancePatch } from "@/lib/planning/rebalance";
+import { proposeOverdueReplan } from "@/lib/planning/overdue-replan";
 import { saveMcpPlanImport } from "@/lib/mcp/plan-import";
 import {
   getConversationSummaries,
@@ -28,7 +29,21 @@ import {
 } from "@/lib/mcp/conversation-tools";
 import { proposeTimetableImport, proposeTimetableImportArgsSchema } from "@/lib/mcp/timetable-import";
 import { updateTasksBatch } from "@/lib/mcp/task-batch";
+import {
+  applyTaskArchiveBatch,
+  attachTaskBatchPostCommitReadback,
+  previewTaskBatch,
+} from "@/lib/mcp/task-archive";
+import { previewReplacePlanWindow, replacePlanWindow } from "@/lib/mcp/replace-plan-window";
+import {
+  applyTimeBlockSeriesMutation,
+  previewTimeBlockSeriesMutation,
+} from "@/lib/constraints/time-block-series";
 import { getHostedMcpUsageSnapshot } from "@/lib/mcp/usage";
+import {
+  getProjectPortfolio,
+  getTasksWithProjectContext as readTasks,
+} from "@/lib/mcp/project-context";
 import {
   isPawPlanWriteTool,
   pawPlanWriteToolNames,
@@ -46,6 +61,7 @@ type PlanningDb = {
 type SerializedTask = ReturnType<typeof serializeTask>;
 
 const taskStatusSchema = z.enum(["todo", "done", "skipped", "backlog"]);
+const projectStatusSchema = z.enum(["active", "paused", "completed", "archived"]);
 const prioritySchema = z.enum(["low", "normal", "high", "urgent"]);
 const energyLevelSchema = z.enum(["low", "medium", "high"]);
 const daySegmentSchema = z.enum(["morning", "afternoon", "evening"]);
@@ -116,6 +132,17 @@ const proposeRebalanceArgsSchema = z
     created_by: createdBySchema.optional(),
   })
   .strict();
+const proposeOverdueReplanArgsSchema = z
+  .object({
+    idempotency_key: z.string().trim().min(8).max(200),
+    as_of_date: dateStringSchema,
+    task_ids: z.array(z.string().min(1)).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, {
+      message: "task_ids must be unique",
+    }),
+    reason: z.string().trim().min(1).max(4000),
+    created_by: createdBySchema.optional(),
+  })
+  .strict();
 const taskBatchOperationSchema = z
   .object({
     task_id: z.string().min(1),
@@ -137,6 +164,99 @@ const taskBatchOperationSchema = z
       operation.blocked !== undefined,
     { message: "Each batch operation must update status, date, day_segment, or blocked" },
   );
+
+const taskBatchFiltersSchema = z
+  .object({
+    statuses: z.array(taskStatusSchema).min(1).max(4).refine((values) => new Set(values).size === values.length, {
+      message: "statuses must be unique",
+    }).optional(),
+    date_from: dateStringSchema.optional(),
+    date_to: dateStringSchema.optional(),
+    project_ids: z.array(z.string().uuid()).min(1).max(100).refine((values) => new Set(values).size === values.length, {
+      message: "project_ids must be unique",
+    }).optional(),
+    task_ids: z.array(z.string().uuid()).min(1).max(500).refine((values) => new Set(values).size === values.length, {
+      message: "task_ids must be unique",
+    }).optional(),
+  })
+  .strict()
+  .superRefine((filters, context) => {
+    if (Object.values(filters).every((value) => value === undefined)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "At least one task filter is required" });
+    }
+    if ((filters.date_from === undefined) !== (filters.date_to === undefined)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "date_from and date_to must be provided together" });
+    }
+  });
+
+const taskArchiveApplySchema = z
+  .object({
+    preview_token: z.string().min(32),
+    approval_id: z.string().uuid(),
+    confirm_task_count: z.number().int().min(1).max(500),
+    idempotency_key: z.string().trim().min(8).max(200),
+  })
+  .strict();
+
+const timeBlockSeriesChangesSchema = z
+  .object({
+    title: z.string().trim().min(1).max(180).optional(),
+    kind: z.enum(["course", "meeting", "unavailable", "routine", "recovery"]).optional(),
+    start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    end_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    weekday_mask: z.number().int().min(0).max(127).nullable().optional(),
+    recurrence_label: z.string().trim().max(160).nullable().optional(),
+    protected: z.boolean().optional(),
+    starts_on: dateStringSchema.optional(),
+    ends_on: dateStringSchema.optional(),
+  })
+  .strict();
+
+const timeBlockSeriesBaseSchema = z
+  .object({
+    series_id: z.string().uuid(),
+    scope: z.enum(["occurrence", "following", "series"]),
+    occurrence_date: dateStringSchema,
+    mode: z.enum(["preview", "apply"]),
+    preview_token: z.string().min(32).optional(),
+    approval_id: z.string().uuid().optional(),
+    idempotency_key: z.string().trim().min(8).max(200),
+  })
+  .strict();
+
+const replacePlanTaskSchema = z
+  .object({
+    external_task_key: z.string().trim().min(1).max(200),
+    title: z.string().trim().min(1).max(240),
+    project_id: z.string().uuid(),
+    milestone_id: z.string().uuid().nullable().optional(),
+    parent_external_task_key: z.string().trim().min(1).max(200).nullable().optional(),
+    notes: z.string().max(4000).nullable().optional(),
+    date: dateStringSchema,
+    day_segment: daySegmentSchema,
+    estimated_minutes: z.number().int().min(5).max(480),
+    priority: prioritySchema.optional(),
+    energy_level: energyLevelSchema.optional(),
+    movable: z.boolean().optional(),
+    blocked: z.boolean().optional(),
+  })
+  .strict();
+
+const weeklySummarySchema = z
+  .object({
+    week_start: dateStringSchema,
+    focus: z.string().trim().min(1).max(2000),
+    milestones: z.array(z.string().trim().min(1).max(240)).max(30),
+  })
+  .strict();
+
+const monthlySummarySchema = z
+  .object({
+    month: z.string().regex(/^\d{4}-\d{2}$/),
+    goal: z.string().trim().min(1).max(2000),
+    milestones: z.array(z.string().trim().min(1).max(240)).max(50),
+  })
+  .strict();
 
 export const pawPlanToolSchemas = {
   get_agent_guidance: emptyArgsSchema,
@@ -163,11 +283,68 @@ export const pawPlanToolSchemas = {
       days: z.number().int().min(1).max(90).optional(),
     })
     .strict(),
+  get_project_portfolio: z
+    .object({
+      status: z.array(projectStatusSchema).min(1).max(4).optional(),
+      category: z.array(z.string().trim().min(1).max(80)).min(1).max(20).optional(),
+      include_milestones: z.boolean().default(true),
+      include_task_summary: z.boolean().default(true),
+    })
+    .strict(),
   get_tasks: z
     .object({
       status: taskStatusSchema.optional(),
+      archive_state: z.enum(["active", "archived", "all"]).optional(),
       date_from: dateStringSchema.optional(),
       date_to: dateStringSchema.optional(),
+      project_ids: z.array(z.string().uuid()).min(1).max(50).optional(),
+      milestone_ids: z.array(z.string().uuid()).min(1).max(50).optional(),
+      parent_task_id: z.string().uuid().optional(),
+      overdue_as_of: dateStringSchema.optional(),
+    })
+    .strict(),
+  preview_task_batch: z
+    .object({
+      action: z.enum(["archive", "restore", "delete"]),
+      filters: taskBatchFiltersSchema,
+      include_done: z.boolean().optional(),
+      allow_delete_unarchived: z.boolean().optional(),
+    })
+    .strict(),
+  archive_tasks_batch: taskArchiveApplySchema,
+  restore_tasks_batch: taskArchiveApplySchema,
+  delete_tasks_batch: z
+    .object({
+      preview_token: z.string().min(32),
+      approval_id: z.string().uuid(),
+      confirm_task_count: z.number().int().min(1).max(50),
+      confirmation: z.literal("PERMANENT_DELETE"),
+      idempotency_key: z.string().trim().min(8).max(200),
+      operation_id: z.string().uuid(),
+    })
+    .strict(),
+  update_time_block_series: timeBlockSeriesBaseSchema
+    .extend({ changes: timeBlockSeriesChangesSchema }),
+  delete_time_block_series: timeBlockSeriesBaseSchema,
+  replace_plan_window: z
+    .object({
+      date_from: dateStringSchema,
+      date_to: dateStringSchema,
+      source_key: z.string().trim().min(1).max(160),
+      expected_plan_id: z.string().uuid(),
+      expected_current_version_id: z.string().uuid().nullable(),
+      retire_scope: z.enum(["source_managed", "all_non_completed"]),
+      tasks: z.array(replacePlanTaskSchema).max(500),
+      weekly_summaries: z.array(weeklySummarySchema).max(20),
+      monthly_summaries: z.array(monthlySummarySchema).max(12),
+      focus_project_ids: z.array(z.string().uuid()).max(50).refine((values) => new Set(values).size === values.length, {
+        message: "focus_project_ids must be unique",
+      }),
+      idempotency_key: z.string().trim().min(8).max(200),
+      mode: z.enum(["preview", "replace"]),
+      preview_token: z.string().min(32).optional(),
+      approval_id: z.string().uuid().optional(),
+      created_by: createdBySchema.optional(),
     })
     .strict(),
   create_inbox_item: z
@@ -251,6 +428,7 @@ export const pawPlanToolSchemas = {
   propose_patch: proposePatchArgsSchema,
   propose_daily_rebalance: proposeRebalanceArgsSchema,
   propose_week_rebalance: proposeRebalanceArgsSchema,
+  propose_overdue_replan: proposeOverdueReplanArgsSchema,
   propose_timetable_import: proposeTimetableImportArgsSchema,
   import_plan_bundle: z
     .object({
@@ -316,18 +494,21 @@ export const pawPlanAgentGuidance = {
 Read first:
 - get_today
 - get_week
+- get_month
 - get_tasks
-- get_constraints
+- get_project_portfolio
 - get_capacity
+- get_constraints
 - get_checkins
 
 Required workflow:
 1. Identify unfinished todo tasks from yesterday or earlier before looking at future capacity.
 2. Summarize today's risks: overdue work, overload, fixed-schedule conflicts, and recovery risk.
-3. If routine task movement is needed, call propose_daily_rebalance with an idempotency_key, a concise reason, and the smallest useful move set.
+3. For unfinished tasks from yesterday or earlier, call propose_overdue_replan. PawPlan chooses capacity-aware dates but creates a Review draft only. Use propose_daily_rebalance only when exact move targets are already known for other routine work.
 4. Inspect the returned status before reporting outcome:
    - draft_created: say a new Review draft was created and tell the user to open Review.
    - duplicate with patchId: say an existing Review draft is already available.
+   - needs_decision: do not move the task or put it in backlog; present it for user choice.
    - no_change: explain why no draft was created.
    - failed: report the error and do not claim success.
 5. Do not apply changes automatically.
@@ -338,6 +519,7 @@ Required workflow:
     "Read planning context before proposing changes.",
     "Use propose_daily_rebalance for routine daily task moves.",
     "Use propose_week_rebalance for routine weekly task moves.",
+    "Use propose_overdue_replan for overdue todo tasks; repeated overdue tasks require a user decision and must not be moved to backlog automatically.",
     "Inspect the returned status before claiming a Review draft exists.",
     "Do not apply changes automatically.",
     "Do not edit constraints through MCP.",
@@ -347,13 +529,14 @@ Required workflow:
   reviewStatusMeanings: {
     draft_created: "A new Review draft was created.",
     duplicate: "A matching existing Review draft is already available; do not claim a new draft.",
+    needs_decision: "No move was applied; one or more tasks need an explicit user decision.",
     no_change: "No Review draft was created.",
     failed: "The operation failed; report the error and do not claim success.",
   },
 };
 
 export const pawPlanServerInstructions =
-  "PawPlan is review-first. Before daily planning or task cleanup, call get_agent_guidance and follow its daily prompt. Rebalance tools create Review drafts only; never claim changes are applied until the user approves them in PawPlan Review.";
+  "PawPlan is review-first. Rebalance tools create a Review draft only. Before daily planning or task cleanup, call get_agent_guidance and follow its daily prompt. Clean Slate Preview responses create a pending approval in PawPlan Review; an MCP agent cannot approve it. Apply only after the user approves it there and supplies the approval_id. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_agent_guidance: "Read PawPlan daily agent guidance, Review-first safety rules, and the recommended daily task cleanup prompt.",
@@ -366,7 +549,24 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_decisions: "Read recent workspace-scoped structured decisions, optionally filtered by status.",
   get_conversations: "Read recent workspace-scoped structured conversation summaries, optionally filtered by context type.",
   get_checkins: "Read recent daily check-ins for the configured workspace.",
-  get_tasks: "Read workspace-scoped tasks, optionally filtered by status and date range.",
+  get_project_portfolio:
+    "Read workspace-scoped Projects with their definitions, optional Milestones, task status counts, overdue counts, and unassigned-task summary.",
+  get_tasks:
+    "Read workspace-scoped tasks with Project, Milestone, and parent-task context, optionally filtered by status, date range, hierarchy, or overdue date.",
+  preview_task_batch:
+    "Resolve an exact task set for archive, restore, or permanent delete, create a pending user approval in PawPlan Review, and return its approval_id plus the signed Preview token. This never changes live tasks.",
+  archive_tasks_batch:
+    "Archive the exact tasks from a confirmed Preview without changing their todo/done/skipped/backlog status, then return persisted readback.",
+  restore_tasks_batch:
+    "Restore the exact archived tasks from a confirmed Preview while preserving their original task status, then return persisted readback.",
+  delete_tasks_batch:
+    "Permanently delete at most 50 exact, confirmed tasks and return the IDs actually deleted. This is irreversible and normally accepts archived tasks only.",
+  update_time_block_series:
+    "Preview a series update for user approval in PawPlan Review, or apply it with the approved approval_id, for one occurrence, following occurrences, or the entire series.",
+  delete_time_block_series:
+    "Preview a series cancellation/deletion for user approval in PawPlan Review, or apply it with the approved approval_id.",
+  replace_plan_window:
+    "Preview an exact active-plan window replacement for user approval in PawPlan Review, or atomically apply it with the approved approval_id.",
   create_inbox_item: "Create an inbox item and record an MCP audit changelog.",
   create_checkin: "Create or update a daily check-in with MCP source attribution.",
   update_task_status: "Update a task status with MCP source attribution.",
@@ -381,6 +581,8 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
     "Create an idempotent Review draft from task move intent for daily planning. PawPlan fills current from_date/from_day_segment.",
   propose_week_rebalance:
     "Create an idempotent Review draft from task move intent for weekly planning. PawPlan fills current from_date/from_day_segment.",
+  propose_overdue_replan:
+    "Create an idempotent, capacity-aware Review draft for first-time overdue tasks. Repeated overdue or unresolved Project context returns needs_decision and never sends tasks to backlog.",
   propose_timetable_import: "Create a preview-only timetable import draft for user review; this never writes constraints directly.",
   import_plan_bundle: "Import a trusted structured plan bundle into real PawPlan tasks with MCP provenance.",
 };
@@ -460,43 +662,6 @@ function datesInRange(start: Date, end: Date) {
   return dates;
 }
 
-function buildTaskFilters(
-  workspaceId: string,
-  args: {
-    status?: "todo" | "done" | "skipped" | "backlog";
-    date_from?: string;
-    date_to?: string;
-  },
-) {
-  const filters: SQL[] = [eq(tasks.workspaceId, workspaceId)];
-  if (args.status) filters.push(eq(tasks.status, args.status));
-  if (args.date_from) filters.push(gte(tasks.date, parseDateBoundary(args.date_from)));
-  if (args.date_to) filters.push(lt(tasks.date, parseDateBoundary(args.date_to)));
-  return filters;
-}
-
-async function readTasks(
-  db: PlanningDb,
-  workspaceId: string,
-  args: {
-    status?: "todo" | "done" | "skipped" | "backlog";
-    date_from?: string;
-    date_to?: string;
-  },
-) {
-  const rows = await db
-    .select()
-    .from(tasks)
-    .where(and(...buildTaskFilters(workspaceId, args)))
-    .orderBy(tasks.date, tasks.daySegment, tasks.createdAt);
-
-  return {
-    workspaceId,
-    filters: args,
-    tasks: rows.map(serializeTask),
-  };
-}
-
 async function readCheckins(db: PlanningDb, workspaceId: string, days = 7) {
   const start = addDays(startOfShanghaiDay(new Date()), -days + 1);
   const rows = await db
@@ -521,17 +686,13 @@ async function readConstraints(
   },
 ) {
   const range = readRange(args);
-  const [courseRows, routineRows, blockRows] = await Promise.all([
+  const [courseRows, routineRows, blockSnapshot] = await Promise.all([
     db.select().from(courses).where(eq(courses.workspaceId, workspaceId)).orderBy(courses.createdAt),
     db.select().from(routines).where(eq(routines.workspaceId, workspaceId)).orderBy(routines.createdAt),
-    db
-      .select()
-      .from(timeBlocks)
-      .where(and(eq(timeBlocks.workspaceId, workspaceId), lt(timeBlocks.startsAt, range.end), gte(timeBlocks.endsAt, range.start)))
-      .orderBy(timeBlocks.startsAt),
+    loadEffectiveTimeBlocks(db, { workspaceId, rangeStart: range.start, rangeEnd: range.end }),
   ]);
 
-  const serializedBlocks: Record<string, unknown>[] = expandRecurringBlocks(blockRows, range.start, range.end).map(
+  const serializedBlocks: Record<string, unknown>[] = blockSnapshot.occurrences.map(
     (block: Record<string, any>) => serializeDateFields(block),
   );
   return {
@@ -540,9 +701,7 @@ async function readConstraints(
     courses: courseRows.map(serializeDateFields),
     routines: routineRows.map(serializeDateFields),
     timeBlocks: serializedBlocks,
-    protectedBlocks: serializedBlocks.filter((block) =>
-      ["course", "meeting", "unavailable", "routine", "recovery"].includes(String(block.kind)),
-    ),
+    protectedBlocks: serializedBlocks.filter((block) => block.protected !== false),
   };
 }
 
@@ -555,15 +714,20 @@ async function readCapacity(
   },
 ) {
   const range = readRange(args);
-  const [taskRows, blockRows, routineRows, capacityRows] = await Promise.all([
+  const planId = await getActivePlanId(db, workspaceId);
+  if (!planId) throw new Error("No active plan");
+  const [taskRows, blockSnapshot, routineRows, capacityRows] = await Promise.all([
     db
       .select()
       .from(tasks)
-      .where(and(eq(tasks.workspaceId, workspaceId), gte(tasks.date, range.start), lt(tasks.date, range.end))),
-    db
-      .select()
-      .from(timeBlocks)
-      .where(and(eq(timeBlocks.workspaceId, workspaceId), lt(timeBlocks.startsAt, range.end), gte(timeBlocks.endsAt, range.start))),
+      .where(and(
+        eq(tasks.workspaceId, workspaceId),
+        eq(tasks.planId, planId),
+        isNull(tasks.archivedAt),
+        gte(tasks.date, range.start),
+        lt(tasks.date, range.end),
+      )),
+    loadEffectiveTimeBlocks(db, { workspaceId, rangeStart: range.start, rangeEnd: range.end }),
     db.select().from(routines).where(eq(routines.workspaceId, workspaceId)),
     db
       .select()
@@ -578,7 +742,7 @@ async function readCapacity(
       dates: datesInRange(range.start, range.end),
       capacities: capacityRows,
       tasks: taskRows,
-      timeBlocks: blockRows,
+      timeBlocks: blockSnapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null })),
       routines: routineRows,
     }),
   };
@@ -664,6 +828,39 @@ async function readMonth(
   };
 }
 
+async function readTaskSurfacesAfterCommit(db: PlanningDb, workspaceId: string) {
+  const [today, week, month, active, todo, backlog, archived] = await Promise.all([
+    readToday(db, workspaceId),
+    readWeek(db, workspaceId),
+    readMonth(db, workspaceId, {}),
+    readTasks(db, workspaceId, { archive_state: "active" }),
+    readTasks(db, workspaceId, { status: "todo", archive_state: "active" }),
+    readTasks(db, workspaceId, { status: "backlog", archive_state: "active" }),
+    readTasks(db, workspaceId, { archive_state: "archived" }),
+  ]);
+  const weekCount = Object.values(week.groupedTasks).reduce((sum, rows) => sum + rows.length, 0);
+  const monthCount = Object.values(month.groupedTasks).reduce((sum, rows) => sum + rows.length, 0);
+  return {
+    today,
+    week,
+    month,
+    counts: {
+      active: active.tasks.length,
+      todo: todo.tasks.length,
+      backlog: backlog.tasks.length,
+      archived: archived.tasks.length,
+      today: today.tasks.length,
+      week: weekCount,
+      month: monthCount,
+    },
+    verifiedAt: new Date().toISOString(),
+  };
+}
+
+function requireFeatureFlag(name: string, message: string) {
+  if (process.env[name] !== "true") throw new Error(message);
+}
+
 function compactRebalanceError(error: unknown) {
   return {
     code: typeof error === "object" && error && typeof (error as { code?: unknown }).code === "string"
@@ -742,6 +939,63 @@ async function runRebalanceTool(
   }
 }
 
+async function runOverdueReplanTool(db: PlanningDb, workspaceId: string, args: unknown) {
+  if (process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED !== "true") {
+    throw new Error("Overdue replan is disabled until migration and shadow verification are complete");
+  }
+  const parsed = proposeOverdueReplanArgsSchema.parse(args);
+  const planId = await getActivePlanId(db, workspaceId);
+  if (!planId) throw new Error("No active plan");
+  const createdBy = parsed.created_by ?? "codex";
+  const run = await startAgentRun(db, {
+    workspaceId,
+    planId,
+    kind: "overdue_replan",
+    idempotencyKey: parsed.idempotency_key,
+    reason: parsed.reason,
+    inputJson: {
+      tool: "propose_overdue_replan",
+      asOfDate: parsed.as_of_date,
+      taskIds: parsed.task_ids,
+    },
+    createdBy,
+  });
+  if (run.duplicate) return run.result;
+
+  try {
+    const proposal = await proposeOverdueReplan(db, {
+      workspaceId,
+      asOfDate: parsed.as_of_date,
+      taskIds: parsed.task_ids,
+      reason: parsed.reason,
+      createdBy,
+    });
+    const status = proposal.patchId && proposal.operationCount > 0
+      ? "draft_created"
+      : proposal.needsDecision.length > 0
+        ? "needs_decision"
+        : "no_change";
+    return completeAgentRun(db, {
+      workspaceId,
+      runId: run.runId,
+      idempotencyKey: parsed.idempotency_key,
+      status,
+      patchId: proposal.patchId,
+      operationCount: proposal.operationCount,
+      skipped: proposal.skipped,
+      warnings: proposal.warnings,
+      needsDecision: proposal.needsDecision,
+    });
+  } catch (error) {
+    return failAgentRun(db, {
+      workspaceId,
+      runId: run.runId,
+      idempotencyKey: parsed.idempotency_key,
+      error: compactRebalanceError(error),
+    });
+  }
+}
+
 export async function runPawPlanTool(
   db: PlanningDb,
   workspaceId: string,
@@ -808,9 +1062,34 @@ export async function runPawPlanTool(
     const parsed = pawPlanToolSchemas.get_checkins.parse(args);
     return readCheckins(db, workspaceId, parsed.days ?? 7);
   }
+  if (toolName === "get_project_portfolio") {
+    const parsed = pawPlanToolSchemas.get_project_portfolio.parse(args);
+    return getProjectPortfolio(db, workspaceId, parsed);
+  }
   if (toolName === "get_tasks") {
     const parsed = pawPlanToolSchemas.get_tasks.parse(args);
     return readTasks(db, workspaceId, parsed);
+  }
+  if (toolName === "preview_task_batch") {
+    const parsed = pawPlanToolSchemas.preview_task_batch.parse(args);
+    if (parsed.action === "delete") {
+      requireFeatureFlag("PAWPLAN_TASK_DELETE_ENABLED", "Permanent task deletion is disabled");
+    } else {
+      requireFeatureFlag("PAWPLAN_TASK_ARCHIVE_ENABLED", "Task archive and restore are disabled");
+    }
+    return previewTaskBatch(db, {
+      workspaceId,
+      action: parsed.action,
+      filters: {
+        statuses: parsed.filters.statuses,
+        dateFrom: parsed.filters.date_from,
+        dateTo: parsed.filters.date_to,
+        projectIds: parsed.filters.project_ids,
+        taskIds: parsed.filters.task_ids,
+      },
+      includeDone: parsed.include_done,
+      allowDeleteUnarchived: parsed.allow_delete_unarchived,
+    });
   }
 
   if (toolName === "create_inbox_item") {
@@ -920,6 +1199,129 @@ export async function runPawPlanTool(
     });
   }
 
+  if (toolName === "archive_tasks_batch" || toolName === "restore_tasks_batch") {
+    requireFeatureFlag("PAWPLAN_TASK_ARCHIVE_ENABLED", "Task archive and restore are disabled");
+    const parsed = pawPlanToolSchemas[toolName].parse(args);
+    const result = await applyTaskArchiveBatch(db, {
+      workspaceId,
+      action: toolName === "archive_tasks_batch" ? "archive" : "restore",
+      previewToken: parsed.preview_token,
+      approvalId: parsed.approval_id,
+      confirmTaskCount: parsed.confirm_task_count,
+      idempotencyKey: parsed.idempotency_key,
+    });
+    return attachTaskBatchPostCommitReadback(result, () => readTaskSurfacesAfterCommit(db, workspaceId));
+  }
+
+  if (toolName === "delete_tasks_batch") {
+    requireFeatureFlag("PAWPLAN_TASK_DELETE_ENABLED", "Permanent task deletion is disabled");
+    const parsed = pawPlanToolSchemas.delete_tasks_batch.parse(args);
+    const result = await applyTaskArchiveBatch(db, {
+      workspaceId,
+      action: "delete",
+      previewToken: parsed.preview_token,
+      approvalId: parsed.approval_id,
+      confirmTaskCount: parsed.confirm_task_count,
+      confirmation: parsed.confirmation,
+      idempotencyKey: parsed.idempotency_key,
+      groupId: parsed.operation_id,
+    });
+    return attachTaskBatchPostCommitReadback(result, () => readTaskSurfacesAfterCommit(db, workspaceId));
+  }
+
+  if (toolName === "update_time_block_series") {
+    requireFeatureFlag("PAWPLAN_TIME_BLOCK_SERIES_ENABLED", "Time block series editing is disabled");
+    const parsed = pawPlanToolSchemas.update_time_block_series.parse(args);
+    const request = {
+      seriesId: parsed.series_id,
+      scope: parsed.scope,
+      occurrenceDate: parsed.occurrence_date,
+      changes: {
+        title: parsed.changes.title,
+        kind: parsed.changes.kind,
+        startTime: parsed.changes.start_time,
+        endTime: parsed.changes.end_time,
+        weekdayMask: parsed.changes.weekday_mask,
+        recurrenceLabel: parsed.changes.recurrence_label,
+        protected: parsed.changes.protected,
+        startsOn: parsed.changes.starts_on,
+        endsOn: parsed.changes.ends_on,
+      },
+    };
+    if (parsed.mode === "preview") {
+      return previewTimeBlockSeriesMutation(db, { workspaceId, action: "update", request });
+    }
+    return applyTimeBlockSeriesMutation(db, {
+      workspaceId,
+      action: "update",
+      request,
+      previewToken: parsed.preview_token!,
+      approvalId: parsed.approval_id,
+      idempotencyKey: parsed.idempotency_key,
+      source: "mcp",
+    });
+  }
+
+  if (toolName === "delete_time_block_series") {
+    requireFeatureFlag("PAWPLAN_TIME_BLOCK_SERIES_ENABLED", "Time block series editing is disabled");
+    const parsed = pawPlanToolSchemas.delete_time_block_series.parse(args);
+    const request = {
+      seriesId: parsed.series_id,
+      scope: parsed.scope,
+      occurrenceDate: parsed.occurrence_date,
+    };
+    if (parsed.mode === "preview") {
+      return previewTimeBlockSeriesMutation(db, { workspaceId, action: "delete", request });
+    }
+    return applyTimeBlockSeriesMutation(db, {
+      workspaceId,
+      action: "delete",
+      request,
+      previewToken: parsed.preview_token!,
+      approvalId: parsed.approval_id,
+      idempotencyKey: parsed.idempotency_key,
+      source: "mcp",
+    });
+  }
+
+  if (toolName === "replace_plan_window") {
+    requireFeatureFlag("PAWPLAN_REPLACE_PLAN_WINDOW_ENABLED", "Plan-window replacement is disabled");
+    const parsed = pawPlanToolSchemas.replace_plan_window.parse(args);
+    const input = {
+      workspaceId,
+      dateFrom: parsed.date_from,
+      dateTo: parsed.date_to,
+      sourceKey: parsed.source_key,
+      expectedPlanId: parsed.expected_plan_id,
+      expectedCurrentVersionId: parsed.expected_current_version_id,
+      retireScope: parsed.retire_scope,
+      tasks: parsed.tasks.map((task) => ({
+        externalTaskKey: task.external_task_key,
+        title: task.title,
+        projectId: task.project_id,
+        milestoneId: task.milestone_id,
+        parentExternalTaskKey: task.parent_external_task_key,
+        notes: task.notes,
+        date: task.date,
+        daySegment: task.day_segment,
+        estimatedMinutes: task.estimated_minutes,
+        priority: task.priority,
+        energyLevel: task.energy_level,
+        movable: task.movable,
+        blocked: task.blocked,
+      })),
+      weeklySummaries: parsed.weekly_summaries,
+      monthlySummaries: parsed.monthly_summaries,
+      focusProjectIds: parsed.focus_project_ids,
+      idempotencyKey: parsed.idempotency_key,
+      createdBy: parsed.created_by,
+      previewToken: parsed.preview_token,
+      approvalId: parsed.approval_id,
+    };
+    if (parsed.mode === "preview") return previewReplacePlanWindow(db, input);
+    return replacePlanWindow(db, input);
+  }
+
   if (toolName === "save_conversation_summary") {
     const parsed = pawPlanToolSchemas.save_conversation_summary.parse(args);
     return saveConversationSummary(db, {
@@ -986,6 +1388,10 @@ export async function runPawPlanTool(
 
   if (toolName === "propose_week_rebalance") {
     return runRebalanceTool(db, workspaceId, "propose_week_rebalance", "week", "weekly_rebalance", args);
+  }
+
+  if (toolName === "propose_overdue_replan") {
+    return runOverdueReplanTool(db, workspaceId, args);
   }
 
   const parsed = pawPlanToolSchemas.propose_patch.parse(args);

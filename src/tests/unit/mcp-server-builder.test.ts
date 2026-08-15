@@ -66,7 +66,7 @@ describe("PawPlan MCP server builder", () => {
 
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     try {
-      expect(client.getServerVersion()).toEqual({ name: "pawplan", version: "0.2.2" });
+      expect(client.getServerVersion()).toEqual({ name: "pawplan", version: "0.3.0" });
 
       const result = await client.listTools();
       const tool = result.tools.find((candidate) => candidate.name === "propose_patch");
@@ -105,7 +105,8 @@ describe("PawPlan MCP server builder", () => {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     try {
       expect(client.getInstructions()).toContain("get_agent_guidance");
-      expect(client.getInstructions()).toContain("Review draft");
+      expect(client.getInstructions()).toContain("pending approval");
+      expect(client.getInstructions()).toContain("approval_id");
 
       const result = await client.listTools();
       const tool = result.tools.find((candidate) => candidate.name === "get_agent_guidance");
@@ -133,6 +134,7 @@ describe("PawPlan MCP server builder", () => {
 
       expect(tool).toBeDefined();
       expect(toolNames).toContain("propose_week_rebalance");
+      expect(toolNames).toContain("propose_overdue_replan");
       expect(moveSchema).toMatchObject({
         type: "object",
         properties: {
@@ -161,6 +163,7 @@ describe("PawPlan MCP server builder", () => {
       const result = await client.listTools();
       expect(result.tools.map((tool) => tool.name)).not.toContain("propose_daily_rebalance");
       expect(result.tools.map((tool) => tool.name)).not.toContain("propose_week_rebalance");
+      expect(result.tools.map((tool) => tool.name)).not.toContain("propose_overdue_replan");
     } finally {
       await client.close();
       await server.close();

@@ -13,8 +13,13 @@ import {
   mcpTokens,
   mcpUsageEvents,
   oauthAuthorizationCodes,
+  operationApprovals,
+  planOperations,
   planVersions,
+  planWindowRevisions,
+  planWindowTaskRefs,
   plans,
+  projectMilestones,
   projects,
   routineCompletions,
   routines,
@@ -23,6 +28,7 @@ import {
   taskTags,
   tasks,
   timeBlocks,
+  timeBlockExceptions,
   tracks,
 } from "@/lib/db/schema";
 
@@ -33,6 +39,34 @@ describe("schema shape", () => {
 
   it("supports routine and recovery time blocks", () => {
     expect(timeBlocks.kind).toBeDefined();
+  });
+
+  it("supports task archival, recurring block exceptions, and plan-window operations", () => {
+    expect(tasks.archivedAt).toBeDefined();
+    expect(timeBlocks.protected).toBeDefined();
+    expect(timeBlocks.revision).toBeDefined();
+    expect(timeBlockExceptions.seriesId).toBeDefined();
+    expect(timeBlockExceptions.occurrenceDate).toBeDefined();
+    expect(planOperations.idempotencyKey).toBeDefined();
+    expect(planOperations.requestHash).toBeDefined();
+    expect(operationApprovals.operationKind).toBeDefined();
+    expect(operationApprovals.requestHash).toBeDefined();
+    expect(operationApprovals.previewHash).toBeDefined();
+    expect(operationApprovals.status).toBeDefined();
+    expect(operationApprovals.expiresAt).toBeDefined();
+    expect(operationApprovals.consumedAt).toBeDefined();
+    expect(planWindowRevisions.operationId).toBeDefined();
+    expect(planWindowTaskRefs.externalTaskKey).toBeDefined();
+
+    const operationConfig = getTableConfig(planOperations);
+    expect(operationConfig.indexes.find(
+      (candidate) => candidate.config.name === "plan_operations_workspace_idempotency_unique",
+    )?.config.unique).toBe(true);
+
+    const exceptionConfig = getTableConfig(timeBlockExceptions);
+    expect(exceptionConfig.indexes.find(
+      (candidate) => candidate.config.name === "time_block_exceptions_workspace_series_occurrence_unique",
+    )?.config.unique).toBe(true);
   });
 
   it("supports inbox capture", () => {
@@ -53,6 +87,43 @@ describe("schema shape", () => {
     expect(changeLogs.source).toBeDefined();
   });
 
+  it("supports structured projects, milestones, and overdue rollover metadata", () => {
+    expect(projects.category).toBeDefined();
+    expect(projects.objective).toBeDefined();
+    expect(projects.successCriteria).toBeDefined();
+    expect(projects.status).toBeDefined();
+    expect(projects.priority).toBeDefined();
+    expect(projects.startDate).toBeDefined();
+    expect(projects.targetDate).toBeDefined();
+    expect(projects.weeklyTargetMinutes).toBeDefined();
+    expect(projects.needsDefinition).toBeDefined();
+    expect(projectMilestones.projectId).toBeDefined();
+    expect(tasks.milestoneId).toBeDefined();
+    expect(tasks.originalDate).toBeDefined();
+    expect(tasks.rolloverCount).toBeDefined();
+    expect(tasks.lastRolloverAt).toBeDefined();
+
+    const milestoneConfig = getTableConfig(projectMilestones);
+    expect(milestoneConfig.indexes.map((candidate) => candidate.config.name)).toEqual(
+      expect.arrayContaining([
+        "project_milestones_workspace_project_position_idx",
+        "project_milestones_workspace_status_target_idx",
+      ]),
+    );
+
+    const taskConfig = getTableConfig(tasks);
+    expect(taskConfig.indexes.map((candidate) => candidate.config.name)).toEqual(
+      expect.arrayContaining([
+        "tasks_workspace_project_idx",
+        "tasks_workspace_milestone_idx",
+        "tasks_overdue_candidate_idx",
+      ]),
+    );
+    expect(taskConfig.foreignKeys.map((foreignKey) => foreignKey.getName())).toContain(
+      "tasks_parent_task_id_tasks_id_fk",
+    );
+  });
+
   it("supports specific-window routines and one check-in per workspace day", () => {
     expect(routines.defaultTimeSegment).toBeDefined();
     expect(checkins.date).toBeDefined();
@@ -63,7 +134,10 @@ describe("schema shape", () => {
     const index = config.indexes.find((candidate) => candidate.config.name === "checkins_workspace_id_date_unique");
 
     expect(index?.config.unique).toBe(true);
-    expect(index?.config.columns.map((column) => column.name)).toEqual(["workspace_id", "date"]);
+    expect(index?.config.columns.map((column) => "name" in column ? column.name : undefined)).toEqual([
+      "workspace_id",
+      "date",
+    ]);
   });
 
   it("tracks agent runs by workspace idempotency key", () => {
@@ -78,7 +152,10 @@ describe("schema shape", () => {
     const index = config.indexes.find((candidate) => candidate.config.name === "agent_runs_workspace_idempotency_unique");
 
     expect(index?.config.unique).toBe(true);
-    expect(index?.config.columns.map((column) => column.name)).toEqual(["workspace_id", "idempotency_key"]);
+    expect(index?.config.columns.map((column) => "name" in column ? column.name : undefined)).toEqual([
+      "workspace_id",
+      "idempotency_key",
+    ]);
   });
 
   it("tracks atomic MCP task batches by workspace idempotency key", () => {
@@ -98,12 +175,17 @@ describe("schema shape", () => {
     const tenantTables = [
       plans,
       planVersions,
+      planOperations,
+      planWindowRevisions,
+      planWindowTaskRefs,
       projects,
+      projectMilestones,
       tracks,
       tags,
       taskTags,
       tasks,
       timeBlocks,
+      timeBlockExceptions,
       routines,
       routineCompletions,
       dayCapacities,

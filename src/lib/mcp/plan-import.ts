@@ -237,12 +237,14 @@ export async function saveMcpPlanImport(db: PlanningDb, input: McpPlanImportInpu
     const taskValues = input.dailyTasks.map((task) => {
       const projectName = normalizeName(task.projectName);
       const trackName = normalizeName(task.trackName);
+      const date = parseDateBoundary(task.date);
       return {
         workspaceId: input.workspaceId,
         planId: plan.id,
         title: task.title,
         notes: task.notes ?? null,
-        date: parseDateBoundary(task.date),
+        date,
+        originalDate: date,
         daySegment: task.daySegment,
         priority: task.priority ?? "normal",
         estimatedMinutes: task.estimatedMinutes,

@@ -9,14 +9,17 @@ import {
   mcpTokens,
   plans,
   planVersions,
+  projectMilestones,
+  projects,
   routines,
   segmentEnergySettings,
   tasks,
+  timeBlockExceptions,
   timeBlocks,
   tracks,
 } from "@/lib/db/schema";
 import { importWorkspaceTemplate } from "@/lib/templates/import";
-import type { PawPlanTemplate } from "@/lib/templates/export";
+import type { PawPlanTemplate, PawPlanTemplateV05 } from "@/lib/templates/export";
 
 type TableWrite = {
   table: string;
@@ -24,7 +27,7 @@ type TableWrite = {
   inTransaction: boolean;
 };
 
-function createImportDb() {
+function createImportDb(options: { activePlanIds?: string[] } = {}) {
   const inserts: TableWrite[] = [];
   const updates: TableWrite[] = [];
   let inTransaction = false;
@@ -41,6 +44,24 @@ function createImportDb() {
 
   function createClient() {
     return {
+      select() {
+        return {
+          from(table: unknown) {
+            const rows = tableName(table) === "plans"
+              ? (options.activePlanIds ?? []).map((id) => ({ id }))
+              : [];
+            return {
+              where() {
+                return {
+                  limit(count: number) {
+                    return Promise.resolve(rows.slice(0, count));
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
       insert(table: unknown) {
         const tableNameValue = tableName(table);
         return {
@@ -164,7 +185,7 @@ const template: PawPlanTemplate = {
 };
 
 describe("template import", () => {
-  it("creates isolated workspace scoped rows and resets imported tasks to todo", async () => {
+  it("keeps v0.4 imports compatible and resets imported tasks to todo", async () => {
     const db = createImportDb();
 
     const result = await importWorkspaceTemplate(db, "target-workspace", { template, mode: "new_plan" });
@@ -239,6 +260,7 @@ describe("template import", () => {
             title: "Deep Learning Lecture",
             courseId: "courses-1",
             trackId: "tracks-1",
+            protected: true,
           }),
         }),
         expect.objectContaining({
@@ -260,5 +282,182 @@ describe("template import", () => {
         values: expect.objectContaining({ currentVersionId: "plan_versions-1" }),
       }),
     ]);
+  });
+
+  it("preserves protected time blocks and remaps their exceptions", async () => {
+    const db = createImportDb();
+    const templateWithException: PawPlanTemplate = {
+      ...template,
+      timeBlocks: [{
+        ...template.timeBlocks[0],
+        recurrenceWeekdayMask: 2,
+        protected: false,
+      }],
+      timeBlockExceptions: [{
+        id: "source-exception",
+        seriesId: "source-block",
+        occurrenceDate: "2026-09-14",
+        action: "override",
+        overrideTitle: "Lecture moved",
+        overrideKind: "course",
+        overrideStartsAt: "2026-09-14T03:00:00.000Z",
+        overrideEndsAt: "2026-09-14T05:00:00.000Z",
+        overrideProtected: false,
+      }],
+    };
+
+    await importWorkspaceTemplate(db, "target-workspace", { template: templateWithException, mode: "new_plan" });
+
+    expect(db.inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: getTableName(timeBlocks),
+        values: expect.objectContaining({ recurrenceWeekdayMask: 2, protected: false }),
+      }),
+      expect.objectContaining({
+        table: getTableName(timeBlockExceptions),
+        values: expect.objectContaining({
+          workspaceId: "target-workspace",
+          seriesId: "time_blocks-1",
+          occurrenceDate: "2026-09-14",
+          action: "override",
+          overrideProtected: false,
+        }),
+      }),
+    ]));
+  });
+
+  it("imports v0.5 projects, milestones, and task hierarchy with remapped ids", async () => {
+    const db = createImportDb();
+    const v05Template: PawPlanTemplateV05 = {
+      ...template,
+      schemaVersion: "pawplan.template.v0.5",
+      projects: [
+        {
+          id: "source-project",
+          name: "Physics-Grounded Manipulation",
+          color: "#7c3aed",
+          category: "科研",
+          objective: "Build a manipulation world model",
+          successCriteria: "Validated experiment",
+          status: "active",
+          priority: "urgent",
+          startDate: "2026-06-01T00:00:00.000Z",
+          targetDate: "2026-12-01T00:00:00.000Z",
+          weeklyTargetMinutes: 600,
+          needsDefinition: false,
+        },
+      ],
+      milestones: [
+        {
+          id: "source-milestone",
+          projectId: "source-project",
+          title: "Baseline experiment",
+          objective: null,
+          successCriteria: "Results recorded",
+          targetDate: "2026-09-30T00:00:00.000Z",
+          status: "in_progress",
+          position: 1,
+        },
+      ],
+      tasks: [
+        {
+          ...template.tasks[0],
+          id: "source-parent-task",
+          projectId: "source-project",
+          milestoneId: "source-milestone",
+        },
+        {
+          ...template.tasks[0],
+          id: "source-child-task",
+          title: "Analyze results",
+          projectId: "source-project",
+          milestoneId: "source-milestone",
+          parentTaskId: "source-parent-task",
+        },
+      ],
+    };
+
+    const result = await importWorkspaceTemplate(db, "target-workspace", { template: v05Template, mode: "new_plan" });
+
+    expect(result.tasksCreated).toBe(2);
+    expect(db.inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: getTableName(projects),
+          values: expect.objectContaining({
+            workspaceId: "target-workspace",
+            name: "Physics-Grounded Manipulation",
+            category: "科研",
+            needsDefinition: false,
+          }),
+        }),
+        expect.objectContaining({
+          table: getTableName(projectMilestones),
+          values: expect.objectContaining({
+            workspaceId: "target-workspace",
+            projectId: "projects-1",
+            title: "Baseline experiment",
+          }),
+        }),
+        expect.objectContaining({
+          table: getTableName(tasks),
+          values: expect.objectContaining({
+            projectId: "projects-1",
+            milestoneId: "project_milestones-1",
+            parentTaskId: null,
+            originalDate: new Date("2026-09-08T00:00:00.000Z"),
+          }),
+        }),
+      ]),
+    );
+    expect(db.updates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: getTableName(tasks),
+          values: { parentTaskId: "tasks-1" },
+        }),
+      ]),
+    );
+  });
+
+  it("rejects broken v0.5 project references before writing", async () => {
+    const db = createImportDb();
+    const invalidTemplate: PawPlanTemplateV05 = {
+      ...template,
+      schemaVersion: "pawplan.template.v0.5",
+      projects: [],
+      milestones: [
+        {
+          id: "orphan-milestone",
+          projectId: "missing-project",
+          title: "Orphan milestone",
+          objective: null,
+          successCriteria: null,
+          targetDate: null,
+          status: "planned",
+          position: 0,
+        },
+      ],
+      tasks: [],
+    };
+
+    await expect(
+      importWorkspaceTemplate(db, "target-workspace", { template: invalidTemplate, mode: "new_plan" }),
+    ).rejects.toThrow("Template milestone references an unknown project");
+    expect(db.inserts).toEqual([]);
+  });
+
+  it("rejects new-plan import when the workspace already has an active plan", async () => {
+    const db = createImportDb({ activePlanIds: ["existing-plan"] });
+
+    await expect(
+      importWorkspaceTemplate(db, "target-workspace", { template, mode: "new_plan" }),
+    ).rejects.toMatchObject({
+      code: "active_plan_conflict",
+      status: 409,
+      details: { workspaceId: "target-workspace", activePlanIds: ["existing-plan"] },
+    });
+    expect(db.inserts).toEqual([]);
+    expect(db.updates).toEqual([]);
   });
 });

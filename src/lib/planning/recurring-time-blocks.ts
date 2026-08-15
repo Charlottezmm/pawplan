@@ -3,10 +3,24 @@ export type RecurringTimeBlockInput = {
   startsAt: Date;
   endsAt: Date;
   recurrenceWeekdayMask?: number | null;
+  protected?: boolean;
 };
 
 export type ExpandedRecurringTimeBlock<T extends RecurringTimeBlockInput> = T & {
   recurrenceSourceId?: string;
+  occurrenceDate?: string;
+};
+
+export type TimeBlockExceptionInput = {
+  id: string;
+  seriesId: string;
+  occurrenceDate: string;
+  action: "cancel" | "override";
+  overrideTitle?: string | null;
+  overrideKind?: string | null;
+  overrideStartsAt?: Date | null;
+  overrideEndsAt?: Date | null;
+  overrideProtected?: boolean | null;
 };
 
 const shanghaiTimeZone = "Asia/Shanghai";
@@ -84,9 +98,75 @@ export function expandRecurringBlocks<T extends RecurringTimeBlockInput>(
         startsAt,
         endsAt,
         recurrenceSourceId: block.id,
+        occurrenceDate: dateKey(cursor),
       });
     }
   }
 
   return expanded.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime() || a.endsAt.getTime() - b.endsAt.getTime());
+}
+
+function occurrenceIdentity(block: ExpandedRecurringTimeBlock<RecurringTimeBlockInput>) {
+  return {
+    seriesId: block.recurrenceSourceId ?? block.id,
+    occurrenceDate: block.occurrenceDate ?? dateKey(block.startsAt),
+  };
+}
+
+/**
+ * Apply persisted single-occurrence cancellations and overrides after recurrence
+ * expansion. Series IDs remain stable; synthetic occurrence IDs are display-only.
+ */
+export function applyTimeBlockExceptions<T extends RecurringTimeBlockInput>(
+  occurrences: Array<ExpandedRecurringTimeBlock<T>>,
+  exceptions: TimeBlockExceptionInput[],
+): Array<ExpandedRecurringTimeBlock<T>> {
+  const byOccurrence = new Map(
+    exceptions.map((exception) => [`${exception.seriesId}__${exception.occurrenceDate}`, exception]),
+  );
+  const effective: Array<ExpandedRecurringTimeBlock<T>> = [];
+
+  for (const occurrence of occurrences) {
+    const identity = occurrenceIdentity(occurrence);
+    const exception = byOccurrence.get(`${identity.seriesId}__${identity.occurrenceDate}`);
+    if (!exception) {
+      effective.push(occurrence);
+      continue;
+    }
+    if (exception.action === "cancel") continue;
+
+    effective.push({
+      ...occurrence,
+      ...(exception.overrideTitle !== null && exception.overrideTitle !== undefined
+        ? { title: exception.overrideTitle }
+        : {}),
+      ...(exception.overrideKind !== null && exception.overrideKind !== undefined
+        ? { kind: exception.overrideKind }
+        : {}),
+      ...(exception.overrideStartsAt ? { startsAt: exception.overrideStartsAt } : {}),
+      ...(exception.overrideEndsAt ? { endsAt: exception.overrideEndsAt } : {}),
+      ...(exception.overrideProtected !== null && exception.overrideProtected !== undefined
+        ? { protected: exception.overrideProtected }
+        : {}),
+      recurrenceSourceId: identity.seriesId,
+      occurrenceDate: identity.occurrenceDate,
+    });
+  }
+
+  return effective.sort(
+    (a, b) => a.startsAt.getTime() - b.startsAt.getTime() || a.endsAt.getTime() - b.endsAt.getTime(),
+  );
+}
+
+export function expandEffectiveRecurringBlocks<T extends RecurringTimeBlockInput>(
+  blocks: T[],
+  exceptions: TimeBlockExceptionInput[],
+  rangeStart: Date,
+  rangeEnd: Date,
+) {
+  return applyTimeBlockExceptions(expandRecurringBlocks(blocks, rangeStart, rangeEnd), exceptions);
+}
+
+export function shanghaiOccurrenceDate(date: Date) {
+  return dateKey(date);
 }

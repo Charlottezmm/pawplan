@@ -7,9 +7,12 @@ import {
   courses,
   decisions,
   mcpTokens,
+  projectMilestones,
+  projects,
   routines,
   segmentEnergySettings,
   tasks,
+  timeBlockExceptions,
   timeBlocks,
   tracks,
   workspaces,
@@ -34,6 +37,38 @@ function createExportDb() {
         targetMinPercent: 50,
         targetMaxPercent: 70,
         color: "#16a34a",
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      },
+    ],
+    [getTableName(projects)]: [
+      {
+        id: "project-1",
+        workspaceId: "workspace-1",
+        name: "Physics-Grounded Manipulation",
+        color: "#7c3aed",
+        category: "科研",
+        objective: "Build a manipulation world model",
+        successCriteria: "Validated experiment",
+        status: "paused",
+        priority: "urgent",
+        startDate: new Date("2026-06-01T00:00:00.000Z"),
+        targetDate: new Date("2026-12-01T00:00:00.000Z"),
+        weeklyTargetMinutes: 600,
+        needsDefinition: false,
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      },
+    ],
+    [getTableName(projectMilestones)]: [
+      {
+        id: "milestone-1",
+        workspaceId: "workspace-1",
+        projectId: "project-1",
+        title: "Baseline experiment",
+        objective: null,
+        successCriteria: "Results recorded",
+        targetDate: new Date("2026-09-30T00:00:00.000Z"),
+        status: "completed",
+        position: 1,
         createdAt: new Date("2026-06-01T00:00:00.000Z"),
       },
     ],
@@ -74,11 +109,28 @@ function createExportDb() {
         startsAt: new Date("2026-09-07T01:00:00.000Z"),
         endsAt: new Date("2026-09-07T03:00:00.000Z"),
         recurrenceRule: "weekly",
+        recurrenceWeekdayMask: 2,
         courseId: "course-1",
         trackId: "track-1",
         movable: false,
+        protected: false,
         estimatedMinutes: null,
         energyLevel: null,
+      },
+    ],
+    [getTableName(timeBlockExceptions)]: [
+      {
+        id: "exception-1",
+        workspaceId: "workspace-1",
+        seriesId: "block-1",
+        occurrenceDate: "2026-09-14",
+        action: "override",
+        overrideTitle: "Lecture moved",
+        overrideKind: "course",
+        overrideStartsAt: new Date("2026-09-14T03:00:00.000Z"),
+        overrideEndsAt: new Date("2026-09-14T05:00:00.000Z"),
+        overrideProtected: false,
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
       },
     ],
     [getTableName(tasks)]: [
@@ -95,9 +147,33 @@ function createExportDb() {
         estimatedMinutes: 120,
         energyLevel: "high",
         movable: true,
+        projectId: "project-1",
+        milestoneId: "milestone-1",
         courseId: "course-1",
         trackId: "track-1",
         parentTaskId: null,
+        archivedAt: null,
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      },
+      {
+        id: "task-archived",
+        workspaceId: "workspace-1",
+        planId: "plan-1",
+        title: "Archived history",
+        notes: null,
+        date: new Date("2026-09-09T00:00:00.000Z"),
+        daySegment: "morning",
+        status: "todo",
+        priority: "normal",
+        estimatedMinutes: 30,
+        energyLevel: "medium",
+        movable: true,
+        projectId: null,
+        milestoneId: null,
+        courseId: null,
+        trackId: null,
+        parentTaskId: null,
+        archivedAt: new Date("2026-08-01T00:00:00.000Z"),
         createdAt: new Date("2026-06-01T00:00:00.000Z"),
       },
     ],
@@ -145,10 +221,23 @@ describe("template export", () => {
     const template = await exportWorkspaceTemplate(db, "workspace-1", new Date("2026-06-12T00:00:00.000Z"));
 
     expect(template).toMatchObject({
-      schemaVersion: "pawplan.template.v0.4",
+      schemaVersion: "pawplan.template.v0.5",
       exportedAt: "2026-06-12T00:00:00.000Z",
       workspace: { name: "Grad School Plan" },
     });
+    expect(template.projects).toEqual([
+      expect.objectContaining({
+        id: "project-1",
+        category: "科研",
+        objective: "Build a manipulation world model",
+        status: "active",
+        priority: "urgent",
+        needsDefinition: false,
+      }),
+    ]);
+    expect(template.milestones).toEqual([
+      expect.objectContaining({ id: "milestone-1", projectId: "project-1", status: "planned" }),
+    ]);
     expect(template.tracks).toEqual([expect.objectContaining({ id: "track-1", name: "Research", kind: "main" })]);
     expect(template.courses).toEqual([expect.objectContaining({ id: "course-1", name: "Deep Learning" })]);
     expect(template.routines).toEqual([expect.objectContaining({ id: "routine-1", title: "Cook dinner" })]);
@@ -156,11 +245,36 @@ describe("template export", () => {
       expect.arrayContaining([expect.objectContaining({ segment: "morning", energyLevel: "high" })]),
     );
     expect(template.timeBlocks).toEqual([
-      expect.objectContaining({ id: "block-1", title: "Deep Learning Lecture", courseId: "course-1", trackId: "track-1" }),
+      expect.objectContaining({
+        id: "block-1",
+        title: "Deep Learning Lecture",
+        courseId: "course-1",
+        trackId: "track-1",
+        recurrenceWeekdayMask: 2,
+        protected: false,
+      }),
+    ]);
+    expect(template.timeBlockExceptions).toEqual([
+      expect.objectContaining({
+        id: "exception-1",
+        seriesId: "block-1",
+        occurrenceDate: "2026-09-14",
+        action: "override",
+        overrideProtected: false,
+      }),
     ]);
     expect(template.tasks).toEqual([
-      expect.objectContaining({ id: "task-1", title: "Finish paper draft", status: "todo", courseId: "course-1", trackId: "track-1" }),
+      expect.objectContaining({
+        id: "task-1",
+        title: "Finish paper draft",
+        status: "todo",
+        projectId: "project-1",
+        milestoneId: "milestone-1",
+        courseId: "course-1",
+        trackId: "track-1",
+      }),
     ]);
+    expect(JSON.stringify(template)).not.toContain("Archived history");
 
     expect(db.selectedTables).not.toEqual(
       expect.arrayContaining([
@@ -180,6 +294,8 @@ describe("template export", () => {
     expect(JSON.stringify(template)).not.toContain("conversation summary");
     expect(JSON.stringify(template)).not.toContain("private decision");
     expect(JSON.stringify(template)).not.toContain("\"done\"");
+    expect(JSON.stringify(template)).not.toContain("rolloverCount");
+    expect(JSON.stringify(template)).not.toContain("lastRolloverAt");
     expect(JSON.stringify(template)).not.toContain("createdAt");
     expect(JSON.stringify(template)).not.toContain("updatedAt");
   });

@@ -1,11 +1,12 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronDown, Clock3, Copy, Plus, RotateCcw } from "lucide-react";
+import { AlertTriangle, Archive, CalendarClock, Check, ChevronDown, Clock3, Copy, Plus, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { CatIcon } from "./cat-icon";
 import { DailyCheckin } from "./daily-checkin";
+import { defaultPostponeDate, moveOutOfScheduleUpdate, postponeTaskUpdate } from "@/lib/planning/task-actions";
 import type { TodayViewData } from "@/lib/planning/view-data";
 
 type Task = TodayViewData["tasks"][number];
@@ -75,6 +76,10 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const [choreText, setChoreText] = useState("");
   const [choreSaving, setChoreSaving] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
+  const [postponeTask, setPostponeTask] = useState<Task | null>(null);
+  const [postponeDate, setPostponeDate] = useState(() => defaultPostponeDate());
+  const [savingActionId, setSavingActionId] = useState<string | null>(null);
+  const [taskActionFeedback, setTaskActionFeedback] = useState<{ tone: "ok" | "error"; message: string } | null>(null);
 
   async function addChore(event: React.FormEvent) {
     event.preventDefault();
@@ -175,6 +180,55 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, ...body }),
     });
+  }
+
+  function openPostpone(task: Task) {
+    setPostponeTask(task);
+    setPostponeDate(defaultPostponeDate());
+    setTaskActionFeedback(null);
+  }
+
+  async function postponeSelectedTask(event: React.FormEvent) {
+    event.preventDefault();
+    if (!postponeTask || savingActionId) return;
+
+    setSavingActionId(postponeTask.id);
+    const response = await fetch("/api/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(postponeTaskUpdate(postponeTask.id, postponeDate)),
+    });
+    setSavingActionId(null);
+    if (!response.ok) {
+      setTaskActionFeedback({ tone: "error", message: "延后失败，任务仍保留在今天。" });
+      return;
+    }
+
+    setTasks((current) => current.filter((task) => task.id !== postponeTask.id));
+    setPostponeTask(null);
+    setTaskActionFeedback({ tone: "ok", message: `已延后到 ${postponeDate}，任务仍保持待办。` });
+  }
+
+  async function moveOutOfSchedule(task: Task) {
+    const confirmed = window.confirm(
+      `确认将“${task.title}”移出排期？\n\n它会进入 Backlog，不再出现在 Today 或参与排期；之后仍可在 Backlog 页面找到。`,
+    );
+    if (!confirmed || savingActionId) return;
+
+    setSavingActionId(task.id);
+    const response = await fetch("/api/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(moveOutOfScheduleUpdate(task.id)),
+    });
+    setSavingActionId(null);
+    if (!response.ok) {
+      setTaskActionFeedback({ tone: "error", message: "移出排期失败，任务仍保留在今天。" });
+      return;
+    }
+
+    setTasks((current) => current.filter((item) => item.id !== task.id));
+    setTaskActionFeedback({ tone: "ok", message: "已移出排期，可在 Backlog 页面找到。" });
   }
 
   function setTaskStatus(id: string, status: DisplayStatus) {
@@ -289,6 +343,12 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
           {tasks.length > 0 ? <span className="paw-today-tasks-hint">向下越做越轻</span> : null}
         </div>
 
+        {taskActionFeedback ? (
+          <p className={`paw-task-action-feedback ${taskActionFeedback.tone}`} role="status">
+            {taskActionFeedback.message}
+          </p>
+        ) : null}
+
         <form className="paw-chore-add" onSubmit={addChore}>
           <input
             type="text"
@@ -402,10 +462,21 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     </button>
                     <button
                       type="button"
-                      onClick={() => setTaskStatus(task.id, "backlog")}
-                      className={`paw-act-btn defer ${task.displayStatus === "backlog" ? "selected" : ""}`}
+                      onClick={() => openPostpone(task)}
+                      className="paw-act-btn defer"
+                      disabled={savingActionId === task.id}
                     >
+                      <CalendarClock size={13} />
                       延后
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void moveOutOfSchedule(task)}
+                      className="paw-act-btn archive"
+                      disabled={savingActionId === task.id}
+                    >
+                      <Archive size={13} />
+                      移出排期
                     </button>
                   </div>
                   {task.displayStatus === "blocked" ? (
@@ -437,6 +508,41 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         initialStreakDays={data.streakDays}
         dataUnavailable={data.dataUnavailable}
       />
+
+      {postponeTask ? (
+        <div className="paw-modal-backdrop" onMouseDown={() => !savingActionId && setPostponeTask(null)}>
+          <section
+            className="paw-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="postpone-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2 id="postpone-title">选择新日期</h2>
+            <p>“{postponeTask.title}”会保持待办，只修改计划日期。</p>
+            <form onSubmit={postponeSelectedTask}>
+              <label className="paw-field-label" htmlFor="postpone-date">新日期</label>
+              <input
+                id="postpone-date"
+                type="date"
+                className="paw-input"
+                min={defaultPostponeDate()}
+                value={postponeDate}
+                onChange={(event) => setPostponeDate(event.target.value)}
+                required
+              />
+              <div className="paw-modal-actions">
+                <button type="button" className="paw-secondary-btn" onClick={() => setPostponeTask(null)} disabled={Boolean(savingActionId)}>
+                  取消
+                </button>
+                <button type="submit" className="paw-primary-btn" disabled={Boolean(savingActionId)}>
+                  {savingActionId ? "保存中…" : "确认延后"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

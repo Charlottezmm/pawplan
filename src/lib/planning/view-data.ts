@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import type { AgentRunKind, AgentRunStatus } from "@/lib/agent-runs/types";
 import { getDb } from "@/lib/db/client";
 import {
@@ -14,7 +14,6 @@ import {
   routineCompletions,
   routines,
   tasks,
-  timeBlocks,
   tracks,
 } from "@/lib/db/schema";
 import {
@@ -26,6 +25,7 @@ import {
 } from "@/lib/planning/capacity-model";
 import { materializeTimetableRows } from "@/lib/imports/timetable-save";
 import { getActivePlanId } from "@/lib/planning/active-plan";
+import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 import { calculateTrackBalance } from "@/lib/planning/track-balance";
 import { expandRecurringBlocks } from "@/lib/planning/recurring-time-blocks";
 import { buildWarnings } from "@/lib/planning/warnings";
@@ -258,6 +258,7 @@ export type ReschedulePatchItemView = {
     status: AgentRunStatus;
   };
   agentRunLabel?: string;
+  requiresRolloverReadback?: boolean;
   skipped?: boolean;
   skippedReason?: string;
   conflict?: {
@@ -611,7 +612,7 @@ export function buildDayTimelineItems(input: {
         startsAt,
         endsAt,
         segment: segmentForDate(startsAt),
-        protected: true,
+        protected: block.protected ?? true,
       }),
     );
   }
@@ -927,6 +928,7 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
             and(
               eq(tasks.workspaceId, workspaceId),
               eq(tasks.planId, planId),
+              isNull(tasks.archivedAt),
               inArray(tasks.status, ["todo", "done", "skipped"]),
               gte(tasks.date, start),
               lt(tasks.date, end),
@@ -941,20 +943,29 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
         db
           .select()
           .from(tasks)
-          .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), eq(tasks.status, "todo"), lt(tasks.date, start)))
+          .where(
+            and(
+              eq(tasks.workspaceId, workspaceId),
+              eq(tasks.planId, planId),
+              eq(tasks.status, "todo"),
+              isNull(tasks.archivedAt),
+              lt(tasks.date, start),
+            ),
+          )
           .orderBy(desc(tasks.date), tasks.createdAt),
-        db
-          .select()
-          .from(timeBlocks)
-          .where(and(eq(timeBlocks.workspaceId, workspaceId), lt(timeBlocks.startsAt, end), gt(timeBlocks.endsAt, start))),
+        loadEffectiveTimeBlocks(db, { workspaceId, rangeStart: start, rangeEnd: end }).then((snapshot) =>
+          snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null })),
+        ),
         db
           .select()
           .from(dayCapacities)
           .where(and(eq(dayCapacities.workspaceId, workspaceId), gte(dayCapacities.date, start), lt(dayCapacities.date, end))),
-        db
-          .select()
-          .from(timeBlocks)
-          .where(and(eq(timeBlocks.workspaceId, workspaceId), eq(timeBlocks.kind, "recovery"), lt(timeBlocks.startsAt, weekEnd), gt(timeBlocks.endsAt, weekStart))),
+        loadEffectiveTimeBlocks(db, {
+          workspaceId,
+          rangeStart: weekStart,
+          rangeEnd: weekEnd,
+          kinds: ["recovery"],
+        }).then((snapshot) => snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null }))),
         db
           .select({ id: inboxItems.id })
           .from(inboxItems)
@@ -1057,11 +1068,18 @@ export async function getWeekPageData(workspaceId: string): Promise<WeekViewData
       db
         .select()
         .from(tasks)
-        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), gte(tasks.date, start), lt(tasks.date, end))),
-      db
-        .select()
-        .from(timeBlocks)
-        .where(and(eq(timeBlocks.workspaceId, workspaceId), lt(timeBlocks.startsAt, end), gt(timeBlocks.endsAt, start))),
+        .where(
+          and(
+            eq(tasks.workspaceId, workspaceId),
+            eq(tasks.planId, planId),
+            isNull(tasks.archivedAt),
+            gte(tasks.date, start),
+            lt(tasks.date, end),
+          ),
+        ),
+      loadEffectiveTimeBlocks(db, { workspaceId, rangeStart: start, rangeEnd: end }).then((snapshot) =>
+        snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null })),
+      ),
       db.select().from(routines).where(eq(routines.workspaceId, workspaceId)),
       db
         .select()
@@ -1237,7 +1255,15 @@ export async function getMonthPlanData(workspaceId: string): Promise<MonthViewDa
     const taskRows = await db
       .select()
       .from(tasks)
-      .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), gte(tasks.date, start), lt(tasks.date, end)))
+      .where(
+        and(
+          eq(tasks.workspaceId, workspaceId),
+          eq(tasks.planId, planId),
+          isNull(tasks.archivedAt),
+          gte(tasks.date, start),
+          lt(tasks.date, end),
+        ),
+      )
       .orderBy(tasks.date, tasks.createdAt);
 
     const totalMinutes = taskRows.reduce((sum, task) => sum + task.estimatedMinutes, 0);
@@ -1348,6 +1374,7 @@ function reviewEventsByIndex(value: unknown) {
 function agentRunLabel(kind: AgentRunKind) {
   if (kind === "weekly_rebalance") return "Created by weekly rebalance";
   if (kind === "evening_review") return "Created by evening review";
+  if (kind === "overdue_replan") return "Created by overdue replan";
   return "Created by daily rebalance";
 }
 
@@ -1394,7 +1421,7 @@ export function buildReschedulePatchItems(input: {
         patchId: patch.id,
         operationIndex: index,
         operationType: operation.type,
-        kind: operationKind(operation.type),
+        kind: operation.type === "move_task" && operation.overdue_rollover ? "逾期顺延" : operationKind(operation.type),
         title,
         reason: operation.reason,
         capacity: "应用前会重新计算相关日期容量。",
@@ -1408,6 +1435,7 @@ export function buildReschedulePatchItems(input: {
         },
         agentRun: run ? { id: run.id, kind: run.kind, status: run.status } : undefined,
         agentRunLabel: run ? agentRunLabel(run.kind) : undefined,
+        requiresRolloverReadback: operation.type === "move_task" && Boolean(operation.overdue_rollover),
         skipped: Boolean(skipped),
         skippedReason: typeof skipped?.reason === "string" ? skipped.reason : undefined,
         conflict: conflict
@@ -1503,7 +1531,10 @@ export async function getReschedulePageData(workspaceId: string): Promise<Resche
         .from(agentPatches)
         .where(and(eq(agentPatches.workspaceId, workspaceId), eq(agentPatches.planId, planId), eq(agentPatches.status, "draft")))
         .orderBy(desc(agentPatches.createdAt)),
-      db.select({ id: tasks.id, title: tasks.title }).from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId))),
+      db
+        .select({ id: tasks.id, title: tasks.title })
+        .from(tasks)
+        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), isNull(tasks.archivedAt))),
     ]);
     const patchIds = patchRows.map((patch) => patch.id);
     const agentRunRows =

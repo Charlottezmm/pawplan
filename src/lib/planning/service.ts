@@ -1,4 +1,4 @@
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { agentPatches, changeLogs, checkins, inboxItems, routines, tasks, timeBlocks } from "@/lib/db/schema";
 import { validatePatchAgainstProtectedBlocks, type AgentPatch } from "@/lib/patches/patch-schema";
 import {
@@ -147,7 +147,7 @@ async function getProtectedBlockIds(db: PlanningDb, workspaceId: string) {
     .where(
       and(
         eq(timeBlocks.workspaceId, workspaceId),
-        or(eq(timeBlocks.kind, "routine"), eq(timeBlocks.kind, "recovery")),
+        eq(timeBlocks.protected, true),
       ),
     );
 
@@ -187,7 +187,7 @@ export async function updateTaskStatus(
     const [task] = await tx
       .update(tasks)
       .set(values)
-      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId)))
+      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId), isNull(tasks.archivedAt)))
       .returning();
 
     if (!task) return null;
@@ -251,7 +251,7 @@ export async function updateTaskSchedule(
     const [task] = await tx
       .update(tasks)
       .set(values)
-      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId)))
+      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId), isNull(tasks.archivedAt)))
       .returning();
 
     if (!task) return null;
@@ -284,7 +284,7 @@ export async function updateTaskNotes(
     const [task] = await tx
       .update(tasks)
       .set({ notes, updatedAt: new Date() })
-      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId)))
+      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId), isNull(tasks.archivedAt)))
       .returning();
 
     if (!task) return null;
@@ -434,6 +434,7 @@ export async function processInboxItem(
         planId,
         title: item.title,
         date,
+        originalDate: date,
         daySegment: input.daySegment,
         estimatedMinutes: input.estimatedMinutes,
         energyLevel: "medium",
@@ -451,6 +452,7 @@ export async function processInboxItem(
         planId,
         title: item.title,
         date,
+        originalDate: date,
         daySegment: input.daySegment ?? "morning",
         estimatedMinutes: 15,
         energyLevel: "medium",
@@ -485,13 +487,15 @@ export async function createChoreTask(
   input: { workspaceId: string; title: string },
 ) {
   const planId = await requireActivePlanId(db, input.workspaceId);
+  const date = startOfShanghaiDay(new Date());
   const [task] = await db
     .insert(tasks)
     .values({
       workspaceId: input.workspaceId,
       planId,
       title: input.title,
-      date: startOfShanghaiDay(new Date()),
+      date,
+      originalDate: date,
       daySegment: currentShanghaiSegment(),
       estimatedMinutes: 15,
       energyLevel: "medium",
@@ -511,14 +515,17 @@ export async function proposeAgentPatch(
     reason: string;
     patch: unknown;
     createdBy: PatchCreatedBy;
+    scopeStart?: Date;
+    scopeEnd?: Date;
   },
 ) {
   const planId = await requireActivePlanId(db, input.workspaceId);
   const protectedBlockIds = await getProtectedBlockIds(db, input.workspaceId);
   const patchPayload = typeof input.patch === "string" ? parsePatchJson(input.patch) : input.patch;
   const patch: AgentPatch = validatePatchAgainstProtectedBlocks(patchPayload, protectedBlockIds);
-  const scopeStart = startOfToday();
-  const scopeEnd = input.mode === "today" ? addDays(scopeStart, 1) : addDays(scopeStart, 7);
+  const scopeStart = input.scopeStart ?? startOfToday();
+  const scopeEnd = input.scopeEnd ?? (input.mode === "today" ? addDays(scopeStart, 1) : addDays(scopeStart, 7));
+  if (scopeEnd <= scopeStart) throw new PlanningServiceError("Invalid agent patch scope", 400);
   const [agentPatch] = await db
     .insert(agentPatches)
     .values({

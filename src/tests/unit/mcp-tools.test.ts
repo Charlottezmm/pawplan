@@ -1,5 +1,5 @@
 import { getTableName } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { allowedPawPlanToolNames, pawPlanAgentGuidance, pawPlanToolSchemas, runPawPlanTool } from "@/lib/mcp/tools";
 import { pawPlanToolPermissions, pawPlanWriteToolNames } from "@/lib/mcp/tool-metadata";
@@ -212,6 +212,7 @@ describe("MCP planning tools", () => {
       "get_decisions",
       "get_conversations",
       "get_checkins",
+      "get_project_portfolio",
       "get_tasks",
     ]);
     expect(allowedPawPlanToolNames("read_write")).toContain("import_plan_bundle");
@@ -220,9 +221,19 @@ describe("MCP planning tools", () => {
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_timetable_import");
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_daily_rebalance");
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_week_rebalance");
+    expect(allowedPawPlanToolNames("read_write")).toContain("propose_overdue_replan");
     expect(allowedPawPlanToolNames("read_write")).toContain("update_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("archive_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("restore_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("delete_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("update_time_block_series");
+    expect(allowedPawPlanToolNames("read_write")).toContain("delete_time_block_series");
+    expect(allowedPawPlanToolNames("read_write")).toContain("replace_plan_window");
+    expect(allowedPawPlanToolNames("read_only")).not.toContain("preview_task_batch");
+    expect(allowedPawPlanToolNames("read_only")).not.toContain("archive_tasks_batch");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_daily_rebalance");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_week_rebalance");
+    expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_overdue_replan");
   });
 
   it("keeps every published tool in the single permission metadata source", () => {
@@ -249,6 +260,8 @@ describe("MCP planning tools", () => {
     expect(JSON.stringify(result)).toContain("get_tasks");
     expect(JSON.stringify(result)).toContain("draft_created");
     expect(JSON.stringify(result)).toContain("update_tasks_batch");
+    expect(JSON.stringify(result)).toContain("propose_overdue_replan");
+    expect(JSON.stringify(result)).toContain("needs_decision");
   });
 
   it("publishes a narrow atomic task batch schema without weakening Review-first guidance", () => {
@@ -291,6 +304,97 @@ describe("MCP planning tools", () => {
       required: ["task_id", "to_date", "to_day_segment", "reason"],
       additionalProperties: false,
     });
+  });
+
+  it("publishes a narrow overdue replan schema and rejects duplicate task ids", () => {
+    const jsonSchema = zodToJsonSchema(pawPlanToolSchemas.propose_overdue_replan) as any;
+
+    expect(jsonSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        idempotency_key: { type: "string", minLength: 8, maxLength: 200 },
+        as_of_date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        task_ids: { type: "array", minItems: 1, maxItems: 50 },
+        reason: { type: "string", minLength: 1, maxLength: 4000 },
+      },
+      required: ["idempotency_key", "as_of_date", "task_ids", "reason"],
+    });
+    expect(() => pawPlanToolSchemas.propose_overdue_replan.parse({
+      idempotency_key: "overdue-1",
+      as_of_date: "2026-08-15",
+      task_ids: ["task-1", "task-1"],
+      reason: "duplicate",
+    })).toThrow("task_ids must be unique");
+  });
+
+  it("publishes strict project portfolio and task-context read schemas", () => {
+    const portfolioSchema = zodToJsonSchema(pawPlanToolSchemas.get_project_portfolio) as any;
+    const taskSchema = zodToJsonSchema(pawPlanToolSchemas.get_tasks) as any;
+
+    expect(portfolioSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        status: {
+          type: "array",
+          minItems: 1,
+          maxItems: 4,
+          items: { enum: ["active", "paused", "completed", "archived"] },
+        },
+        category: { type: "array", minItems: 1, maxItems: 20 },
+        include_milestones: { type: "boolean", default: true },
+        include_task_summary: { type: "boolean", default: true },
+      },
+    });
+    expect(taskSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        project_ids: { type: "array", minItems: 1, maxItems: 50, items: { type: "string", format: "uuid" } },
+        milestone_ids: { type: "array", minItems: 1, maxItems: 50, items: { type: "string", format: "uuid" } },
+        parent_task_id: { type: "string", format: "uuid" },
+        overdue_as_of: expect.any(Object),
+        archive_state: { type: "string", enum: ["active", "archived", "all"] },
+      },
+    });
+    expect(() => pawPlanToolSchemas.get_tasks.parse({ unknown_filter: true })).toThrow();
+    expect(() => pawPlanToolSchemas.get_tasks.parse({ overdue_as_of: "2026/08/15" })).toThrow();
+  });
+
+  it("publishes strict Clean Slate schemas with preview and confirmation gates", () => {
+    const previewSchema = zodToJsonSchema(pawPlanToolSchemas.preview_task_batch) as any;
+    const archiveSchema = zodToJsonSchema(pawPlanToolSchemas.archive_tasks_batch) as any;
+    const deleteSchema = zodToJsonSchema(pawPlanToolSchemas.delete_tasks_batch) as any;
+    const seriesSchema = zodToJsonSchema(pawPlanToolSchemas.update_time_block_series) as any;
+    const replaceSchema = zodToJsonSchema(pawPlanToolSchemas.replace_plan_window) as any;
+
+    expect(previewSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["action", "filters"],
+    });
+    expect(archiveSchema.required).toContain("approval_id");
+    expect(archiveSchema.properties.approval_id).toMatchObject({ type: "string", format: "uuid" });
+    expect(deleteSchema.required).toContain("approval_id");
+    expect(deleteSchema.properties.approval_id).toMatchObject({ type: "string", format: "uuid" });
+    expect(deleteSchema.properties.confirmation).toMatchObject({ const: "PERMANENT_DELETE" });
+    expect(deleteSchema.properties.confirm_task_count).toMatchObject({ maximum: 50 });
+    expect(seriesSchema.properties.scope.enum).toEqual(["occurrence", "following", "series"]);
+    expect(replaceSchema.properties.retire_scope.enum).toEqual(["source_managed", "all_non_completed"]);
+    expect(replaceSchema.properties.tasks.maxItems).toBe(500);
+    expect(() => pawPlanToolSchemas.archive_tasks_batch.parse({
+      preview_token: "x".repeat(40),
+      confirm_task_count: 1,
+      idempotency_key: "archive-1",
+    })).toThrow();
+    expect(() => pawPlanToolSchemas.delete_tasks_batch.parse({
+      preview_token: "x".repeat(40),
+      confirm_task_count: 1,
+      confirmation: "DELETE",
+      idempotency_key: "delete-1",
+      operation_id: "6db5e0e5-8a14-4d76-93ea-9d36cb07ef7d",
+    })).toThrow();
   });
 
   it("reads tasks scoped to the requested workspace", async () => {
@@ -345,6 +449,189 @@ describe("MCP planning tools", () => {
         }),
       ],
     });
+    expect(db.inserts).toEqual([]);
+    expect(db.updates).toEqual([]);
+  });
+
+  it("reads filtered tasks with project, milestone, and rollover context", async () => {
+    const projectId = "11111111-1111-4111-8111-111111111111";
+    const milestoneId = "22222222-2222-4222-8222-222222222222";
+    const taskDate = new Date("2026-06-10T00:00:00.000Z");
+    const targetDate = new Date("2026-09-01T00:00:00.000Z");
+    const db = createFakeDb({
+      selectRows: {
+        tasks: [
+          {
+            id: "task-1",
+            workspaceId: "workspace-1",
+            planId: "plan-1",
+            title: "Reproduce baseline",
+            date: taskDate,
+            daySegment: "morning",
+            status: "todo",
+            priority: "high",
+            projectId,
+            milestoneId,
+            parentTaskId: null,
+            originalDate: new Date("2026-06-01T00:00:00.000Z"),
+            rolloverCount: 1,
+            lastRolloverAt: new Date("2026-06-05T00:00:00.000Z"),
+            createdAt: taskDate,
+            updatedAt: taskDate,
+          },
+        ],
+        projects: [
+          {
+            id: projectId,
+            workspaceId: "workspace-1",
+            name: "Physics-Grounded Manipulation",
+            category: "科研",
+            status: "active",
+            priority: "high",
+            targetDate,
+          },
+        ],
+        project_milestones: [
+          {
+            id: milestoneId,
+            workspaceId: "workspace-1",
+            projectId,
+            title: "Baseline reproduced",
+            status: "in_progress",
+            targetDate,
+          },
+        ],
+      },
+    });
+
+    const result = await runPawPlanTool(db, "workspace-1", "get_tasks", {
+      project_ids: [projectId],
+      milestone_ids: [milestoneId],
+      overdue_as_of: "2026-06-11",
+    }, "read_only");
+
+    expect(result.tasks).toEqual([
+      expect.objectContaining({
+        id: "task-1",
+        originalDate: "2026-06-01T00:00:00.000Z",
+        rolloverCount: 1,
+        lastRolloverAt: "2026-06-05T00:00:00.000Z",
+        project: {
+          id: projectId,
+          name: "Physics-Grounded Manipulation",
+          category: "科研",
+          status: "active",
+          priority: "high",
+          targetDate: targetDate.toISOString(),
+        },
+        milestone: {
+          id: milestoneId,
+          title: "Baseline reproduced",
+          status: "in_progress",
+          targetDate: targetDate.toISOString(),
+        },
+        parentTask: null,
+      }),
+    ]);
+    expect(db.selects.map((select) => select.table)).toEqual(["plans", "tasks", "projects", "project_milestones"]);
+    expect(db.selects.every((select) => containsDeepValue(select.predicate, "workspace-1"))).toBe(true);
+    expect(containsDeepValue(db.selects.find((select) => select.table === "tasks")?.predicate, "archived_at")).toBe(true);
+    expect(db.inserts).toEqual([]);
+    expect(db.updates).toEqual([]);
+  });
+
+  it("reads a workspace-scoped project portfolio with milestones and task summaries", async () => {
+    const projectId = "11111111-1111-4111-8111-111111111111";
+    const milestoneId = "22222222-2222-4222-8222-222222222222";
+    const db = createFakeDb({
+      selectRows: {
+        projects: [
+          {
+            id: projectId,
+            workspaceId: "workspace-1",
+            name: "Course exam preparation",
+            category: "课程/考试",
+            objective: "Pass the final",
+            successCriteria: "Score at least 90",
+            status: "active",
+            priority: "urgent",
+            needsDefinition: false,
+            targetDate: new Date("2026-12-10T00:00:00.000Z"),
+            createdAt: new Date("2026-08-15T00:00:00.000Z"),
+          },
+        ],
+        project_milestones: [
+          {
+            id: milestoneId,
+            workspaceId: "workspace-1",
+            projectId,
+            title: "Finish review set",
+            status: "planned",
+            position: 0,
+            targetDate: new Date("2026-11-30T00:00:00.000Z"),
+          },
+        ],
+        tasks: [
+          {
+            id: "task-overdue",
+            workspaceId: "workspace-1",
+            projectId,
+            milestoneId,
+            status: "todo",
+            date: new Date("2020-01-01T00:00:00.000Z"),
+          },
+          {
+            id: "task-done",
+            workspaceId: "workspace-1",
+            projectId,
+            milestoneId: null,
+            status: "done",
+            date: new Date("2026-08-10T00:00:00.000Z"),
+          },
+          {
+            id: "task-unassigned",
+            workspaceId: "workspace-1",
+            projectId: null,
+            milestoneId: null,
+            status: "backlog",
+            date: new Date("2026-08-10T00:00:00.000Z"),
+          },
+        ],
+      },
+    });
+
+    const result = await runPawPlanTool(db, "workspace-1", "get_project_portfolio", {
+      status: ["active"],
+      category: ["课程/考试"],
+    }, "read_only");
+
+    expect(result.filters).toEqual({
+      status: ["active"],
+      category: ["课程/考试"],
+      include_milestones: true,
+      include_task_summary: true,
+    });
+    expect(result.projects).toEqual([
+      expect.objectContaining({
+        id: projectId,
+        category: "课程/考试",
+        milestones: [expect.objectContaining({ id: milestoneId, title: "Finish review set" })],
+        taskSummary: {
+          taskCounts: { todo: 1, done: 1, skipped: 0, backlog: 0 },
+          overdueCount: 1,
+          unassignedMilestoneTaskCount: 1,
+        },
+      }),
+    ]);
+    expect(result.summary).toEqual(expect.objectContaining({
+      projectCount: 1,
+      needsDefinitionProjects: [],
+      taskCounts: { todo: 1, done: 1, skipped: 0, backlog: 1 },
+      overdueCount: 1,
+      unassignedProjectTaskCount: 1,
+      unassignedMilestoneTaskCount: 1,
+    }));
+    expect(db.selects.every((select) => containsDeepValue(select.predicate, "workspace-1"))).toBe(true);
     expect(db.inserts).toEqual([]);
     expect(db.updates).toEqual([]);
   });
@@ -803,6 +1090,75 @@ describe("MCP planning tools", () => {
         }),
       }),
     ]);
+  });
+
+  it("returns needs_decision for a repeated overdue task without creating a Review draft", async () => {
+    const previousFlag = process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED;
+    process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED = "true";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-15T04:00:00.000Z"));
+    try {
+      const db = createFakeDb({
+        activePlanId: "plan-1",
+        selectRows: {
+          tasks: [{
+            id: "task-repeated",
+            workspaceId: "workspace-1",
+            planId: "plan-1",
+            projectId: "project-1",
+            milestoneId: null,
+            title: "Repeated overdue task",
+            date: new Date("2026-08-13T16:00:00.000Z"),
+            originalDate: new Date("2026-08-10T16:00:00.000Z"),
+            daySegment: "morning",
+            status: "todo",
+            blocked: false,
+            movable: true,
+            estimatedMinutes: 60,
+            energyLevel: "high",
+            priority: "normal",
+            rolloverCount: 1,
+          }],
+          projects: [{
+            id: "project-1",
+            workspaceId: "workspace-1",
+            name: "Research",
+            category: "科研",
+            objective: "Validate the model",
+            successCriteria: "Reproducible result",
+            status: "active",
+            priority: "high",
+            targetDate: new Date("2026-09-30T16:00:00.000Z"),
+            needsDefinition: false,
+          }],
+          project_milestones: [],
+        },
+      });
+
+      const result = await runPawPlanTool(db, "workspace-1", "propose_overdue_replan", {
+        idempotency_key: "overdue-repeat-1",
+        as_of_date: "2026-08-15",
+        task_ids: ["task-repeated"],
+        reason: "Inspect repeated overdue work",
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        status: "needs_decision",
+        operationCount: 0,
+        needsDecision: [expect.objectContaining({ taskId: "task-repeated", code: "repeated_overdue" })],
+      }));
+      expect(db.inserts.map((write) => write.table)).toEqual(["agent_runs"]);
+      expect(db.updates).toEqual([
+        expect.objectContaining({
+          table: "agent_runs",
+          values: expect.objectContaining({ status: "needs_decision", patchId: null }),
+        }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+      if (previousFlag === undefined) delete process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED;
+      else process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED = previousFlag;
+    }
   });
 
   it("records and returns failed rebalance status when patch creation fails after run start", async () => {

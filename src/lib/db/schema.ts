@@ -1,6 +1,8 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -16,17 +18,21 @@ import {
 export const planStatus = pgEnum("plan_status", ["active", "archived"]);
 export const planVersionSource = pgEnum("plan_version_source", ["baseline", "manual_edit", "agent_patch", "mcp"]);
 export const taskStatus = pgEnum("task_status", ["todo", "done", "skipped", "backlog"]);
+export const projectStatus = pgEnum("project_status", ["active", "paused", "completed", "archived"]);
+export const milestoneStatus = pgEnum("milestone_status", ["planned", "in_progress", "completed", "skipped"]);
 export const priority = pgEnum("priority", ["low", "normal", "high", "urgent"]);
 export const energyLevel = pgEnum("energy_level", ["low", "medium", "high"]);
 export const daySegment = pgEnum("day_segment", ["morning", "afternoon", "evening"]);
 export const routineTimeSegment = pgEnum("routine_time_segment", ["morning", "afternoon", "evening", "specific_window"]);
 export const trackKind = pgEnum("track_kind", ["main", "work", "side", "recovery", "custom"]);
 export const timeBlockKind = pgEnum("time_block_kind", ["course", "meeting", "unavailable", "routine", "recovery"]);
+export const timeBlockExceptionAction = pgEnum("time_block_exception_action", ["cancel", "override"]);
 export const agentPatchStatus = pgEnum("agent_patch_status", ["draft", "applied", "rejected"]);
 export const agentRunKind = pgEnum("agent_run_kind", [
   "morning_rebalance",
   "evening_review",
   "weekly_rebalance",
+  "overdue_replan",
 ]);
 export const agentRunStatus = pgEnum("agent_run_status", [
   "started",
@@ -34,6 +40,7 @@ export const agentRunStatus = pgEnum("agent_run_status", [
   "no_change",
   "duplicate",
   "failed",
+  "needs_decision",
 ]);
 export const inboxSource = pgEnum("inbox_source", ["manual", "imported"]);
 export const checkinTaskStatus = pgEnum("checkin_task_status", ["done", "not_done", "partial", "skipped"]);
@@ -107,7 +114,11 @@ export const plans = pgTable("plans", {
   currentVersionId: uuid("current_version_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  uniqueActivePlanPerWorkspace: uniqueIndex("plans_workspace_active_unique")
+    .on(table.workspaceId)
+    .where(sql`${table.status} = 'active'`),
+}));
 
 export const planVersions = pgTable("plan_versions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -117,16 +128,52 @@ export const planVersions = pgTable("plan_versions", {
   snapshot: jsonb("snapshot").notNull(),
   source: planVersionSource("source").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  uniquePlanVersion: uniqueIndex("plan_versions_plan_version_unique").on(table.planId, table.versionNumber),
+}));
 
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 120 }).notNull(),
   color: varchar("color", { length: 32 }).notNull().default("#71717a"),
+  category: varchar("category", { length: 80 }),
+  objective: text("objective"),
+  successCriteria: text("success_criteria"),
+  status: projectStatus("status").notNull().default("active"),
+  priority: priority("priority").notNull().default("normal"),
+  startDate: timestamp("start_date", { withTimezone: true }),
+  targetDate: timestamp("target_date", { withTimezone: true }),
+  weeklyTargetMinutes: integer("weekly_target_minutes"),
+  needsDefinition: boolean("needs_definition").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const projectMilestones = pgTable("project_milestones", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 180 }).notNull(),
+  objective: text("objective"),
+  successCriteria: text("success_criteria"),
+  targetDate: timestamp("target_date", { withTimezone: true }),
+  status: milestoneStatus("status").notNull().default("planned"),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  workspaceProjectPositionIdx: index("project_milestones_workspace_project_position_idx").on(
+    table.workspaceId,
+    table.projectId,
+    table.position,
+  ),
+  workspaceStatusTargetIdx: index("project_milestones_workspace_status_target_idx").on(
+    table.workspaceId,
+    table.status,
+    table.targetDate,
+  ),
+}));
 
 export const courses = pgTable("courses", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -174,12 +221,26 @@ export const tasks = pgTable("tasks", {
   isChore: boolean("is_chore").notNull().default(false),
   movable: boolean("movable").notNull().default(true),
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  milestoneId: uuid("milestone_id").references(() => projectMilestones.id, { onDelete: "set null" }),
   courseId: uuid("course_id").references(() => courses.id, { onDelete: "set null" }),
   trackId: uuid("track_id").references(() => tracks.id, { onDelete: "set null" }),
-  parentTaskId: uuid("parent_task_id"),
+  parentTaskId: uuid("parent_task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
+  originalDate: timestamp("original_date", { withTimezone: true }),
+  rolloverCount: integer("rollover_count").notNull().default(0),
+  lastRolloverAt: timestamp("last_rollover_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  workspaceProjectIdx: index("tasks_workspace_project_idx").on(table.workspaceId, table.projectId),
+  workspaceMilestoneIdx: index("tasks_workspace_milestone_idx").on(table.workspaceId, table.milestoneId),
+  overdueCandidateIdx: index("tasks_overdue_candidate_idx")
+    .on(table.workspaceId, table.planId, table.status, table.date)
+    .where(sql`${table.status} = 'todo' AND ${table.archivedAt} IS NULL`),
+  workspaceActiveDateIdx: index("tasks_workspace_active_date_idx")
+    .on(table.workspaceId, table.planId, table.date)
+    .where(sql`${table.archivedAt} IS NULL`),
+}));
 
 export const taskTags = pgTable("task_tags", {
   taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
@@ -201,9 +262,38 @@ export const timeBlocks = pgTable("time_blocks", {
   courseId: uuid("course_id").references(() => courses.id, { onDelete: "set null" }),
   trackId: uuid("track_id").references(() => tracks.id, { onDelete: "set null" }),
   movable: boolean("movable").notNull().default(false),
+  protected: boolean("protected").notNull().default(true),
   estimatedMinutes: integer("estimated_minutes"),
   energyLevel: energyLevel("energy_level"),
+  revision: integer("revision").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const timeBlockExceptions = pgTable("time_block_exceptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  seriesId: uuid("series_id").notNull().references(() => timeBlocks.id, { onDelete: "cascade" }),
+  occurrenceDate: date("occurrence_date").notNull(),
+  action: timeBlockExceptionAction("action").notNull(),
+  overrideTitle: varchar("override_title", { length: 180 }),
+  overrideKind: timeBlockKind("override_kind"),
+  overrideStartsAt: timestamp("override_starts_at", { withTimezone: true }),
+  overrideEndsAt: timestamp("override_ends_at", { withTimezone: true }),
+  overrideProtected: boolean("override_protected"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  uniqueSeriesOccurrence: uniqueIndex("time_block_exceptions_workspace_series_occurrence_unique").on(
+    table.workspaceId,
+    table.seriesId,
+    table.occurrenceDate,
+  ),
+  workspaceOccurrenceIdx: index("time_block_exceptions_workspace_occurrence_idx").on(
+    table.workspaceId,
+    table.occurrenceDate,
+  ),
+}));
 
 export const routines = pgTable("routines", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -452,6 +542,88 @@ export const mcpTaskWriteBatches = pgTable("mcp_task_write_batches", {
     table.workspaceId,
     table.createdAt,
   ),
+}));
+
+export const planOperations = pgTable("plan_operations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  planId: uuid("plan_id").references(() => plans.id, { onDelete: "set null" }),
+  operationKind: varchar("operation_kind", { length: 48 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),
+  groupId: uuid("group_id"),
+  status: varchar("status", { length: 24 }).notNull(),
+  resultJson: jsonb("result_json").notNull().default({}),
+  errorJson: jsonb("error_json"),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  uniqueWorkspaceIdempotency: uniqueIndex("plan_operations_workspace_idempotency_unique").on(
+    table.workspaceId,
+    table.idempotencyKey,
+  ),
+  workspaceCreatedIdx: index("plan_operations_workspace_created_idx").on(table.workspaceId, table.createdAt),
+  workspaceGroupIdx: index("plan_operations_workspace_group_idx").on(table.workspaceId, table.groupId),
+}));
+
+export const operationApprovals = pgTable("operation_approvals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  operationKind: varchar("operation_kind", { length: 48 }).notNull(),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),
+  previewHash: varchar("preview_hash", { length: 64 }).notNull(),
+  status: varchar("status", { length: 24 }).notNull().default("pending"),
+  summaryJson: jsonb("summary_json").notNull().default({}),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  workspaceStatusCreatedIdx: index("operation_approvals_workspace_status_created_idx").on(
+    table.workspaceId,
+    table.status,
+    table.createdAt,
+  ),
+}));
+
+export const planWindowRevisions = pgTable("plan_window_revisions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  planId: uuid("plan_id").notNull().references(() => plans.id, { onDelete: "cascade" }),
+  operationId: uuid("operation_id").notNull().references(() => planOperations.id, { onDelete: "restrict" }),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
+  sourceKey: varchar("source_key", { length: 160 }).notNull(),
+  baseVersionId: uuid("base_version_id"),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),
+  diffJson: jsonb("diff_json").notNull(),
+  resultJson: jsonb("result_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  workspaceSourceCreatedIdx: index("plan_window_revisions_workspace_source_created_idx").on(
+    table.workspaceId,
+    table.sourceKey,
+    table.createdAt,
+  ),
+}));
+
+export const planWindowTaskRefs = pgTable("plan_window_task_refs", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  planId: uuid("plan_id").notNull().references(() => plans.id, { onDelete: "cascade" }),
+  sourceKey: varchar("source_key", { length: 160 }).notNull(),
+  externalTaskKey: varchar("external_task_key", { length: 200 }).notNull(),
+  taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  revisionId: uuid("revision_id").notNull().references(() => planWindowRevisions.id, { onDelete: "cascade" }),
+}, (table) => ({
+  uniquePlanSourceExternalTask: uniqueIndex("plan_window_task_refs_plan_source_external_unique").on(
+    table.planId,
+    table.sourceKey,
+    table.externalTaskKey,
+  ),
+  workspaceTaskIdx: index("plan_window_task_refs_workspace_task_idx").on(table.workspaceId, table.taskId),
 }));
 
 export const mcpPlanImports = pgTable("mcp_plan_imports", {

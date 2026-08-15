@@ -6,7 +6,10 @@ import { readJsonBody } from "@/lib/validation/common";
 
 function templateError(error: unknown) {
   if (error instanceof TemplateImportError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json(
+      { error: error.message, code: error.code, details: error.details },
+      { status: error.status },
+    );
   }
   return NextResponse.json({ error: "Failed to import template" }, { status: 500 });
 }
