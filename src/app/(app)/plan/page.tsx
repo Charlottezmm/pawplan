@@ -1,16 +1,23 @@
 import { redirect } from "next/navigation";
-import { PlanView } from "@/components/plan-view";
+import { PlanView, type PlanTab } from "@/components/plan-view";
 import { getWorkspaceIdFromSession } from "@/lib/auth/session";
-import { getMonthPlanData, getTodayPageData, getWeekPageData } from "@/lib/planning/view-data";
+import { getMonthPlanData, getTodayPageData, getWeekPageData, normalizeMonthKey } from "@/lib/planning/view-data";
 
-export default async function PlanPage() {
+const planTabs = new Set<PlanTab>(["day", "week", "month", "reschedule"]);
+
+export default async function PlanPage({ searchParams }: { searchParams: { view?: string; month?: string } }) {
   const workspaceId = await getWorkspaceIdFromSession();
   if (!workspaceId) redirect("/login");
+
+  const initialTab = searchParams.view && planTabs.has(searchParams.view as PlanTab)
+    ? searchParams.view as PlanTab
+    : "day";
+  const monthKey = normalizeMonthKey(searchParams.month);
 
   const [today, week, month] = await Promise.all([
     getTodayPageData(workspaceId),
     getWeekPageData(workspaceId),
-    getMonthPlanData(workspaceId),
+    getMonthPlanData(workspaceId, monthKey),
   ]);
-  return <PlanView today={today} week={week} month={month} />;
+  return <PlanView today={today} week={week} month={month} initialTab={initialTab} />;
 }

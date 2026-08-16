@@ -1,13 +1,15 @@
 "use client";
 
 import { X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CatIcon } from "./cat-icon";
+import { PlanSectionNav } from "./plan-section-nav";
 import { RescheduleList } from "./reschedule-list";
 import type { MonthDayView, MonthViewData, PlanTaskView, TimelineItemView, TodayViewData, WeekDayView, WeekViewData } from "@/lib/planning/view-data";
 import { redactPrivateTitle } from "@/lib/display/privacy";
 
-type Tab = "day" | "week" | "month" | "reschedule";
+export type PlanTab = "day" | "week" | "month" | "reschedule";
 
 const weekdayChars = "日一二三四五六";
 
@@ -104,6 +106,13 @@ const priorityLabel: Record<PlanTaskView["priority"], string> = {
   urgent: "紧急",
 };
 
+const taskStatusLabel: Record<PlanTaskView["status"], string> = {
+  todo: "待办",
+  done: "已完成",
+  backlog: "稍后处理",
+  skipped: "旧任务",
+};
+
 function TaskCard({
   task,
   onOpen,
@@ -120,13 +129,13 @@ function TaskCard({
   return (
     <button
       type="button"
-      className={`paw-plan-task-card ${compact ? "compact" : ""} ${variant === "overdue" ? "overdue" : ""} ${task.done ? "done" : ""} ${active ? "active" : ""}`}
+      className={`paw-plan-task-card status-${task.status} ${compact ? "compact" : ""} ${variant === "overdue" ? "overdue" : ""} ${task.done ? "done" : ""} ${active ? "active" : ""}`}
       aria-pressed={active}
       onClick={() => onOpen(task)}
     >
       <span className="paw-plan-task-title">{redactPrivateTitle(task.title)}</span>
       <span className="paw-plan-task-meta">
-        {segmentLabel[task.segment]} · {minutesLabel(task.minutes)} · {task.context} · {task.track}
+        {taskStatusLabel[task.status]} · {segmentLabel[task.segment]} · {minutesLabel(task.minutes)} · {task.context} · {task.track}
       </span>
     </button>
   );
@@ -242,7 +251,11 @@ function TaskDetail({
         <span>能量 {task.energy}</span>
       </div>
       <p className="paw-goal-meta">{task.context} · {task.track}</p>
-      {task.notes ? <p className="paw-plan-detail-notes">{task.notes}</p> : <p className="paw-plan-detail-notes muted">这条任务还没有详细描述。</p>}
+      {task.detail.sections.length === 0 ? (
+        task.notes
+          ? <p className="paw-plan-detail-notes">{task.notes}</p>
+          : <p className="paw-plan-detail-notes muted">这条任务还没有详细描述。</p>
+      ) : null}
       {canAct ? (
         <div className="paw-plan-detail-actions" aria-label="任务操作">
           <button type="button" className="paw-act-btn" disabled={isSaving} onClick={() => taskActions!.moveToday(task)}>
@@ -255,7 +268,7 @@ function TaskDetail({
             完成
           </button>
           <button type="button" className="paw-act-btn defer" disabled={isSaving} onClick={() => taskActions!.backlog(task)}>
-            放回 Backlog
+            移到稍后处理
           </button>
         </div>
       ) : null}
@@ -337,15 +350,15 @@ function MonthDayCell({
       ) : null}
       <span className="paw-month-day-dots" aria-hidden="true">
         {day.tasks.slice(0, 4).map((task) => (
-          <span key={task.id} className={`paw-month-dot ${task.done ? "done" : ""}`} />
+          <span key={task.id} className={`paw-month-dot status-${task.status}`} />
         ))}
       </span>
     </button>
   );
 }
 
-export function PlanView({ today, week, month }: { today: TodayViewData; week: WeekViewData; month: MonthViewData }) {
-  const [tab, setTab] = useState<Tab>("day");
+export function PlanView({ today, week, month, initialTab = "day" }: { today: TodayViewData; week: WeekViewData; month: MonthViewData; initialTab?: PlanTab }) {
+  const [tab, setTab] = useState<PlanTab>(initialTab);
   const [overdueTasks, setOverdueTasks] = useState<PlanTaskView[]>(today.overdueTasks);
   const [todayTasks, setTodayTasks] = useState<PlanTaskView[]>(today.todayTasks);
   const [selectedTask, setSelectedTask] = useState<PlanTaskView | null>(null);
@@ -359,6 +372,16 @@ export function PlanView({ today, week, month }: { today: TodayViewData; week: W
     setDetailOpen(true);
   };
   const closeDetail = () => setDetailOpen(false);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
+
+  useEffect(() => {
+    setSelectedMonthDay(null);
+    setSelectedTask(null);
+    setDetailOpen(false);
+  }, [month.monthKey]);
 
   // 手机上详情就地展开在列表下方，自动滚动过去，省得手动找
   useEffect(() => {
@@ -451,37 +474,39 @@ export function PlanView({ today, week, month }: { today: TodayViewData; week: W
     moveToday: (task: PlanTaskView) => void moveTaskToDate(task, currentDateKey, "已挪到今天"),
     moveTomorrow: (task: PlanTaskView) => void moveTaskToDate(task, addDaysKey(currentDateKey, 1), "已挪到明天"),
     complete: (task: PlanTaskView) => void setTaskStatus(task, "done", "已标记完成"),
-    backlog: (task: PlanTaskView) => void setTaskStatus(task, "backlog", "已放回 Backlog"),
+    backlog: (task: PlanTaskView) => void setTaskStatus(task, "backlog", "已移到稍后处理"),
   };
 
   return (
     <div className="paw-page">
+      <PlanSectionNav />
       <section className="paw-page-header">
         <h1 className="paw-page-date">计划</h1>
         <div className="paw-agent-row">
           <CatIcon size={40} mood="think" />
           <p className="paw-agent-msg">日、周、月都以任务为主。固定占用只做参考；想改任务日期，去「改期」自己调；Agent 的建议在 Review 里确认。</p>
         </div>
-        <div className="paw-sub-tabs">
-          {[
-            ["day", "日"],
-            ["week", "周"],
-            ["month", "月"],
-            ["reschedule", "改期"],
-          ].map(([value, label]) => (
-            <button
+        <nav className="paw-sub-tabs" aria-label="日程视图">
+          {([
+            ["day", "日", "/plan?view=day"],
+            ["week", "周", "/plan?view=week"],
+            ["month", "月", `/plan?view=month&month=${month.monthKey}`],
+            ["reschedule", "改期", "/plan?view=reschedule"],
+          ] as const).map(([value, label, href]) => (
+            <Link
               key={value}
-              type="button"
+              href={href}
               onClick={() => {
-                setTab(value as Tab);
+                setTab(value);
                 setDetailOpen(false);
               }}
               className={`paw-sub-tab ${tab === value ? "active" : ""}`}
+              aria-current={tab === value ? "page" : undefined}
             >
               {label}
-            </button>
+            </Link>
           ))}
-        </div>
+        </nav>
       </section>
 
       {today.dataUnavailable || week.dataUnavailable || month.dataUnavailable ? (
@@ -565,31 +590,48 @@ export function PlanView({ today, week, month }: { today: TodayViewData; week: W
       {tab === "month" ? (
         <section className="paw-plan-view paw-plan-split">
           <div className="paw-plan-main">
+          <div className="paw-month-toolbar" aria-label="选择月份">
+            <Link className="paw-secondary-btn" href={`/plan?view=month&month=${month.previousMonthKey}`} aria-label="上个月">← 上月</Link>
+            <form action="/plan" method="get" className="paw-month-picker">
+              <input type="hidden" name="view" value="month" />
+              <label htmlFor="plan-month">月份</label>
+              <input key={month.monthKey} id="plan-month" className="paw-input" type="month" name="month" defaultValue={month.monthKey} />
+              <button type="submit" className="paw-secondary-btn">查看</button>
+            </form>
+            <Link className="paw-secondary-btn" href={`/plan?view=month&month=${month.nextMonthKey}`} aria-label="下个月">下月 →</Link>
+          </div>
+          <h2 className="paw-month-heading">{month.monthLabel}</h2>
+          <div className="paw-month-stats">
+            <div className="paw-month-stat">
+              <p className="paw-month-stat-num">{month.statusCounts.todo}</p>
+              <p className="paw-month-stat-label">计划中</p>
+            </div>
+            <div className="paw-month-stat">
+              <p className="paw-month-stat-num">{month.statusCounts.done}</p>
+              <p className="paw-month-stat-label">已完成</p>
+            </div>
+            <div className="paw-month-stat">
+              <p className="paw-month-stat-num">{month.statusCounts.backlog}</p>
+              <p className="paw-month-stat-label">稍后处理</p>
+            </div>
+            <div className="paw-month-stat">
+              <p className="paw-month-stat-num">{month.completionPercent}%</p>
+              <p className="paw-month-stat-label">完成率</p>
+            </div>
+          </div>
+          {month.statusCounts.skipped > 0 ? (
+            <p className="paw-month-legacy-note">
+              旧任务待整理 {month.statusCounts.skipped} 条 · <Link href="/backlog">前往稍后处理</Link>
+            </p>
+          ) : null}
           {month.emptyText ? (
-            <article className="paw-goal-card">
-              <h2 className="paw-goal-title">本月计划</h2>
+            <article className="paw-goal-card mt-3">
+              <h2 className="paw-goal-title">这个月还没有计划数据</h2>
               <p className="paw-goal-meta">{month.emptyText}</p>
               <span className="paw-deadline-tag">No data</span>
             </article>
           ) : (
             <>
-              <div className="paw-month-stats">
-                <div className="paw-month-stat">
-                  <p className="paw-month-stat-num">
-                    {month.doneCount}/{month.taskCount}
-                  </p>
-                  <p className="paw-month-stat-label">已完成任务</p>
-                </div>
-                <div className="paw-month-stat">
-                  <p className="paw-month-stat-num">{month.completionPercent}%</p>
-                  <p className="paw-month-stat-label">完成度</p>
-                </div>
-                <div className="paw-month-stat">
-                  <p className="paw-month-stat-num">{month.totalHours}</p>
-                  <p className="paw-month-stat-label">总工时</p>
-                </div>
-              </div>
-
               {month.days.length > 0 ? (
                 <article className="paw-goal-card mt-3">
                   <h2 className="paw-goal-title">月视图</h2>
@@ -618,7 +660,9 @@ export function PlanView({ today, week, month }: { today: TodayViewData; week: W
                       />
                       <div className="paw-month-selected" role="group" aria-label="当天任务">
                         <div className="paw-month-selected-head">
-                          <div className="paw-section-label">{selectedMonthDay.dateLabel} · {selectedMonthDay.doneCount}/{selectedMonthDay.taskCount}</div>
+                          <div className="paw-section-label">
+                            {selectedMonthDay.dateLabel} · 计划中 {selectedMonthDay.statusCounts.todo} · 完成 {selectedMonthDay.statusCounts.done}
+                          </div>
                           <button
                             type="button"
                             className="paw-month-sheet-close"
@@ -643,6 +687,27 @@ export function PlanView({ today, week, month }: { today: TodayViewData; week: W
                       </div>
                     </>
                   ) : null}
+                </article>
+              ) : null}
+
+              {month.projectSummaries.length > 0 ? (
+                <article className="paw-goal-card mt-3">
+                  <h2 className="paw-goal-title">按 Project 汇总</h2>
+                  <div className="paw-month-projects">
+                    {month.projectSummaries.map((project) => (
+                      <div key={project.projectId ?? "unassigned"} className="paw-month-project-row">
+                        <div className="paw-month-project-name">
+                          <span className="paw-project-color" style={{ background: project.color }} aria-hidden="true" />
+                          <strong>{project.projectName}</strong>
+                          <small>{project.taskCount} 项 · {project.totalMinutes}</small>
+                        </div>
+                        <div className="paw-month-project-statuses">
+                          <span>计划中 {project.statusCounts.todo}</span>
+                          <span>完成 {project.statusCounts.done}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </article>
               ) : null}
 

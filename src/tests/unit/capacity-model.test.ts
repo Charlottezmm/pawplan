@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildCapacityModel } from "@/lib/planning/capacity-model";
 
 describe("shared capacity model", () => {
-  it("counts protected course, unavailable, routine, and task usage while excluding backlog", () => {
+  it("counts protected course, unavailable, routine, and active task usage while excluding backlog and skipped", () => {
     const result = buildCapacityModel({
       dates: [new Date("2026-06-12T00:00:00.000+08:00")],
       capacities: [
@@ -29,6 +29,14 @@ describe("shared capacity model", () => {
           daySegment: "morning",
           estimatedMinutes: 240,
           status: "backlog",
+        },
+        {
+          id: "task-skipped",
+          title: "Legacy skipped task",
+          date: new Date("2026-06-12T00:00:00.000+08:00"),
+          daySegment: "morning",
+          estimatedMinutes: 240,
+          status: "skipped",
         },
       ],
       timeBlocks: [
@@ -99,6 +107,7 @@ describe("shared capacity model", () => {
     });
     expect(result.days[0].segments.morning.blocks.map((block) => block.id)).toEqual(["task-1", "course-1", "routine-window"]);
     expect(result.days[0].segments.morning.blocks.map((block) => block.id)).not.toContain("task-backlog");
+    expect(result.days[0].segments.morning.blocks.map((block) => block.id)).not.toContain("task-skipped");
   });
 
   it("warns on future todo over-capacity but ignores future completed and skipped task load", () => {

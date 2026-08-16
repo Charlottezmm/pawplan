@@ -1,0 +1,160 @@
+openapi: 3.1.0
+info:
+  title: PawPlan Task State Transition API
+  version: 0.2.0
+paths:
+  /api/tasks/transitions:
+    post:
+      summary: Reschedule one backlog task or restore one archived task to backlog
+      security:
+        - workspaceSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/RescheduleBacklogTask'
+                - $ref: '#/components/schemas/RestoreArchivedTask'
+                - $ref: '#/components/schemas/RestoreLegacySkippedTask'
+              discriminator:
+                propertyName: action
+      responses:
+        '200':
+          description: Transition committed, audited, and read back; a retry may return duplicate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTransitionResult'
+        '400':
+          description: Invalid strict request body, date, or idempotency key
+        '401':
+          description: Missing workspace session
+        '404':
+          description: Task is outside the session workspace or active plan
+        '409':
+          description: Task state conflict, idempotency conflict, or operation conflict
+components:
+  securitySchemes:
+    workspaceSession:
+      type: apiKey
+      in: cookie
+      name: daily_progress_workspace
+  schemas:
+    RescheduleBacklogTask:
+      type: object
+      additionalProperties: false
+      required: [action, taskId, date, idempotencyKey]
+      properties:
+        action:
+          const: reschedule_backlog
+        taskId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+          description: Explicit new calendar date in Asia/Shanghai
+        daySegment:
+          type: string
+          enum: [morning, afternoon, evening]
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 200
+    RestoreArchivedTask:
+      type: object
+      additionalProperties: false
+      required: [action, taskId, expectedArchived, idempotencyKey]
+      properties:
+        action:
+          const: restore_archived_to_backlog
+        taskId:
+          type: string
+          format: uuid
+        expectedArchived:
+          const: true
+          description: Compare-and-set guard; the task must still be archived
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 200
+    RestoreLegacySkippedTask:
+      type: object
+      additionalProperties: false
+      required: [action, taskId, expectedStatus, idempotencyKey]
+      properties:
+        action:
+          const: move_legacy_skipped_to_backlog
+        taskId:
+          type: string
+          format: uuid
+        expectedStatus:
+          const: skipped
+          description: Read-only legacy compare-and-set guard; the write target is backlog
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 200
+    TaskReadback:
+      type: object
+      additionalProperties: false
+      required: [id, status, date, daySegment, archivedAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [todo, done, skipped, backlog]
+          description: skipped is read-only legacy compatibility and is never written by this API
+        date:
+          type: string
+          format: date
+        daySegment:
+          type: string
+          enum: [morning, afternoon, evening]
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TaskTransitionResult:
+      type: object
+      additionalProperties: false
+      required: [status, operationId, idempotencyKey, action, task, readback]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, duplicate]
+        originalStatus:
+          type: string
+          enum: [succeeded]
+        operationId:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+        action:
+          type: string
+          enum: [reschedule_backlog, restore_archived_to_backlog, move_legacy_skipped_to_backlog]
+        task:
+          $ref: '#/components/schemas/TaskReadback'
+        readback:
+          type: object
+          additionalProperties: false
+          required: [verification, task, counts]
+          properties:
+            verification:
+              const: succeeded
+            task:
+              $ref: '#/components/schemas/TaskReadback'
+            counts:
+              type: object
+              additionalProperties: false
+              required: [todo, backlog, archived]
+              properties:
+                todo: { type: integer, minimum: 0 }
+                backlog: { type: integer, minimum: 0 }
+                archived: { type: integer, minimum: 0 }

@@ -201,7 +201,8 @@ describe("PawPlan MCP server builder", () => {
         },
       });
 
-      const text = result.content[0]?.type === "text" ? result.content[0].text : null;
+      const content = result.content as Array<{ type: string; text?: string }>;
+      const text = content[0]?.type === "text" ? content[0].text : null;
       expect(JSON.parse(text ?? "{}")).toEqual(
         expect.objectContaining({
           patchId: "agent_patches-1",

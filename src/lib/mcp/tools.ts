@@ -36,6 +36,10 @@ import {
 } from "@/lib/mcp/task-archive";
 import { previewReplacePlanWindow, replacePlanWindow } from "@/lib/mcp/replace-plan-window";
 import {
+  applyProjectPortfolioUpdate,
+  proposeProjectPortfolioUpdate,
+} from "@/lib/mcp/project-portfolio-update";
+import {
   applyTimeBlockSeriesMutation,
   previewTimeBlockSeriesMutation,
 } from "@/lib/constraints/time-block-series";
@@ -61,11 +65,13 @@ type PlanningDb = {
 type SerializedTask = ReturnType<typeof serializeTask>;
 
 const taskStatusSchema = z.enum(["todo", "done", "skipped", "backlog"]);
+const writableTaskStatusSchema = z.enum(["todo", "done", "backlog"]);
 const projectStatusSchema = z.enum(["active", "paused", "completed", "archived"]);
 const prioritySchema = z.enum(["low", "normal", "high", "urgent"]);
 const energyLevelSchema = z.enum(["low", "medium", "high"]);
 const daySegmentSchema = z.enum(["morning", "afternoon", "evening"]);
 const dateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const dateTimeStringSchema = z.string().datetime({ offset: true });
 const createdBySchema = z.enum(["codex", "claude", "user"]);
 const conversationContextTypeSchema = z.enum([
   "weekly_review",
@@ -146,7 +152,7 @@ const proposeOverdueReplanArgsSchema = z
 const taskBatchOperationSchema = z
   .object({
     task_id: z.string().min(1),
-    status: taskStatusSchema.optional(),
+    status: writableTaskStatusSchema.optional(),
     date: dateStringSchema.optional(),
     day_segment: daySegmentSchema.optional(),
     blocked: z.boolean().optional(),
@@ -242,6 +248,146 @@ const replacePlanTaskSchema = z
   })
   .strict();
 
+const projectPortfolioFieldsSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    color: z.string().trim().min(1).max(32),
+    category: z.string().trim().min(1).max(80).nullable(),
+    objective: z.string().trim().min(1).max(4000).nullable(),
+    success_criteria: z.string().trim().min(1).max(4000).nullable(),
+    status: projectStatusSchema,
+    priority: prioritySchema,
+    start_date: dateStringSchema.nullable(),
+    target_date: dateStringSchema.nullable(),
+    weekly_target_minutes: z.number().int().min(0).max(10080).nullable(),
+  })
+  .strict();
+
+const projectPortfolioChangesSchema = projectPortfolioFieldsSchema.partial().refine(
+  (changes) => Object.keys(changes).length > 0,
+  { message: "Project changes cannot be empty" },
+);
+
+const milestoneFieldsSchema = z
+  .object({
+    title: z.string().trim().min(1).max(180),
+    objective: z.string().trim().min(1).max(4000).nullable(),
+    success_criteria: z.string().trim().min(1).max(4000).nullable(),
+    target_date: dateStringSchema.nullable(),
+    status: z.enum(["planned", "in_progress", "completed", "skipped"]),
+    position: z.number().int().min(0).max(10000),
+  })
+  .strict();
+
+const milestoneChangesSchema = milestoneFieldsSchema.partial().refine(
+  (changes) => Object.keys(changes).length > 0,
+  { message: "Milestone changes cannot be empty" },
+);
+
+const projectPortfolioUpdateSchema = z
+  .object({
+    projects: z.array(z.discriminatedUnion("action", [
+      projectPortfolioFieldsSchema.extend({
+        action: z.literal("create"),
+        client_key: z.string().trim().min(1).max(120),
+      }),
+      z.object({
+        action: z.literal("update"),
+        project_id: z.string().uuid(),
+        expected_updated_at: dateTimeStringSchema,
+        changes: projectPortfolioChangesSchema,
+      }).strict(),
+    ])).max(50),
+    milestones: z.array(z.discriminatedUnion("action", [
+      milestoneFieldsSchema.extend({
+        action: z.literal("create"),
+        client_key: z.string().trim().min(1).max(120),
+        project_id: z.string().uuid().optional(),
+        project_client_key: z.string().trim().min(1).max(120).optional(),
+      }),
+      z.object({
+        action: z.literal("update"),
+        milestone_id: z.string().uuid(),
+        expected_updated_at: dateTimeStringSchema,
+        changes: milestoneChangesSchema,
+      }).strict(),
+    ])).max(100),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.projects.length + value.milestones.length === 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "At least one Project or Milestone operation is required" });
+    }
+    for (const milestone of value.milestones) {
+      if (milestone.action === "create" && (milestone.project_id ? 1 : 0) + (milestone.project_client_key ? 1 : 0) !== 1) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Provide exactly one Project reference" });
+      }
+    }
+  });
+
+function portfolioUpdateInput(value: z.infer<typeof projectPortfolioUpdateSchema>) {
+  return {
+    projects: value.projects.map((entry) => entry.action === "create"
+      ? {
+          action: "create" as const,
+          clientKey: entry.client_key,
+          name: entry.name,
+          color: entry.color,
+          category: entry.category,
+          objective: entry.objective,
+          successCriteria: entry.success_criteria,
+          status: entry.status,
+          priority: entry.priority,
+          startDate: entry.start_date,
+          targetDate: entry.target_date,
+          weeklyTargetMinutes: entry.weekly_target_minutes,
+        }
+      : {
+          action: "update" as const,
+          projectId: entry.project_id,
+          expectedUpdatedAt: entry.expected_updated_at,
+          changes: {
+            ...(entry.changes.name !== undefined ? { name: entry.changes.name } : {}),
+            ...(entry.changes.color !== undefined ? { color: entry.changes.color } : {}),
+            ...(entry.changes.category !== undefined ? { category: entry.changes.category } : {}),
+            ...(entry.changes.objective !== undefined ? { objective: entry.changes.objective } : {}),
+            ...(entry.changes.success_criteria !== undefined ? { successCriteria: entry.changes.success_criteria } : {}),
+            ...(entry.changes.status !== undefined ? { status: entry.changes.status } : {}),
+            ...(entry.changes.priority !== undefined ? { priority: entry.changes.priority } : {}),
+            ...(entry.changes.start_date !== undefined ? { startDate: entry.changes.start_date } : {}),
+            ...(entry.changes.target_date !== undefined ? { targetDate: entry.changes.target_date } : {}),
+            ...(entry.changes.weekly_target_minutes !== undefined ? { weeklyTargetMinutes: entry.changes.weekly_target_minutes } : {}),
+          },
+        }),
+    milestones: value.milestones.map((entry) => entry.action === "create"
+      ? {
+          action: "create" as const,
+          clientKey: entry.client_key,
+          projectId: entry.project_id,
+          projectClientKey: entry.project_client_key,
+          title: entry.title,
+          objective: entry.objective,
+          successCriteria: entry.success_criteria,
+          targetDate: entry.target_date,
+          status: entry.status,
+          position: entry.position,
+        }
+      : {
+          action: "update" as const,
+          milestoneId: entry.milestone_id,
+          expectedUpdatedAt: entry.expected_updated_at,
+          changes: {
+            ...(entry.changes.title !== undefined ? { title: entry.changes.title } : {}),
+            ...(entry.changes.objective !== undefined ? { objective: entry.changes.objective } : {}),
+            ...(entry.changes.success_criteria !== undefined ? { successCriteria: entry.changes.success_criteria } : {}),
+            ...(entry.changes.target_date !== undefined ? { targetDate: entry.changes.target_date } : {}),
+            ...(entry.changes.status !== undefined ? { status: entry.changes.status } : {}),
+            ...(entry.changes.position !== undefined ? { position: entry.changes.position } : {}),
+          },
+        }),
+  };
+}
+
 const weeklySummarySchema = z
   .object({
     week_start: dateStringSchema,
@@ -289,6 +435,20 @@ export const pawPlanToolSchemas = {
       category: z.array(z.string().trim().min(1).max(80)).min(1).max(20).optional(),
       include_milestones: z.boolean().default(true),
       include_task_summary: z.boolean().default(true),
+    })
+    .strict(),
+  propose_project_portfolio_update: z
+    .object({
+      update: projectPortfolioUpdateSchema,
+      reason: z.string().trim().min(1).max(2000).optional(),
+    })
+    .strict(),
+  apply_project_portfolio_update: z
+    .object({
+      update: projectPortfolioUpdateSchema,
+      preview_token: z.string().min(32),
+      approval_id: z.string().uuid(),
+      idempotency_key: z.string().trim().min(8).max(200),
     })
     .strict(),
   get_tasks: z
@@ -364,7 +524,7 @@ export const pawPlanToolSchemas = {
   update_task_status: z
     .object({
       task_id: z.string().min(1),
-      status: taskStatusSchema,
+      status: writableTaskStatusSchema,
       note: z.string().max(1000).optional(),
     })
     .strict(),
@@ -373,7 +533,7 @@ export const pawPlanToolSchemas = {
       task_id: z.string().min(1),
       date: dateStringSchema.optional(),
       day_segment: daySegmentSchema.optional(),
-      status: taskStatusSchema.optional(),
+      status: writableTaskStatusSchema.optional(),
       blocked: z.boolean().optional(),
     })
     .strict(),
@@ -536,7 +696,7 @@ Required workflow:
 };
 
 export const pawPlanServerInstructions =
-  "PawPlan is review-first. Rebalance tools create a Review draft only. Before daily planning or task cleanup, call get_agent_guidance and follow its daily prompt. Clean Slate Preview responses create a pending approval in PawPlan Review; an MCP agent cannot approve it. Apply only after the user approves it there and supplies the approval_id. Never claim changes are applied until persisted readback succeeds.";
+  "PawPlan is review-first. Rebalance tools create a Review draft only. AI Project Portfolio changes must use propose_project_portfolio_update to create a pending approval, then wait for the user to approve the exact Preview in PawPlan Review before apply_project_portfolio_update with approval_id. An MCP agent cannot approve its own proposal. Before daily planning or task cleanup, call get_agent_guidance and follow its daily prompt. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_agent_guidance: "Read PawPlan daily agent guidance, Review-first safety rules, and the recommended daily task cleanup prompt.",
@@ -551,6 +711,10 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_checkins: "Read recent daily check-ins for the configured workspace.",
   get_project_portfolio:
     "Read workspace-scoped Projects with their definitions, optional Milestones, task status counts, overdue counts, and unassigned-task summary.",
+  propose_project_portfolio_update:
+    "AI proposes an exact Project/Milestone definition update and creates a pending PawPlan Review approval. This never changes live Projects, Milestones, or tasks.",
+  apply_project_portfolio_update:
+    "After the user approves the exact Project Portfolio Preview in PawPlan Review, atomically apply it with approval_id, Preview token, idempotency, audit, and final readback. Never links or moves tasks.",
   get_tasks:
     "Read workspace-scoped tasks with Project, Milestone, and parent-task context, optionally filtered by status, date range, hierarchy, or overdue date.",
   preview_task_batch:
@@ -1065,6 +1229,25 @@ export async function runPawPlanTool(
   if (toolName === "get_project_portfolio") {
     const parsed = pawPlanToolSchemas.get_project_portfolio.parse(args);
     return getProjectPortfolio(db, workspaceId, parsed);
+  }
+  if (toolName === "propose_project_portfolio_update") {
+    const parsed = pawPlanToolSchemas.propose_project_portfolio_update.parse(args);
+    return proposeProjectPortfolioUpdate(db, {
+      workspaceId,
+      update: portfolioUpdateInput(parsed.update),
+      reason: parsed.reason,
+    });
+  }
+  if (toolName === "apply_project_portfolio_update") {
+    const parsed = pawPlanToolSchemas.apply_project_portfolio_update.parse(args);
+    return applyProjectPortfolioUpdate(db, {
+      workspaceId,
+      update: portfolioUpdateInput(parsed.update),
+      previewToken: parsed.preview_token,
+      approvalId: parsed.approval_id,
+      idempotencyKey: parsed.idempotency_key,
+      source: "mcp",
+    });
   }
   if (toolName === "get_tasks") {
     const parsed = pawPlanToolSchemas.get_tasks.parse(args);

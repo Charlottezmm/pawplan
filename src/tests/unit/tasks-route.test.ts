@@ -139,6 +139,19 @@ describe("tasks route", () => {
     expect(vi.mocked(getDb)).not.toHaveBeenCalled();
   });
 
+  it("does not expose legacy skipped as a user-writable task status", async () => {
+    const { getWorkspaceIdFromSession } = await import("@/lib/auth/session");
+    const { getDb } = await import("@/lib/db/client");
+    vi.mocked(getWorkspaceIdFromSession).mockResolvedValue("workspace-1");
+    const { PATCH } = await import("@/app/api/tasks/route");
+
+    const response = await PATCH(patchRequest({ id: taskId, status: "skipped" }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid task update" });
+    expect(vi.mocked(getDb)).not.toHaveBeenCalled();
+  });
+
   it("updates task status through the status service", async () => {
     const task = { id: taskId, status: "done" };
     const db = { id: "db" };

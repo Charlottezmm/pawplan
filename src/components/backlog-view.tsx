@@ -1,4 +1,10 @@
 import { Archive, Clock3, FolderKanban } from "lucide-react";
+import { PlanSectionNav } from "@/components/plan-section-nav";
+import {
+  BacklogRescheduleControl,
+  LegacySkippedRestoreControl,
+} from "@/components/task-transition-controls";
+import type { LegacySkippedViewData } from "@/lib/planning/legacy-skipped";
 import type { BacklogViewData } from "@/lib/planning/project-view-data";
 
 const priorityLabels = { low: "低", normal: "普通", high: "高", urgent: "紧急" } as const;
@@ -12,14 +18,15 @@ function minutesLabel(minutes: number) {
   return `${minutes}m`;
 }
 
-export function BacklogView({ data }: { data: BacklogViewData }) {
+export function BacklogView({ data, legacySkipped }: { data: BacklogViewData; legacySkipped: LegacySkippedViewData }) {
   return (
     <div className="paw-page">
+      <PlanSectionNav />
       <section className="paw-page-header paw-project-header">
         <div>
-          <p className="paw-project-kicker">Backlog · {data.totalCount}</p>
-          <h1 className="paw-page-date">已移出排期</h1>
-          <p className="paw-project-intro">这里只保存你明确决定暂不排期的任务。逾期或普通延后的任务不会自动进入这里。</p>
+          <p className="paw-project-kicker">稍后处理 · {data.totalCount}</p>
+          <h1 className="paw-page-date">稍后处理</h1>
+          <p className="paw-project-intro">这里只保存你明确决定暂不排期的任务。为任务选择新日期后，它会重新成为“计划中”。</p>
         </div>
         <a href="/projects" className="paw-secondary-btn"><FolderKanban size={15} /> 查看 Projects</a>
       </section>
@@ -29,8 +36,8 @@ export function BacklogView({ data }: { data: BacklogViewData }) {
       {data.totalCount === 0 ? (
         <section className="paw-empty">
           <Archive size={28} />
-          <h2>Backlog 是空的</h2>
-          <p>没有任务被移出排期。</p>
+          <h2>稍后处理是空的</h2>
+          <p>没有暂不排期的任务。</p>
         </section>
       ) : (
         <div className="paw-backlog-groups">
@@ -55,6 +62,7 @@ export function BacklogView({ data }: { data: BacklogViewData }) {
                       <span>优先级 {priorityLabels[task.priority]}</span>
                       <span>最近更新 {task.updatedLabel}</span>
                     </div>
+                    <BacklogRescheduleControl taskId={task.id} />
                   </article>
                 ))}
               </div>
@@ -62,6 +70,26 @@ export function BacklogView({ data }: { data: BacklogViewData }) {
           ))}
         </div>
       )}
+
+      {legacySkipped.dataUnavailable ? (
+        <p className="paw-status-pill warn">旧兼容任务暂时无法读取。</p>
+      ) : legacySkipped.tasks.length > 0 ? (
+        <details className="paw-legacy-skipped">
+          <summary>旧兼容状态任务 · {legacySkipped.tasks.length} 条</summary>
+          <p>这些任务过去被标记为 skipped，但不算完成。需要继续的任务可以先加入“稍后处理”。</p>
+          <div className="paw-backlog-list">
+            {legacySkipped.tasks.map((task) => (
+              <article key={task.id} className="paw-backlog-task">
+                <div>
+                  <h3>{task.title}</h3>
+                  <p>原日期 {task.date} · {minutesLabel(task.estimatedMinutes)}</p>
+                </div>
+                <LegacySkippedRestoreControl taskId={task.id} />
+              </article>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }

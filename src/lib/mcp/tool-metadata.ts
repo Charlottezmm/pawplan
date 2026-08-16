@@ -12,6 +12,8 @@ export const pawPlanToolPermissions = {
   get_conversations: "read",
   get_checkins: "read",
   get_project_portfolio: "read",
+  propose_project_portfolio_update: "write",
+  apply_project_portfolio_update: "write",
   get_tasks: "read",
   preview_task_batch: "write",
   create_inbox_item: "write",

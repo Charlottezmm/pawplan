@@ -239,9 +239,9 @@ export function buildCapacityModel(input: CapacityModelInput): CapacityModelResu
   const nowKey = capacityDateKey(input.now ?? new Date());
 
   for (const task of input.tasks) {
-    if (task.status === "backlog") continue;
+    if (task.status === "backlog" || task.status === "skipped") continue;
     const taskDateKey = capacityDateKey(task.date);
-    if ((task.status === "done" || task.status === "skipped") && taskDateKey > nowKey) continue;
+    if (task.status === "done" && taskDateKey > nowKey) continue;
     const day = dayByKey.get(taskDateKey);
     if (!day) continue;
     addBlock(

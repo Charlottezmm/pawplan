@@ -28,6 +28,14 @@ describe("planning view shared capacity", () => {
           estimatedMinutes: 300,
           status: "backlog",
         },
+        {
+          id: "task-skipped",
+          title: "Legacy skipped task",
+          date: new Date("2026-06-12T00:00:00.000+08:00"),
+          daySegment: "morning",
+          estimatedMinutes: 300,
+          status: "skipped",
+        },
       ],
       blockRows: [
         {
@@ -67,6 +75,7 @@ describe("planning view shared capacity", () => {
       }),
     );
     expect(days[0].tasks[0]).toEqual(expect.objectContaining({ title: "Morning implementation", minutes: 90 }));
+    expect(days[0].tasks.map((task) => task.id)).not.toContain("task-skipped");
     expect(days[0].fixedItems[0]).toEqual(expect.objectContaining({ title: "Course block", kind: "course" }));
     expect(days[1]).toEqual(expect.objectContaining({ load: 0, capacity: "0h", state: "room", items: [], taskCount: 0 }));
   });
