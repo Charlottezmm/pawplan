@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { CatIcon } from "./cat-icon";
 import { PlanSectionNav } from "./plan-section-nav";
 import { RescheduleList } from "./reschedule-list";
@@ -208,6 +209,7 @@ function TaskDetail({
   message,
   sheetOpen = false,
   onClose,
+  layout = "sidebar",
 }: {
   task: PlanTaskView | null;
   actions?: {
@@ -220,7 +222,16 @@ function TaskDetail({
   message?: string | null;
   sheetOpen?: boolean;
   onClose?: () => void;
+  layout?: "sidebar" | "drawer";
 }) {
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  if (!task && layout === "drawer") return null;
+
   if (!task) {
     return (
       <aside className="paw-plan-detail">
@@ -234,10 +245,16 @@ function TaskDetail({
   const canAct = taskActions && (task.status === "todo" || task.status === "backlog");
   const isSaving = savingId === task.id;
 
-  return (
+  const detail = (
     <>
-    <div className={`paw-plan-sheet-backdrop ${sheetOpen ? "open" : ""}`} onClick={onClose} aria-hidden="true" />
-    <aside id="paw-plan-detail" className={`paw-plan-detail ${sheetOpen ? "open" : ""}`}>
+    <div className={`paw-plan-sheet-backdrop ${layout} ${sheetOpen ? "open" : ""}`} onClick={onClose} aria-hidden="true" />
+    <aside
+      id="paw-plan-detail"
+      className={`paw-plan-detail ${layout} ${sheetOpen ? "open" : ""}`}
+      role={layout === "drawer" ? "dialog" : undefined}
+      aria-modal={layout === "drawer" ? true : undefined}
+      aria-label={layout === "drawer" ? "任务详情" : undefined}
+    >
       <button type="button" className="paw-plan-sheet-close" onClick={onClose} aria-label="关闭详情">
         <X size={18} />
       </button>
@@ -281,7 +298,7 @@ function TaskDetail({
               {section.lines.length === 0 ? null : (
                 <ul>
                   {section.lines.map((line, index) => (
-                    <li key={`${section.label}-${index}`}>{line}</li>
+                    <li key={`${section.label}-${index}`}><DetailLine line={line} /></li>
                   ))}
                 </ul>
               )}
@@ -292,6 +309,31 @@ function TaskDetail({
     </aside>
     </>
   );
+
+  if (layout === "drawer") {
+    return portalReady ? createPortal(detail, document.body) : null;
+  }
+
+  return detail;
+}
+
+function DetailLine({ line }: { line: string }) {
+  const parts = line.split(/(https?:\/\/[^\s；;，]+)/g);
+
+  return parts.map((part, index) => {
+    if (!part.startsWith("http://") && !part.startsWith("https://")) return part;
+    let label = "打开链接";
+    try {
+      label = new URL(part).hostname.replace(/^www\./, "");
+    } catch {
+      // Keep a readable fallback if old task data contains a malformed URL.
+    }
+    return (
+      <a key={`${part}-${index}`} className="paw-plan-resource-link" href={part} target="_blank" rel="noreferrer">
+        {label}
+      </a>
+    );
+  });
 }
 
 function WeekDayCard({ day, onOpenTask }: { day: WeekDayView; onOpenTask: (task: PlanTaskView) => void }) {
@@ -588,19 +630,24 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
       ) : null}
 
       {tab === "month" ? (
-        <section className="paw-plan-view paw-plan-split">
+        <section className="paw-plan-view paw-plan-month">
           <div className="paw-plan-main">
-          <div className="paw-month-toolbar" aria-label="选择月份">
-            <Link className="paw-secondary-btn" href={`/plan?view=month&month=${month.previousMonthKey}`} aria-label="上个月">← 上月</Link>
-            <form action="/plan" method="get" className="paw-month-picker">
-              <input type="hidden" name="view" value="month" />
-              <label htmlFor="plan-month">月份</label>
-              <input key={month.monthKey} id="plan-month" className="paw-input" type="month" name="month" defaultValue={month.monthKey} />
-              <button type="submit" className="paw-secondary-btn">查看</button>
-            </form>
-            <Link className="paw-secondary-btn" href={`/plan?view=month&month=${month.nextMonthKey}`} aria-label="下个月">下月 →</Link>
+          <div className="paw-month-topbar">
+            <div>
+              <p className="paw-section-label">月度计划</p>
+              <h2 className="paw-month-heading">{month.monthLabel}</h2>
+            </div>
+            <div className="paw-month-toolbar" aria-label="选择月份">
+              <Link className="paw-month-nav-btn" href={`/plan?view=month&month=${month.previousMonthKey}`} aria-label="上个月">←</Link>
+              <form action="/plan" method="get" className="paw-month-picker">
+                <input type="hidden" name="view" value="month" />
+                <label className="sr-only" htmlFor="plan-month">月份</label>
+                <input key={month.monthKey} id="plan-month" className="paw-input" type="month" name="month" defaultValue={month.monthKey} />
+                <button type="submit" className="paw-secondary-btn">查看</button>
+              </form>
+              <Link className="paw-month-nav-btn" href={`/plan?view=month&month=${month.nextMonthKey}`} aria-label="下个月">→</Link>
+            </div>
           </div>
-          <h2 className="paw-month-heading">{month.monthLabel}</h2>
           <div className="paw-month-stats">
             <div className="paw-month-stat">
               <p className="paw-month-stat-num">{month.statusCounts.todo}</p>
@@ -633,8 +680,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
           ) : (
             <>
               {month.days.length > 0 ? (
-                <article className="paw-goal-card mt-3">
-                  <h2 className="paw-goal-title">月视图</h2>
+                <article className="paw-goal-card paw-month-calendar-card mt-3" aria-label="月视图">
                   <div className="paw-month-calendar">
                     {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
                       <span key={day} className="paw-month-weekday">周{day}</span>
@@ -646,7 +692,8 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
                         selected={selectedMonthDay?.key === day.key}
                         onSelect={(next) => {
                           setSelectedMonthDay(next);
-                          if (next.tasks[0]) setSelectedTask(next.tasks[0]);
+                          setSelectedTask(next.tasks[0] ?? null);
+                          setDetailOpen(false);
                         }}
                       />
                     ))}
@@ -770,7 +817,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
             </>
           )}
           </div>
-          <TaskDetail task={selectedTask} sheetOpen={detailOpen} onClose={closeDetail} />
+          <TaskDetail task={selectedTask} sheetOpen={detailOpen} onClose={closeDetail} layout="drawer" />
         </section>
       ) : null}
 

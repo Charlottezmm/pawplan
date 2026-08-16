@@ -36,4 +36,23 @@ describe("Plan information architecture", () => {
     expect(source).toContain("task.detail.sections.length === 0");
     expect(source).toContain('task.notes\n          ? <p className="paw-plan-detail-notes">{task.notes}</p>');
   });
+
+  it("keeps the month calendar full width and opens task details on demand", () => {
+    const source = readFileSync("src/components/plan-view.tsx", "utf8");
+
+    expect(source).toContain('<section className="paw-plan-view paw-plan-month">');
+    expect(source).toContain('layout="drawer"');
+    expect(source).toContain('createPortal(detail, document.body)');
+    expect(source).toContain('<DetailLine line={line} />');
+  });
+
+  it("styles month details as a responsive drawer instead of a permanent column", () => {
+    const css = readFileSync("src/app/globals.css", "utf8");
+    const monthRule = css.match(/\.paw-plan-month \{[\s\S]*?\}/)?.[0] ?? "";
+    const drawerRule = css.match(/\.paw-plan-detail\.drawer \{[\s\S]*?\}/)?.[0] ?? "";
+
+    expect(monthRule).toContain("width: min(1240px, calc(100vw - 64px));");
+    expect(drawerRule).toContain("position: fixed;");
+    expect(drawerRule).toContain("pointer-events: none;");
+  });
 });
