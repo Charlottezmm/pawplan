@@ -8,7 +8,7 @@ import { readJsonBody } from "@/lib/validation/common";
 const createTokenSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
-    permission: z.enum(["read_only", "read_write"]).default("read_only"),
+    permission: z.enum(["read_only", "review_only", "read_write"]).default("read_only"),
     expiresInDays: z.number().int().min(1).max(365).nullable().default(null),
   })
   .strict();

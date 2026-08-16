@@ -164,4 +164,32 @@ describe("MCP token service", () => {
 
     expect(result).toEqual({ workspaceId: "workspace-1", permission: "read_write", tokenId: "token-1" });
   });
+
+  it("creates and verifies review-only bearer tokens", async () => {
+    const created = await createMcpToken(createFakeDb(), "workspace-1", {
+      name: "Daily Review",
+      permission: "review_only",
+      expiresInDays: null,
+    });
+    const db = createFakeDb({
+      tokenRows: [
+        {
+          id: "token-review",
+          workspaceId: "workspace-1",
+          tokenHash: hashMcpToken(created.rawToken),
+          name: "Daily Review",
+          permission: "review_only",
+          expiresAt: null,
+          revokedAt: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    await expect(verifyMcpBearerToken(db, created.rawToken)).resolves.toEqual({
+      workspaceId: "workspace-1",
+      permission: "review_only",
+      tokenId: "token-review",
+    });
+  });
 });

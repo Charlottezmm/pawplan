@@ -170,6 +170,43 @@ describe("PawPlan MCP server builder", () => {
     }
   });
 
+  it("publishes only reads and Review-producing tools for review-only MCP clients", async () => {
+    const { createPawPlanMcpServer } = await import("@/lib/mcp/server-builder");
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createPawPlanMcpServer({ workspaceId: "workspace-1", permission: "review_only" });
+    const client = new Client({ name: "review-permission-check", version: "0.0.0" });
+
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const result = await client.listTools();
+      const toolNames = result.tools.map((tool) => tool.name);
+
+      expect(toolNames).toEqual(expect.arrayContaining([
+        "get_today",
+        "get_tasks",
+        "propose_project_portfolio_update",
+        "propose_patch",
+        "propose_daily_rebalance",
+        "propose_week_rebalance",
+        "propose_overdue_replan",
+        "propose_timetable_import",
+      ]));
+      for (const directWriteTool of [
+        "apply_project_portfolio_update",
+        "update_task_schedule",
+        "archive_tasks_batch",
+        "delete_tasks_batch",
+        "replace_plan_window",
+        "import_plan_bundle",
+      ]) {
+        expect(toolNames).not.toContain(directWriteTool);
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("accepts stringified propose_patch payloads from clients that serialize object fields", async () => {
     const { createPawPlanMcpServer } = await import("@/lib/mcp/server-builder");
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

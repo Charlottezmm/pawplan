@@ -49,7 +49,9 @@ import {
   getTasksWithProjectContext as readTasks,
 } from "@/lib/mcp/project-context";
 import {
+  canUsePawPlanTool,
   isPawPlanWriteTool,
+  McpPermissionError,
   pawPlanWriteToolNames,
   type McpPermission,
 } from "@/lib/mcp/tool-metadata";
@@ -752,7 +754,7 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
 };
 
 export function allowedPawPlanToolNames(permission: McpPermission) {
-  return pawPlanToolNames.filter((name) => permission === "read_write" || !isPawPlanWriteTool(name));
+  return pawPlanToolNames.filter((name) => canUsePawPlanTool(permission, name));
 }
 
 function addDays(date: Date, days: number) {
@@ -1171,8 +1173,8 @@ export async function runPawPlanTool(
   if (!Object.hasOwn(pawPlanToolSchemas, name)) throw new Error(`Unknown PawPlan MCP tool: ${name}`);
 
   const toolName = name as PawPlanToolName;
-  if (permission !== "read_write" && isPawPlanWriteTool(toolName)) {
-    throw new Error("MCP token does not allow write tools");
+  if (!canUsePawPlanTool(permission, toolName)) {
+    throw new McpPermissionError(permission, toolName);
   }
 
   if (toolName === "get_agent_guidance") {

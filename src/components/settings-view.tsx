@@ -25,7 +25,7 @@ type SegmentEnergySetting = {
   energyLevel: EnergyLevel;
 };
 
-type McpPermission = "read_only" | "read_write";
+type McpPermission = "read_only" | "review_only" | "read_write";
 
 type McpToken = {
   id: string;
@@ -118,6 +118,12 @@ const energyLabels: Record<EnergyLevel, string> = {
   high: "高",
 };
 
+const mcpPermissionLabels: Record<McpPermission, string> = {
+  read_only: "只读",
+  review_only: "仅审核",
+  read_write: "读写",
+};
+
 const agentRunKindLabels: Record<AgentRunSummary["kind"], string> = {
   morning_rebalance: "Morning rebalance",
   evening_review: "Evening review",
@@ -156,7 +162,7 @@ const recoveryTarget = {
 
 const emptyTokenForm: TokenForm = {
   name: "Codex local",
-  permission: "read_write",
+  permission: "review_only",
   expiresInDays: null,
 };
 
@@ -700,6 +706,7 @@ export function SettingsView() {
                 className="paw-input"
               >
                 <option value="read_only">只读</option>
+                <option value="review_only">仅审核（推荐自动化）</option>
                 <option value="read_write">读写</option>
               </select>
             </label>
@@ -759,7 +766,7 @@ export function SettingsView() {
           {mcpTokens.length === 0 ? (
             <div className="paw-empty">
               <h3>还没有 MCP token</h3>
-              <p>创建 read_write token 后，Codex / Cowork 才能导入计划和写入 check-in。</p>
+              <p>每日自动化建议创建“仅审核”token；只有可信的直接写入流程才使用“读写”。</p>
             </div>
           ) : (
             mcpTokens.map((token) => (
@@ -767,7 +774,7 @@ export function SettingsView() {
                 <div className="min-w-0">
                   <p className="paw-row-title">{token.name}</p>
                   <p className="paw-row-meta">
-                    {token.permission === "read_write" ? "读写" : "只读"} · 创建 {formatDateTime(token.createdAt)} · 到期{" "}
+                    {mcpPermissionLabels[token.permission]} · 创建 {formatDateTime(token.createdAt)} · 到期{" "}
                     {formatDateTime(token.expiresAt)}
                   </p>
                 </div>
@@ -847,7 +854,7 @@ export function SettingsView() {
                 <div className="min-w-0">
                   <p className="paw-row-title">{authorization.clientName}</p>
                   <p className="paw-row-meta">
-                    {authorization.permission === "read_write" ? "读写" : "只读"} · scope {authorization.scope} · 创建{" "}
+                    {mcpPermissionLabels[authorization.permission]} · scope {authorization.scope} · 创建{" "}
                     {formatDateTime(authorization.createdAt)} · 到期 {formatDateTime(authorization.expiresAt)}
                   </p>
                 </div>

@@ -23,9 +23,9 @@ PawPlan v0.2 优先使用 hosted HTTPS MCP：
 https://pawplan.charlottezmm.info/api/mcp
 ```
 
-在 PawPlan `/settings` 里创建 workspace-scoped MCP token。建议 scheduled automation 使用 `read_write`
-token，因为它需要调用 high-level rebalance tools 写入 Review preview。只读 token 只能读取 `get_today` / `get_week` /
-`get_month` / `get_constraints` / `get_capacity` / `get_checkins` / `get_tasks`。
+在 PawPlan `/settings` 里创建 workspace-scoped MCP token。建议 scheduled automation 使用 `review_only`
+token：它可以读取计划，并调用 high-level rebalance tools 创建 Review preview，但不能直接修改任务、应用 Review、
+归档、删除、替换计划窗口或导入真实任务。`read_only` 只能读取；`read_write` 仅用于用户明确授权的直接写入流程。
 
 Codex config 示例：
 
@@ -76,7 +76,8 @@ npm run mcp
 - `DATABASE_URL` 必须指向 PawPlan 使用的 Postgres 数据库。
 - `PAWPLAN_WORKSPACE_ID` 必须是要审核的 workspace id；MCP server 启动时缺少该变量会失败。
 - `npm run mcp` 只启动 MCP server，不启动 Web app，也不提供 app 内定时器。
-- 默认权限是 `read_write`；如需降权可设置 `PAWPLAN_MCP_PERMISSION=read_only`。
+- 默认权限是 `read_write`；定时审核应显式设置 `PAWPLAN_MCP_PERMISSION=review_only`，纯检查可设置为
+  `PAWPLAN_MCP_PERMISSION=read_only`。
 
 ## 可用 MCP Tools
 

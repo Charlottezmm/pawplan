@@ -9,7 +9,10 @@ function requiredWorkspaceId() {
 
 async function main() {
   const workspaceId = requiredWorkspaceId();
-  const permission = process.env.PAWPLAN_MCP_PERMISSION === "read_only" ? "read_only" : "read_write";
+  const configuredPermission = process.env.PAWPLAN_MCP_PERMISSION;
+  const permission = configuredPermission === "read_only" || configuredPermission === "review_only"
+    ? configuredPermission
+    : "read_write";
   const server = createPawPlanMcpServer({ workspaceId, permission });
   await server.connect(new StdioServerTransport());
 }

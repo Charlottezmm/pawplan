@@ -1,8 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { mcpTokens } from "@/lib/db/schema";
-
-type Permission = "read_only" | "read_write";
+import type { McpPermission } from "@/lib/mcp/tool-metadata";
 
 type DbLike = {
   select: (...args: any[]) => any;
@@ -15,7 +14,7 @@ type TokenRow = {
   workspaceId: string;
   tokenHash: string;
   name: string;
-  permission: Permission;
+  permission: McpPermission;
   expiresAt: Date | string | null;
   revokedAt: Date | string | null;
   createdAt: Date | string;
@@ -53,8 +52,8 @@ function serializeToken(row: TokenRow) {
   };
 }
 
-function validatePermission(permission: Permission) {
-  if (permission !== "read_only" && permission !== "read_write") {
+function validatePermission(permission: McpPermission) {
+  if (permission !== "read_only" && permission !== "review_only" && permission !== "read_write") {
     throw new McpTokenError("Invalid MCP token permission", 400);
   }
 }
@@ -62,7 +61,7 @@ function validatePermission(permission: Permission) {
 export async function createMcpToken(
   db: DbLike,
   workspaceId: string,
-  input: { name: string; permission: Permission; expiresInDays: number | null },
+  input: { name: string; permission: McpPermission; expiresInDays: number | null },
 ) {
   const name = input.name.trim();
   if (!name) throw new McpTokenError("Token name is required", 400);

@@ -120,6 +120,13 @@
       "when": 1786813290191,
       "tag": "0016_futuristic_thunderbolts",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786894477068,
+      "tag": "0017_legal_stature",
+      "breakpoints": true
     }
   ]
 }

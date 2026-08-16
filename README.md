@@ -141,7 +141,9 @@ https://pawplan.charlottezmm.info/api/mcp   # hosted endpoint
 
 Local MCP requires `DATABASE_URL` and `PAWPLAN_WORKSPACE_ID`.
 
-The surface is intentionally narrow: agents read context, write audited low-risk records, or create Review drafts. They **cannot** edit protected constraints, apply drafts, or own scheduled automation.
+The surface is intentionally narrow: `read_only` tokens inspect, `review_only` tokens inspect and create Review drafts,
+and `read_write` tokens can access explicitly authorized direct writes. Scheduled review automation should use
+`review_only`; it cannot apply drafts, archive/delete tasks, replace plan windows, import live tasks, or edit time blocks.
 
 <details>
 <summary><strong>Tool reference</strong> (9 read · 11 write/draft)</summary>

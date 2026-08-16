@@ -71,8 +71,8 @@ describe("MCP token route", () => {
     vi.mocked(createMcpToken).mockResolvedValue({
       token: {
         id: "token-1",
-        name: "Claude Cowork",
-        permission: "read_write",
+        name: "Daily Review",
+        permission: "review_only",
         expiresAt: null,
         revokedAt: null,
         createdAt: "2026-06-12T00:00:00.000Z",
@@ -85,15 +85,15 @@ describe("MCP token route", () => {
       new Request("https://pawplan.example/api/mcp-tokens", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Claude Cowork", permission: "read_write", expiresInDays: null }),
+        body: JSON.stringify({ name: "Daily Review", permission: "review_only", expiresInDays: null }),
       }),
     );
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(createMcpToken).toHaveBeenCalledWith(expect.anything(), "workspace-1", {
-      name: "Claude Cowork",
-      permission: "read_write",
+      name: "Daily Review",
+      permission: "review_only",
       expiresInDays: null,
     });
     expect(body.rawToken).toBe("pwp_live_secret");

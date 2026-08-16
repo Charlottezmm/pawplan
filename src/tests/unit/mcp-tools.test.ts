@@ -236,11 +236,62 @@ describe("MCP planning tools", () => {
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_overdue_replan");
   });
 
+  it("allows review-only tokens to read and propose without exposing direct writes", () => {
+    const reviewOnlyTools = allowedPawPlanToolNames("review_only");
+
+    expect(reviewOnlyTools).toEqual([
+      "get_agent_guidance",
+      "get_mcp_usage",
+      "get_today",
+      "get_week",
+      "get_month",
+      "get_constraints",
+      "get_capacity",
+      "get_decisions",
+      "get_conversations",
+      "get_checkins",
+      "get_project_portfolio",
+      "propose_project_portfolio_update",
+      "get_tasks",
+      "propose_patch",
+      "propose_daily_rebalance",
+      "propose_week_rebalance",
+      "propose_overdue_replan",
+      "propose_timetable_import",
+    ]);
+    for (const directWriteTool of [
+      "apply_project_portfolio_update",
+      "preview_task_batch",
+      "update_task_schedule",
+      "update_tasks_batch",
+      "archive_tasks_batch",
+      "restore_tasks_batch",
+      "delete_tasks_batch",
+      "update_time_block_series",
+      "delete_time_block_series",
+      "replace_plan_window",
+      "import_plan_bundle",
+    ]) {
+      expect(reviewOnlyTools).not.toContain(directWriteTool);
+    }
+  });
+
   it("keeps every published tool in the single permission metadata source", () => {
     expect(Object.keys(pawPlanToolPermissions).sort()).toEqual(Object.keys(pawPlanToolSchemas).sort());
     expect([...pawPlanWriteToolNames].sort()).toEqual(
       allowedPawPlanToolNames("read_write").filter((name) => !allowedPawPlanToolNames("read_only").includes(name)).sort(),
     );
+  });
+
+  it("rejects direct dispatch when a review-only token names a write tool", async () => {
+    await expect(
+      runPawPlanTool(createFakeDb(), "workspace-1", "update_task_schedule", {}, "review_only"),
+    ).rejects.toMatchObject({
+      code: "mcp_permission_denied",
+      status: 403,
+      permission: "review_only",
+      toolName: "update_task_schedule",
+    });
   });
 
   it("exposes daily agent guidance to read-only MCP clients", async () => {
@@ -1517,7 +1568,7 @@ describe("MCP planning tools", () => {
 
     await expect(
       runPawPlanTool(db, "workspace-1", "create_inbox_item", { title: "Blocked write" }, "read_only"),
-    ).rejects.toThrow("MCP token does not allow write tools");
+    ).rejects.toMatchObject({ code: "mcp_permission_denied", permission: "read_only", toolName: "create_inbox_item" });
     await expect(
       runPawPlanTool(
         db,
@@ -1526,7 +1577,7 @@ describe("MCP planning tools", () => {
         { task_id: "task-1", notes: "目标：补齐任务说明" },
         "read_only",
       ),
-    ).rejects.toThrow("MCP token does not allow write tools");
+    ).rejects.toMatchObject({ code: "mcp_permission_denied", permission: "read_only", toolName: "update_task_notes" });
   });
 
   it("allows read MCP tools for read-only tokens", async () => {
@@ -1556,7 +1607,7 @@ describe("MCP planning tools", () => {
         },
         "read_only",
       ),
-    ).rejects.toThrow("MCP token does not allow write tools");
+    ).rejects.toMatchObject({ code: "mcp_permission_denied", permission: "read_only", toolName: "record_decision" });
   });
 
   it("allows conversation read tools for read-only tokens", async () => {

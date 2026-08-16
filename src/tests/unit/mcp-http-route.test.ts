@@ -133,6 +133,87 @@ describe("hosted MCP route", () => {
     expect(createPawPlanMcpServer).toHaveBeenCalledWith({ workspaceId: "workspace-1", permission: "read_only" });
   });
 
+  it("passes review-only bearer permissions to the shared MCP server builder", async () => {
+    const { createPawPlanMcpServer } = await import("@/lib/mcp/server-builder");
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({
+      workspaceId: "workspace-1",
+      permission: "review_only",
+      tokenId: "token-review",
+    });
+    const { POST } = await import("@/app/api/mcp/route");
+
+    await POST(
+      new Request("https://pawplan.test/api/mcp", {
+        method: "POST",
+        headers: { Authorization: "Bearer pwp_live_review" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      }),
+    );
+
+    expect(createPawPlanMcpServer).toHaveBeenCalledWith({ workspaceId: "workspace-1", permission: "review_only" });
+  });
+
+  it("reserves write quota for review-only proposal calls", async () => {
+    const { reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({
+      workspaceId: "workspace-1",
+      permission: "review_only",
+      tokenId: "token-review",
+    });
+    const { POST } = await import("@/app/api/mcp/route");
+
+    await POST(
+      new Request("https://pawplan.test/api/mcp", {
+        method: "POST",
+        headers: { Authorization: "Bearer pwp_live_review" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "propose_daily_rebalance", arguments: {} },
+        }),
+      }),
+    );
+
+    expect(reserveHostedMcpWrite).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        tokenId: "token-review",
+        toolName: "propose_daily_rebalance",
+        permission: "review_only",
+      }),
+    );
+  });
+
+  it("does not reserve quota before a disallowed review-only direct write", async () => {
+    const { reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({
+      workspaceId: "workspace-1",
+      permission: "review_only",
+      tokenId: "token-review",
+    });
+    const { POST } = await import("@/app/api/mcp/route");
+
+    await POST(
+      new Request("https://pawplan.test/api/mcp", {
+        method: "POST",
+        headers: { Authorization: "Bearer pwp_live_review" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "update_task_schedule", arguments: {} },
+        }),
+      }),
+    );
+
+    expect(reserveHostedMcpWrite).not.toHaveBeenCalled();
+  });
+
   it("reserves hosted daily write quota before write tool calls", async () => {
     const { reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
     const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
