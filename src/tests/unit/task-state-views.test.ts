@@ -13,18 +13,27 @@ import { BacklogView } from "@/components/backlog-view";
 Object.assign(globalThis, { React });
 
 describe("simplified task state views", () => {
-  it("keeps legacy skipped tasks collapsed and offers moving them to backlog", () => {
+  it("offers explicit keep, archive, or untouched choices for legacy tasks", () => {
     const html = renderToStaticMarkup(React.createElement(BacklogView, {
       data: { dataUnavailable: false, totalCount: 0, groups: [] },
       legacySkipped: {
         dataUnavailable: false,
-        tasks: [{ id: "task-1", title: "Old unfinished task", date: "2026-08-15", estimatedMinutes: 30 }],
+        tasks: [{
+          id: "task-1",
+          title: "Old unfinished task",
+          date: "2026-08-15",
+          estimatedMinutes: 30,
+          projectId: "project-1",
+          projectName: "Research",
+          projectColor: "#2563eb",
+        }],
       },
     }));
 
-    expect(html).toContain("旧兼容状态任务 · 1 条");
-    expect(html).toContain("但不算完成");
-    expect(html).toContain("加入稍后处理");
+    expect(html).toContain("以前清理的任务");
+    expect(html).toContain("还要做");
+    expect(html).toContain("不做了");
+    expect(html).toContain("没有选择的任务会继续留在这里");
     expect(html).toContain("<details");
     expect(html).not.toContain("<details open");
   });
@@ -52,7 +61,7 @@ describe("simplified task state views", () => {
       }],
     } }));
 
-    expect(html).toContain("旧兼容状态（未完成）");
+    expect(html).toContain("不再继续");
     expect(html).toContain("恢复到稍后处理");
     expect(html).not.toContain("已完成");
   });

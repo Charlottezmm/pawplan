@@ -7,6 +7,7 @@ import {
   rescheduleBacklogTask,
   restoreArchivedTaskToBacklog,
   TaskTransitionError,
+  triageLegacySkippedTasks,
 } from "@/lib/planning/task-transitions";
 import { readJsonBody } from "@/lib/validation/common";
 
@@ -32,6 +33,15 @@ const taskTransitionSchema = z.discriminatedUnion("action", [
     expectedStatus: z.literal("skipped"),
     idempotencyKey: idempotencyKeySchema,
   }).strict(),
+  z.object({
+    action: z.literal("triage_legacy_skipped_tasks"),
+    decisions: z.array(z.object({
+      taskId: z.string().uuid(),
+      decision: z.enum(["backlog", "archive"]),
+    }).strict()).min(1).max(200),
+    confirmCount: z.number().int().min(1).max(200),
+    idempotencyKey: idempotencyKeySchema,
+  }).strict(),
 ]);
 
 export async function POST(request: Request) {
@@ -52,7 +62,9 @@ export async function POST(request: Request) {
       ? await rescheduleBacklogTask(db, { workspaceId, ...parsed.data })
       : parsed.data.action === "restore_archived_to_backlog"
         ? await restoreArchivedTaskToBacklog(db, { workspaceId, ...parsed.data })
-        : await moveLegacySkippedTaskToBacklog(db, { workspaceId, ...parsed.data });
+        : parsed.data.action === "move_legacy_skipped_to_backlog"
+          ? await moveLegacySkippedTaskToBacklog(db, { workspaceId, ...parsed.data })
+          : await triageLegacySkippedTasks(db, { workspaceId, ...parsed.data });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof TaskTransitionError) {
