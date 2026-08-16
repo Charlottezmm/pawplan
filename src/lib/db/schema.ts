@@ -45,7 +45,7 @@ export const agentRunStatus = pgEnum("agent_run_status", [
 export const inboxSource = pgEnum("inbox_source", ["manual", "imported"]);
 export const checkinTaskStatus = pgEnum("checkin_task_status", ["done", "not_done", "partial", "skipped"]);
 export const changeLogSource = pgEnum("change_log_source", ["manual", "agent_patch", "import", "mcp"]);
-export const mcpPermission = pgEnum("mcp_permission", ["read_only", "read_write"]);
+export const mcpPermission = pgEnum("mcp_permission", ["read_only", "review_only", "read_write"]);
 export const onboardingEventType = pgEnum("onboarding_event_type", [
   "schedule_import_skipped",
   "connector_setup_skipped",

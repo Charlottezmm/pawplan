@@ -1,0 +1,175 @@
+openapi: 3.1.0
+info:
+  title: PawPlan MCP Token Permissions API
+  version: 1.0.0
+paths:
+  /api/mcp-tokens:
+    get:
+      summary: List workspace MCP token metadata
+      security:
+        - workspaceSession: []
+      responses:
+        "200":
+          description: Token metadata and hosted MCP connection details
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workspaceId, tokens, mcp]
+                properties:
+                  workspaceId:
+                    type: string
+                  tokens:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/McpToken"
+                  mcp:
+                    type: object
+                    required: [url, codexConfig]
+                    properties:
+                      url:
+                        type: string
+                        format: uri
+                      codexConfig:
+                        type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Create a workspace MCP bearer token
+      description: The raw token is returned once and is never included in list responses.
+      security:
+        - workspaceSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, permission, expiresInDays]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                permission:
+                  $ref: "#/components/schemas/McpPermission"
+                expiresInDays:
+                  type: [integer, "null"]
+                  minimum: 1
+                  maximum: 365
+      responses:
+        "200":
+          description: Token created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, rawToken]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/McpToken"
+                  rawToken:
+                    type: string
+                    pattern: ^pwp_live_
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    patch:
+      summary: Revoke a workspace MCP bearer token
+      security:
+        - workspaceSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, id]
+              properties:
+                action:
+                  type: string
+                  const: revoke
+                id:
+                  type: string
+                  minLength: 1
+      responses:
+        "200":
+          description: Revocation request completed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+components:
+  securitySchemes:
+    workspaceSession:
+      type: apiKey
+      in: cookie
+      name: daily_progress_workspace
+  schemas:
+    McpPermission:
+      type: string
+      enum: [read_only, review_only, read_write]
+      description: >-
+        read_only permits reads; review_only adds explicit Review-producing tools;
+        read_write permits all published tools.
+    McpToken:
+      type: object
+      required: [id, name, permission, expiresAt, revokedAt, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        permission:
+          $ref: "#/components/schemas/McpPermission"
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        revokedAt:
+          type: [string, "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing workspace session
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServerError:
+      description: Token operation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

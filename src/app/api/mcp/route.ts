@@ -11,6 +11,7 @@ import {
   retryAfterSeconds,
 } from "@/lib/mcp/usage";
 import { verifyConnectorAccessToken } from "@/lib/oauth/connector-auth";
+import { canUsePawPlanTool, isPawPlanWriteTool } from "@/lib/mcp/tool-metadata";
 
 export const dynamic = "force-dynamic";
 
@@ -136,7 +137,7 @@ async function handle(request: Request) {
 
     let reservationId: string | null = null;
     try {
-      if (auth.permission === "read_write") {
+      if (canUsePawPlanTool(auth.permission, toolName) && isPawPlanWriteTool(toolName)) {
         const reservation = await reserveHostedMcpWrite(db, usageInput);
         reservationId = reservation?.reservationId ?? null;
       }

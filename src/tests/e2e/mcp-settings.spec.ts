@@ -4,7 +4,7 @@ import { createHmac } from "node:crypto";
 type TokenRow = {
   id: string;
   name: string;
-  permission: "read_only" | "read_write";
+  permission: "read_only" | "review_only" | "read_write";
   expiresAt: string | null;
   revokedAt: string | null;
   createdAt: string;
@@ -65,7 +65,11 @@ test("creates, shows once, and revokes a hosted MCP token from Settings", async 
     }
 
     if (request.method() === "POST") {
-      const body = request.postDataJSON() as { name: string; permission: "read_only" | "read_write"; expiresInDays: number | null };
+      const body = request.postDataJSON() as {
+        name: string;
+        permission: "read_only" | "review_only" | "read_write";
+        expiresInDays: number | null;
+      };
       const token = {
         id: "token-1",
         name: body.name,
@@ -156,7 +160,7 @@ test("creates, shows once, and revokes a hosted MCP token from Settings", async 
   await expect(claudeSection.getByText("已授权", { exact: true })).toHaveCount(2);
 
   await page.getByLabel("Token 名称").fill("Codex e2e");
-  await page.getByLabel("权限").selectOption("read_write");
+  await expect(page.getByLabel("权限")).toHaveValue("review_only");
   await page.getByRole("button", { name: "创建 token" }).click();
 
   await expect(page.getByText("pwp_live_test_secret")).toBeVisible();

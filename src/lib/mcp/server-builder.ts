@@ -16,6 +16,7 @@ import { TimeBlockSeriesError } from "@/lib/constraints/time-block-series";
 import { ActivePlanError } from "@/lib/planning/active-plan";
 import { OperationApprovalError } from "@/lib/approvals/service";
 import { ProjectPortfolioUpdateError } from "@/lib/mcp/project-portfolio-update";
+import { McpPermissionError } from "@/lib/mcp/tool-metadata";
 
 function jsonToolResult(value: unknown) {
   return {
@@ -85,6 +86,7 @@ export function createPawPlanMcpServer(input: { workspaceId: string; permission:
             error instanceof TimeBlockSeriesError ||
             error instanceof ActivePlanError ||
             error instanceof OperationApprovalError ||
+            error instanceof McpPermissionError ||
             error instanceof ProjectPortfolioUpdateError
           ) {
             return jsonOperationError(error);

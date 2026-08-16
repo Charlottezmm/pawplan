@@ -14,10 +14,11 @@ https://pawplan.charlottezmm.info/api/mcp
 
 1. Open PawPlan `/settings`.
 2. Create a workspace-scoped MCP token.
-3. Use a `read_write` token if Codex should create Review drafts.
+3. Use a `review_only` token if Codex should read plans and create Review drafts.
 4. Copy the raw token once and store it as an environment secret.
 
-Read-write tokens can call write tools, but write tools still cannot apply Review drafts automatically.
+Review-only tokens can read and create Review drafts, but cannot apply them or call direct task, archive, delete,
+replace, import, or time-block writes. Use `read_write` only for explicitly authorized direct-write workflows.
 
 ## Codex MCP Config
 
