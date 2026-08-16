@@ -216,17 +216,33 @@ export type MonthDayView = {
   tasks: PlanTaskView[];
   taskCount: number;
   doneCount: number;
+  statusCounts: Record<TaskStatus, number>;
   totalMinutes: string;
+};
+
+export type MonthProjectSummaryView = {
+  projectId: string | null;
+  projectName: string;
+  color: string;
+  taskCount: number;
+  totalMinutes: string;
+  statusCounts: Record<TaskStatus, number>;
 };
 
 export type MonthViewData = {
   dataUnavailable: boolean;
+  monthKey: string;
+  monthLabel: string;
+  previousMonthKey: string;
+  nextMonthKey: string;
   taskCount: number;
   doneCount: number;
+  statusCounts: Record<TaskStatus, number>;
   totalHours: string;
   completionPercent: number;
   importSummary: MonthImportSummaryView | null;
   weeks: MonthWeekBucketView[];
+  projectSummaries: MonthProjectSummaryView[];
   days: MonthDayView[];
   cards: MonthCardView[];
   emptyText: string | null;
@@ -339,15 +355,22 @@ function emptyWeekData(dataUnavailable = false): WeekViewData {
   };
 }
 
-function emptyMonthData(dataUnavailable = false): MonthViewData {
+function emptyMonthData(dataUnavailable = false, month = new Date()): MonthViewData {
+  const { monthKey } = dateRangeForMonth(month);
   return {
     dataUnavailable,
+    monthKey,
+    monthLabel: monthLabelFromKey(monthKey),
+    previousMonthKey: addMonthsToMonthKey(monthKey, -1),
+    nextMonthKey: addMonthsToMonthKey(monthKey, 1),
     taskCount: 0,
     doneCount: 0,
+    statusCounts: emptyTaskStatusCounts(),
     totalHours: "0h",
     completionPercent: 0,
     importSummary: null,
     weeks: [],
+    projectSummaries: [],
     days: [],
     cards: [],
     emptyText: dataUnavailable ? "本地数据源未配置，无法读取月度计划。" : "还没有月度计划数据。导入计划或创建本月任务后，这里会显示真实任务分布。",
@@ -492,7 +515,7 @@ export function buildWeekCapacityDays(input: WeekCapacityInput): WeekDayView[] {
     const used = day ? segmentCapacity(day.segments.morning.totalUsedMinutes, day.segments.afternoon.totalUsedMinutes, day.segments.evening.totalUsedMinutes) : 0;
     const percent = available === 0 ? 0 : Math.round((used / available) * 100);
     const taskViews = input.taskRows
-      .filter((task) => task.status !== "backlog" && capacityDateKey(task.date) === key)
+      .filter((task) => (task.status === "todo" || task.status === "done") && capacityDateKey(task.date) === key)
       .sort((a, b) => segmentOrder.indexOf(a.daySegment as Segment) - segmentOrder.indexOf(b.daySegment as Segment) || a.title.localeCompare(b.title))
       .map((task) => buildPlanTaskView(task, input.refs));
     const timelineItems = buildDayTimelineItems({
@@ -583,7 +606,7 @@ export function buildDayTimelineItems(input: {
   const items: TimelineItemView[] = [];
 
   for (const task of input.taskRows) {
-    if (task.status === "backlog") continue;
+    if (task.status !== "todo" && task.status !== "done") continue;
     if (capacityDateKey(task.date) !== dateKey) continue;
 
     const startsAt = segmentStart(dayStart, task.daySegment);
@@ -670,7 +693,7 @@ function energyLabel(energy: Energy) {
 }
 
 function statusDone(status: TaskStatus) {
-  return status === "done" || status === "skipped";
+  return status === "done";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -716,6 +739,7 @@ function readImportSummary(snapshot: unknown): MonthImportSummaryView | null {
 
 function buildMonthCards(input: {
   taskCount: number;
+  actionableCount: number;
   doneCount: number;
   totalHours: string;
   completionPercent: number;
@@ -731,7 +755,7 @@ function buildMonthCards(input: {
         input.importSummary?.monthGoal ??
         input.importSummary?.overallSummary ??
         `本月共 ${input.taskCount} 个任务，预计 ${input.totalHours}。`,
-      tag: input.taskCount > 0 ? `已完成 ${input.doneCount}/${input.taskCount}` : input.importSummary?.monthLabel ?? "Imported",
+      tag: input.taskCount > 0 ? `已完成 ${input.doneCount}/${input.actionableCount}` : input.importSummary?.monthLabel ?? "Imported",
       progress: input.taskCount > 0 ? input.completionPercent : null,
     },
   ];
@@ -778,6 +802,39 @@ function dateRangeForMonth(now = new Date()) {
   const start = new Date(Date.UTC(year, month - 1, 1) - 8 * 60 * 60 * 1000);
   const end = new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1) - 8 * 60 * 60 * 1000);
   return { start, end, monthKey: `${year}-${String(month).padStart(2, "0")}` };
+}
+
+export function normalizeMonthKey(value: string | undefined, now = new Date()) {
+  if (value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return value;
+  return dateRangeForMonth(now).monthKey;
+}
+
+export function addMonthsToMonthKey(monthKey: string, delta: number) {
+  const normalized = normalizeMonthKey(monthKey, new Date(0));
+  const [year, month] = normalized.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthAnchorFromKey(monthKey: string) {
+  const [year, month] = normalizeMonthKey(monthKey).split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, 1) - 8 * 60 * 60 * 1000);
+}
+
+function monthLabelFromKey(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return `${year} 年 ${month} 月`;
+}
+
+function emptyTaskStatusCounts(): Record<TaskStatus, number> {
+  return { todo: 0, done: 0, backlog: 0, skipped: 0 };
+}
+
+function countTaskStatuses(rows: Array<{ status: TaskStatus }>) {
+  return rows.reduce<Record<TaskStatus, number>>((counts, row) => {
+    counts[row.status] += 1;
+    return counts;
+  }, emptyTaskStatusCounts());
 }
 
 function weeksInMonth(now = new Date()) {
@@ -929,7 +986,7 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
               eq(tasks.workspaceId, workspaceId),
               eq(tasks.planId, planId),
               isNull(tasks.archivedAt),
-              inArray(tasks.status, ["todo", "done", "skipped"]),
+              inArray(tasks.status, ["todo", "done"]),
               gte(tasks.date, start),
               lt(tasks.date, end),
             ),
@@ -1073,6 +1130,7 @@ export async function getWeekPageData(workspaceId: string): Promise<WeekViewData
             eq(tasks.workspaceId, workspaceId),
             eq(tasks.planId, planId),
             isNull(tasks.archivedAt),
+            inArray(tasks.status, ["todo", "done"]),
             gte(tasks.date, start),
             lt(tasks.date, end),
           ),
@@ -1142,7 +1200,7 @@ export async function getWeekPageData(workspaceId: string): Promise<WeekViewData
   }
 }
 
-type MonthTaskInput = TaskRowForView;
+type MonthTaskInput = TaskRowForView & { archivedAt?: Date | null };
 
 function buildMonthCalendarDays(input: {
   monthStart: Date;
@@ -1159,7 +1217,7 @@ function buildMonthCalendarDays(input: {
   const byDate = new Map<string, PlanTaskView[]>();
 
   for (const task of input.taskRows) {
-    if (task.status === "backlog") continue;
+    if (task.archivedAt || (task.status !== "todo" && task.status !== "done")) continue;
     const key = capacityDateKey(task.date);
     const arr = byDate.get(key) ?? [];
     arr.push(buildPlanTaskView(task, input.refs));
@@ -1183,6 +1241,7 @@ function buildMonthCalendarDays(input: {
       tasks: taskViews,
       taskCount: taskViews.length,
       doneCount: taskViews.filter((task) => task.done).length,
+      statusCounts: countTaskStatuses(taskViews),
       totalMinutes: hoursLabel(taskViews.reduce((sum, task) => sum + task.minutes, 0)),
     });
   }
@@ -1193,15 +1252,20 @@ function buildMonthCalendarDays(input: {
 export function buildMonthPlanViewData(
   taskRows: MonthTaskInput[],
   activePlanSnapshot: unknown,
-  now = new Date(),
+  month = new Date(),
+  projectRefs: Map<string, { name: string; color: string }> = new Map(),
+  today = month,
 ): MonthViewData {
-  const { start, end } = dateRangeForMonth(now);
-  const totalMinutes = taskRows.reduce((sum, task) => sum + (task.estimatedMinutes ?? 30), 0);
-  const doneCount = taskRows.filter((task) => statusDone(task.status)).length;
+  const { start, end, monthKey } = dateRangeForMonth(month);
+  const visibleRows = taskRows.filter((task) => !task.archivedAt);
+  const statusCounts = countTaskStatuses(visibleRows);
+  const activeRows = visibleRows.filter((task) => task.status === "todo" || task.status === "done");
+  const actionableCount = activeRows.length;
+  const totalMinutes = activeRows.reduce((sum, task) => sum + (task.estimatedMinutes ?? 30), 0);
   const minutesByWeek = new Map<string, number>();
   const countByWeek = new Map<string, number>();
 
-  for (const task of taskRows) {
+  for (const task of activeRows) {
     const key = toDateKey(startOfShanghaiWeek(task.date));
     minutesByWeek.set(key, (minutesByWeek.get(key) ?? 0) + (task.estimatedMinutes ?? 30));
     countByWeek.set(key, (countByWeek.get(key) ?? 0) + 1);
@@ -1217,41 +1281,79 @@ export function buildMonthPlanViewData(
     };
   });
   const importSummary = readImportSummary(activePlanSnapshot);
-  const completionPercent = taskRows.length ? Math.round((doneCount / taskRows.length) * 100) : 0;
+  const completionPercent = actionableCount ? Math.round((statusCounts.done / actionableCount) * 100) : 0;
   const cards = buildMonthCards({
-    taskCount: taskRows.length,
-    doneCount,
+    taskCount: activeRows.length,
+    actionableCount,
+    doneCount: statusCounts.done,
     totalHours: hoursLabel(totalMinutes),
     completionPercent,
     importSummary,
     weeks,
   });
 
+  const projectGroups = new Map<string, { projectId: string | null; projectName: string; color: string; rows: MonthTaskInput[] }>();
+  for (const task of activeRows) {
+    const project = task.projectId ? projectRefs.get(task.projectId) : null;
+    const key = task.projectId && project ? task.projectId : "unassigned";
+    const group = projectGroups.get(key) ?? {
+      projectId: project ? task.projectId ?? null : null,
+      projectName: project?.name ?? "未关联 Project",
+      color: project?.color ?? "#a89f8d",
+      rows: [],
+    };
+    group.rows.push(task);
+    projectGroups.set(key, group);
+  }
+
+  const projectSummaries = [...projectGroups.values()]
+    .map((group) => ({
+      projectId: group.projectId,
+      projectName: group.projectName,
+      color: group.color,
+      taskCount: group.rows.length,
+      totalMinutes: hoursLabel(group.rows.reduce((sum, task) => sum + (task.estimatedMinutes ?? 30), 0)),
+      statusCounts: countTaskStatuses(group.rows),
+    }))
+    .sort((a, b) => {
+      if (a.projectId === null) return 1;
+      if (b.projectId === null) return -1;
+      return a.projectName.localeCompare(b.projectName, "zh-CN");
+    });
+
   return {
     dataUnavailable: false,
-    taskCount: taskRows.length,
-    doneCount,
+    monthKey,
+    monthLabel: monthLabelFromKey(monthKey),
+    previousMonthKey: addMonthsToMonthKey(monthKey, -1),
+    nextMonthKey: addMonthsToMonthKey(monthKey, 1),
+    taskCount: activeRows.length,
+    doneCount: statusCounts.done,
+    statusCounts,
     totalHours: hoursLabel(totalMinutes),
     completionPercent,
     importSummary,
     weeks,
-    days: buildMonthCalendarDays({ monthStart: start, monthEnd: end, today: startOfShanghaiDay(now), taskRows }),
+    projectSummaries,
+    days: buildMonthCalendarDays({ monthStart: start, monthEnd: end, today: startOfShanghaiDay(today), taskRows: activeRows }),
     cards,
-    emptyText: cards.length === 0 ? "还没有月度计划数据。导入计划或创建本月任务后，这里会显示真实任务分布。" : null,
+    emptyText: activeRows.length === 0 ? "本月没有计划中或已完成的任务。" : null,
   };
 }
 
-export async function getMonthPlanData(workspaceId: string): Promise<MonthViewData> {
+export async function getMonthPlanData(workspaceId: string, requestedMonth?: string): Promise<MonthViewData> {
+  const monthKey = normalizeMonthKey(requestedMonth);
+  const month = monthAnchorFromKey(monthKey);
   try {
     const db = getDb();
-    const { start, end } = dateRangeForMonth();
+    const { start, end } = dateRangeForMonth(month);
     const [planRow] = await db
       .select({ baselineSnapshot: plans.baselineSnapshot })
       .from(plans)
       .where(and(eq(plans.workspaceId, workspaceId), eq(plans.status, "active")))
       .limit(1);
     const planId = await getActivePlanId(db, workspaceId);
-    if (!planId) return emptyMonthData();
+    if (!planId) return emptyMonthData(false, month);
     const taskRows = await db
       .select()
       .from(tasks)
@@ -1265,56 +1367,19 @@ export async function getMonthPlanData(workspaceId: string): Promise<MonthViewDa
         ),
       )
       .orderBy(tasks.date, tasks.createdAt);
-
-    const totalMinutes = taskRows.reduce((sum, task) => sum + task.estimatedMinutes, 0);
-    const doneCount = taskRows.filter((task) => statusDone(task.status)).length;
-    const minutesByWeek = new Map<number, number>();
-    const countByWeek = new Map<number, number>();
-
-    for (const task of taskRows) {
-      const weekIndex = Math.floor((startOfShanghaiDay(task.date).getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-      minutesByWeek.set(weekIndex, (minutesByWeek.get(weekIndex) ?? 0) + task.estimatedMinutes);
-      countByWeek.set(weekIndex, (countByWeek.get(weekIndex) ?? 0) + 1);
-    }
-
-    const weeks = Array.from(countByWeek.keys())
-      .sort((a, b) => a - b)
-      .map((weekIndex) => {
-        const minutes = minutesByWeek.get(weekIndex) ?? 0;
-        return {
-          label: `第 ${weekIndex} 周`,
-          taskCount: countByWeek.get(weekIndex) ?? 0,
-          minutes: hoursLabel(minutes),
-          share: totalMinutes ? Math.round((minutes / totalMinutes) * 100) : 0,
-        };
-      });
-
-    const importSummary = readImportSummary(planRow?.baselineSnapshot);
-    const completionPercent = taskRows.length ? Math.round((doneCount / taskRows.length) * 100) : 0;
-    const totalHours = hoursLabel(totalMinutes);
-    const cards = buildMonthCards({
-      taskCount: taskRows.length,
-      doneCount,
-      totalHours,
-      completionPercent,
-      importSummary,
-      weeks,
+    const refs = await loadReferenceMaps(workspaceId);
+    const projectRefs = new Map([...refs.projects].map(([id, project]) => [id, { name: project.name, color: project.color }]));
+    const data = buildMonthPlanViewData(taskRows, planRow?.baselineSnapshot, month, projectRefs, new Date());
+    data.days = buildMonthCalendarDays({
+      monthStart: start,
+      monthEnd: end,
+      today: startOfShanghaiDay(new Date()),
+      taskRows: taskRows.filter((task) => task.status === "todo" || task.status === "done"),
+      refs,
     });
-
-    return {
-      dataUnavailable: false,
-      taskCount: taskRows.length,
-      doneCount,
-      totalHours,
-      completionPercent,
-      importSummary,
-      weeks,
-      days: buildMonthCalendarDays({ monthStart: start, monthEnd: end, today: startOfShanghaiDay(new Date()), taskRows, refs: await loadReferenceMaps(workspaceId) }),
-      cards,
-      emptyText: cards.length === 0 ? "还没有月度计划数据。导入计划或创建本月任务后，这里会显示真实任务分布。" : null,
-    };
+    return data;
   } catch (error) {
-    if (isMissingDatabase(error)) return emptyMonthData(true);
+    if (isMissingDatabase(error)) return emptyMonthData(true, month);
     throw error;
   }
 }

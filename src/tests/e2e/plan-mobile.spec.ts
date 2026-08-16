@@ -95,7 +95,14 @@ test("mobile Plan month detail opens only after selection and stays in page flow
     await addWorkspaceSession(context, workspaceId);
     await page.goto("/plan");
 
-    await page.getByRole("button", { name: "月", exact: true }).click();
+    const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
+    await expect(sectionNav.getByRole("link", { name: "日程", exact: true })).toHaveAttribute("href", "/plan");
+    await expect(sectionNav.getByRole("link", { name: "项目", exact: true })).toHaveAttribute("href", "/projects");
+    await expect(sectionNav.getByRole("link", { name: "稍后处理", exact: true })).toHaveAttribute("href", "/backlog");
+    await expect(sectionNav.getByRole("link", { name: "归档", exact: true })).toHaveAttribute("href", "/archive");
+
+    await page.getByRole("link", { name: "月", exact: true }).click();
+    await expect(page).toHaveURL(/\/plan\?view=month/);
     await expect(page.locator(".paw-month-selected")).toHaveCount(0);
     await expect(page.locator(".paw-month-sheet-backdrop")).toHaveCount(0);
 

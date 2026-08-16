@@ -47,7 +47,6 @@ function minutesLabel(minutes: number) {
 function statusClass(status: DisplayStatus) {
   if (status === "done") return "done";
   if (status === "blocked") return "stuck";
-  if (status === "skipped") return "skipped";
   if (status === "backlog") return "deferred";
   return "";
 }
@@ -57,7 +56,7 @@ export function buildTaskCopyText(task: Pick<Task, "title" | "context" | "track"
     task.title,
     `${task.context} · ${task.track} · ${minutesLabel(task.minutes)} · 能量 ${task.energy} · 优先级 ${priorityLabel[task.priority]}`,
   ];
-  if (task.notes?.trim()) lines.push("备注", task.notes.trim());
+  if (task.detail.sections.length === 0 && task.notes?.trim()) lines.push("备注", task.notes.trim());
   task.detail.sections.forEach((section) => {
     lines.push(section.label);
     section.lines.forEach((line) => lines.push(`- ${line}`));
@@ -124,9 +123,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     return data.routines.reduce((sum, routine) => sum + routine.minutes, 0);
   }, [data.routines]);
 
-  // 完成 / 跳过 / 延后的任务沉到列表底部，未处理的永远在最上面
+  // 完成或移出排期的任务沉到列表底部，未处理的永远在最上面。
   const sortedTasks = useMemo(() => {
-    const sunk = new Set<DisplayStatus>(["done", "skipped", "backlog"]);
+    const sunk = new Set<DisplayStatus>(["done", "backlog"]);
     return [...tasks].sort(
       (a, b) => Number(sunk.has(a.displayStatus)) - Number(sunk.has(b.displayStatus)),
     );
@@ -256,7 +255,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
               ...task,
               displayStatus: nextStatus,
               status: nextStatus,
-              done: nextStatus === "done" || nextStatus === "skipped",
+              done: nextStatus === "done",
             }
           : task,
       ),
@@ -417,7 +416,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     <span>能量 {task.energy}</span>
                     <span>优先级 {priorityLabel[task.priority]}</span>
                   </div>
-                  {task.notes ? (
+                  {task.detail.sections.length === 0 && task.notes ? (
                     <p className="paw-task-notes">{task.notes}</p>
                   ) : task.detail.sections.length === 0 ? (
                     <p className="paw-task-notes muted">这条任务还没有详细描述。</p>
@@ -452,13 +451,6 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                       className={`paw-act-btn stuck ${task.displayStatus === "blocked" ? "selected" : ""}`}
                     >
                       卡住
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTaskStatus(task.id, "skipped")}
-                      className={`paw-act-btn skip ${task.displayStatus === "skipped" ? "selected" : ""}`}
-                    >
-                      跳过
                     </button>
                     <button
                       type="button"

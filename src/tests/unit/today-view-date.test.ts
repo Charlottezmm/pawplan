@@ -8,7 +8,7 @@ describe("today greeting date label", () => {
 });
 
 describe("today task copy text", () => {
-  it("includes the title, metadata, notes, and detail sections", () => {
+  it("does not duplicate raw notes when structured detail sections are available", () => {
     const copyText = buildTaskCopyText({
       title: "Karpathy GPT/nanoGPT 视频（补看，不要求复现）",
       context: "Karpathy Zero-to-Hero",
@@ -30,13 +30,26 @@ describe("today task copy text", () => {
       [
         "Karpathy GPT/nanoGPT 视频（补看，不要求复现）",
         "Karpathy Zero-to-Hero · 学习主线 · 2h · 能量 高 · 优先级 高",
-        "备注",
-        "只被动看，不要求复现。",
         "目标",
         "- 被动看完 Karpathy Let's build GPT from scratch",
         "资源",
         "- 视频 https://www.youtube.com/watch?v=kCc8FmEb1nY",
       ].join("\n"),
     );
+  });
+
+  it("keeps raw notes when there are no structured detail sections", () => {
+    const copyText = buildTaskCopyText({
+      title: "简单任务",
+      context: "未分类",
+      track: "未分类",
+      minutes: 30,
+      energy: "中",
+      priority: "normal",
+      notes: "一条没有结构化字段的备注。",
+      detail: { summary: null, sections: [] },
+    });
+
+    expect(copyText).toContain("备注\n一条没有结构化字段的备注。");
   });
 });

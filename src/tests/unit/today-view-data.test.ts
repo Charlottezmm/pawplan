@@ -24,6 +24,16 @@ vi.mock("@/lib/planning/active-plan", () => ({
 
 type Table = object;
 
+type QueryResult<T> = {
+  where: (condition: unknown) => QueryResult<T>;
+  orderBy: () => Promise<T[]>;
+  limit: (count: number) => Promise<T[]>;
+  then: (
+    resolve: (value: T[]) => unknown,
+    reject?: (reason: unknown) => unknown,
+  ) => Promise<unknown>;
+};
+
 function sqlParamValues(value: unknown): unknown[] {
   if (!value || typeof value !== "object") return [];
   const chunks = (value as { queryChunks?: unknown[] }).queryChunks;
@@ -56,7 +66,7 @@ function hasArchivedAtColumn(value: unknown, seen = new Set<unknown>()): boolean
   return Object.values(value).some((item) => hasArchivedAtColumn(item, seen));
 }
 
-function queryResult<T>(rows: T[]) {
+function queryResult<T>(rows: T[]): QueryResult<T> {
   return {
     where: vi.fn((condition: unknown) => {
       const activeRows = hasArchivedAtColumn(condition)
@@ -68,7 +78,10 @@ function queryResult<T>(rows: T[]) {
           value === "todo" || value === "done" || value === "skipped" || value === "backlog",
         );
       if (statuses.length === 0 && hasStatusColumn(condition)) {
-        return queryResult(activeRows.filter((row) => (row as { status?: string }).status !== "backlog"));
+        return queryResult(activeRows.filter((row) => {
+          const status = (row as { status?: string }).status;
+          return status === "todo" || status === "done";
+        }));
       }
       if (statuses.length === 0) return queryResult(activeRows);
       return queryResult(activeRows.filter((row) => statuses.includes((row as { status?: string }).status ?? "")));
@@ -95,7 +108,7 @@ describe("today page data", () => {
     vi.clearAllMocks();
   });
 
-  it("excludes backlog, archived tasks, and cancelled recurring occurrences from Today", async () => {
+  it("excludes backlog, skipped, archived tasks, and cancelled recurring occurrences from Today", async () => {
     const { getDb } = await import("@/lib/db/client");
     const { getActivePlanId } = await import("@/lib/planning/active-plan");
     const today = new Date("2026-06-28T16:00:00.000Z");
@@ -128,6 +141,21 @@ describe("today page data", () => {
               date: today,
               daySegment: "afternoon",
               status: "backlog",
+              estimatedMinutes: 300,
+              blocked: false,
+              isChore: false,
+              priority: "normal",
+              energyLevel: "medium",
+              projectId: null,
+              courseId: null,
+              trackId: null,
+            },
+            {
+              id: "skipped-task",
+              title: "Legacy skipped task",
+              date: today,
+              daySegment: "afternoon",
+              status: "skipped",
               estimatedMinutes: 300,
               blocked: false,
               isChore: false,

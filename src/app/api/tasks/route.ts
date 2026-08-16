@@ -13,7 +13,7 @@ const choreSchema = z.object({ title: z.string().trim().min(1).max(240) });
 const taskUpdateSchema = z
   .object({
     id: z.string().uuid(),
-    status: z.enum(["todo", "done", "skipped", "backlog"]).optional(),
+    status: z.enum(["todo", "done", "backlog"]).optional(),
     blocked: z.boolean().optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     daySegment: z.enum(["morning", "afternoon", "evening"]).optional(),

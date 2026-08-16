@@ -275,7 +275,7 @@ describe("MCP planning tools", () => {
       type: "object",
       properties: {
         task_id: { type: "string", minLength: 1 },
-        status: { type: "string", enum: ["todo", "done", "skipped", "backlog"] },
+        status: { type: "string", enum: ["todo", "done", "backlog"] },
         date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
         day_segment: { type: "string", enum: ["morning", "afternoon", "evening"] },
       },

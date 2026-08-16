@@ -1,7 +1,14 @@
 import { Archive, Clock3, FolderKanban } from "lucide-react";
+import { PlanSectionNav } from "@/components/plan-section-nav";
 import type { ArchiveHistoryViewData } from "@/lib/planning/project-view-data";
+import { ArchiveRestoreControl } from "@/components/task-transition-controls";
 
-const statusLabels = { todo: "待办", done: "已完成", skipped: "已跳过", backlog: "Backlog" } as const;
+const statusLabels = {
+  todo: "计划中（归档前）",
+  done: "完成（归档前）",
+  skipped: "旧兼容状态（未完成）",
+  backlog: "稍后处理（归档前）",
+} as const;
 
 function minutesLabel(minutes: number) {
   if (minutes < 60) return `${minutes}m`;
@@ -13,12 +20,13 @@ function minutesLabel(minutes: number) {
 export function ArchiveHistoryView({ data }: { data: ArchiveHistoryViewData }) {
   return (
     <div className="paw-page">
+      <PlanSectionNav />
       <section className="paw-page-header paw-project-header">
         <div>
           <p className="paw-project-kicker">Archive · {data.totalCount}</p>
           <h1 className="paw-page-date">历史归档</h1>
           <p className="paw-project-intro">
-            归档任务已退出当前计划，但仍保留原来的待办、完成、跳过或 Backlog 状态，可以通过 MCP 精确恢复。
+            归档任务已退出当前计划并保留历史。恢复后会先进入“稍后处理”，由你决定何时重新排期。
           </p>
         </div>
         <a href="/projects" className="paw-secondary-btn"><FolderKanban size={15} /> 查看 Projects</a>
@@ -83,6 +91,7 @@ export function ArchiveHistoryView({ data }: { data: ArchiveHistoryViewData }) {
                         <span><Clock3 size={12} /> {minutesLabel(task.estimatedMinutes)}</span>
                         <span>归档于 {task.archivedLabel}</span>
                       </div>
+                      <ArchiveRestoreControl taskId={task.id} />
                     </article>
                   ))}
                 </div>
