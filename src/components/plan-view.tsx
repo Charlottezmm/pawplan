@@ -311,7 +311,7 @@ function TaskDetail({
   );
 
   if (layout === "drawer") {
-    return portalReady ? createPortal(detail, document.body) : null;
+    return portalReady && sheetOpen ? createPortal(detail, document.body) : null;
   }
 
   return detail;

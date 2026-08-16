@@ -42,7 +42,7 @@ describe("Plan information architecture", () => {
 
     expect(source).toContain('<section className="paw-plan-view paw-plan-month">');
     expect(source).toContain('layout="drawer"');
-    expect(source).toContain('createPortal(detail, document.body)');
+    expect(source).toContain('portalReady && sheetOpen ? createPortal(detail, document.body) : null');
     expect(source).toContain('<DetailLine line={line} />');
   });
 
