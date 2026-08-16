@@ -37,22 +37,15 @@ describe("Plan information architecture", () => {
     expect(source).toContain('task.notes\n          ? <p className="paw-plan-detail-notes">{task.notes}</p>');
   });
 
-  it("keeps the month calendar full width and opens task details on demand", () => {
+  it("keeps task detail content inside the original sidebar", () => {
     const source = readFileSync("src/components/plan-view.tsx", "utf8");
-
-    expect(source).toContain('<section className="paw-plan-view paw-plan-month">');
-    expect(source).toContain('layout="drawer"');
-    expect(source).toContain('portalReady && sheetOpen ? createPortal(detail, document.body) : null');
-    expect(source).toContain('<DetailLine line={line} />');
-  });
-
-  it("styles month details as a responsive drawer instead of a permanent column", () => {
     const css = readFileSync("src/app/globals.css", "utf8");
-    const monthRule = css.match(/\.paw-plan-month \{[\s\S]*?\}/)?.[0] ?? "";
-    const drawerRule = css.match(/\.paw-plan-detail\.drawer \{[\s\S]*?\}/)?.[0] ?? "";
+    const detailTextRule = css.match(/\.paw-plan-detail \.paw-goal-title,[\s\S]*?\}/)?.[0] ?? "";
 
-    expect(monthRule).toContain("width: min(1240px, calc(100vw - 64px));");
-    expect(drawerRule).toContain("position: fixed;");
-    expect(drawerRule).toContain("pointer-events: none;");
+    expect(source).toContain('<section className="paw-plan-view paw-plan-split">');
+    expect(source).toContain('<DetailLine line={line} />');
+    expect(source).toContain('className="paw-plan-resource-link"');
+    expect(detailTextRule).toContain("overflow-wrap: anywhere;");
+    expect(detailTextRule).toContain("word-break: break-word;");
   });
 });
