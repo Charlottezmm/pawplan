@@ -56,4 +56,28 @@ describe("simplified task state views", () => {
     expect(html).toContain("恢复到稍后处理");
     expect(html).not.toContain("已完成");
   });
+
+  it("keeps archive filters compact until a filter is active", () => {
+    const baseData = {
+      dataUnavailable: false,
+      totalCount: 0,
+      totalMinutes: 0,
+      projects: [],
+      groups: [],
+    };
+    const compactHtml = renderToStaticMarkup(React.createElement(ArchiveHistoryView, {
+      data: { ...baseData, filters: {} },
+    }));
+    const filteredHtml = renderToStaticMarkup(React.createElement(ArchiveHistoryView, {
+      data: { ...baseData, filters: { status: "todo" as const } },
+    }));
+
+    expect(compactHtml).toContain("筛选归档");
+    expect(compactHtml).toContain("暂无归档任务");
+    expect(compactHtml).not.toContain("<details class=\"paw-archive-filters\" open=\"\"");
+    expect(compactHtml).not.toContain("查看 Projects");
+    expect(filteredHtml).toContain("<details class=\"paw-archive-filters\" open=\"\"");
+    expect(filteredHtml).toContain("没有符合筛选条件的任务");
+    expect(filteredHtml).toContain("清除筛选");
+  });
 });
