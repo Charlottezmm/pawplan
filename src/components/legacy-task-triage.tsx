@@ -3,6 +3,7 @@
 import { Archive, Check, ChevronDown, Clock3, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { LegacySkippedViewData } from "@/lib/planning/legacy-skipped";
 
 type Decision = "backlog" | "archive";
@@ -191,7 +192,7 @@ export function LegacyTaskTriage({ tasks }: { tasks: Task[] }) {
         </div>
       ) : null}
 
-      {reviewing ? (
+      {reviewing && typeof document !== "undefined" ? createPortal(
         <div className="paw-legacy-confirm-backdrop">
           <section className="paw-legacy-confirm" role="dialog" aria-modal="true" aria-label="确认整理旧任务">
             <div>
@@ -214,7 +215,8 @@ export function LegacyTaskTriage({ tasks }: { tasks: Task[] }) {
               </button>
             </div>
           </section>
-        </div>
+        </div>,
+        document.body,
       ) : null}
 
       {message ? <p className="paw-legacy-triage-message" role="status">{message}</p> : null}
