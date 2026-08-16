@@ -192,27 +192,29 @@ export function LegacyTaskTriage({ tasks }: { tasks: Task[] }) {
       ) : null}
 
       {reviewing ? (
-        <section className="paw-legacy-confirm" aria-label="确认整理旧任务">
-          <div>
-            <p className="paw-project-kicker">应用前确认</p>
-            <h3>整理这 {selectedTasks.length} 条任务？</h3>
-            <p>{backlogTasks.length} 条会进入“稍后处理”，{archivedTasks.length} 条会进入“归档”。其余 {tasks.length - selectedTasks.length} 条保持原样。</p>
-          </div>
-          <details>
-            <summary>查看本次任务标题</summary>
-            <ul>
-              {selectedTasks.map((task) => (
-                <li key={task.id}><strong>{decisions[task.id] === "backlog" ? "还要做" : "归档"}</strong>{task.title}</li>
-              ))}
-            </ul>
-          </details>
-          <div className="paw-legacy-confirm-actions">
-            <button className="paw-secondary-btn" type="button" onClick={() => setReviewing(false)} disabled={pending}>返回修改</button>
-            <button className="paw-primary-btn" type="button" onClick={() => void applyDecisions()} disabled={pending}>
-              {pending ? "正在整理…" : `确认整理 ${selectedTasks.length} 条`}
-            </button>
-          </div>
-        </section>
+        <div className="paw-legacy-confirm-backdrop">
+          <section className="paw-legacy-confirm" role="dialog" aria-modal="true" aria-label="确认整理旧任务">
+            <div>
+              <p className="paw-project-kicker">应用前确认</p>
+              <h3>整理这 {selectedTasks.length} 条任务？</h3>
+              <p>{backlogTasks.length} 条会进入“稍后处理”，{archivedTasks.length} 条会进入“归档”。其余 {tasks.length - selectedTasks.length} 条保持原样。</p>
+            </div>
+            <details>
+              <summary>查看本次任务标题</summary>
+              <ul>
+                {selectedTasks.map((task) => (
+                  <li key={task.id}><strong>{decisions[task.id] === "backlog" ? "还要做" : "归档"}</strong>{task.title}</li>
+                ))}
+              </ul>
+            </details>
+            <div className="paw-legacy-confirm-actions">
+              <button className="paw-secondary-btn" type="button" onClick={() => setReviewing(false)} disabled={pending}>返回修改</button>
+              <button className="paw-primary-btn" type="button" onClick={() => void applyDecisions()} disabled={pending}>
+                {pending ? "正在整理…" : `确认整理 ${selectedTasks.length} 条`}
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {message ? <p className="paw-legacy-triage-message" role="status">{message}</p> : null}

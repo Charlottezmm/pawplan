@@ -3457,14 +3457,28 @@ input.paw-input[type="time"] {
   font-size: 13px;
 }
 
+.paw-legacy-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(48, 43, 36, 0.24);
+  padding: 24px;
+  backdrop-filter: blur(3px);
+}
+
 .paw-legacy-confirm {
   display: grid;
+  width: min(520px, 100%);
+  max-height: min(680px, calc(100dvh - 48px));
   gap: 14px;
-  margin-top: 14px;
+  overflow-y: auto;
   border: 1px solid color-mix(in srgb, var(--app-accent) 45%, var(--app-line));
   border-radius: var(--app-radius-sm);
-  background: var(--app-accent-soft);
-  padding: 16px;
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-pop);
+  padding: 20px;
 }
 
 .paw-legacy-confirm h3 {
@@ -4515,6 +4529,17 @@ input.paw-input[type="time"] {
   .paw-legacy-confirm-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .paw-legacy-confirm-backdrop {
+    align-items: end;
+    padding: 16px 16px calc(var(--app-bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 10px);
+  }
+
+  .paw-legacy-confirm {
+    max-height: calc(100dvh - var(--app-bottom-nav-height) - env(safe-area-inset-bottom, 0px) - 42px);
+    border-radius: var(--app-radius);
+    padding: 18px;
   }
 
   .paw-project-edit {
