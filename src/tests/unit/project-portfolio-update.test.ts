@@ -32,6 +32,7 @@ function createDb() {
     changeLogs: [] as Row[],
     touchedTables: [] as string[],
     beforeOperationLeaseLock: null as null | ((operation: Row) => void),
+    rejectTimestampGuard: false,
   };
   const tableName = (table: unknown) => getTableName(table as Parameters<typeof getTableName>[0]);
   const rowsFor = (name: string): Row[] => name === "plans"
@@ -64,6 +65,13 @@ function createDb() {
         Promise.resolve(rows).then(resolve, reject),
     };
     return value;
+  }
+  function referencesColumn(value: unknown, columnName: string): boolean {
+    if (!value || typeof value !== "object") return false;
+    if (Array.isArray(value)) return value.some((entry) => referencesColumn(entry, columnName));
+    if ((value as { name?: unknown }).name === columnName) return true;
+    const chunks = (value as { queryChunks?: unknown }).queryChunks;
+    return Array.isArray(chunks) && chunks.some((entry) => referencesColumn(entry, columnName));
   }
   const client = {
     select() {
@@ -111,13 +119,16 @@ function createDb() {
       return {
         set(values: Row) {
           return {
-            where() {
+            where(condition?: unknown) {
               const rows = rowsFor(name);
+              const rejectedByTimestampPrecision = state.rejectTimestampGuard &&
+                (name === "projects" || name === "project_milestones") &&
+                referencesColumn(condition, "updated_at");
               if (name === "operation_approvals") Object.assign(rows.at(-1) ?? {}, values);
               else if (name === "plan_operations") Object.assign(rows.at(-1) ?? {}, values);
-              else for (const row of rows) Object.assign(row, values);
+              else if (!rejectedByTimestampPrecision) for (const row of rows) Object.assign(row, values);
               state.touchedTables.push(name);
-              return { returning: () => Promise.resolve(rows.length ? [{ id: rows.at(-1)!.id }] : []) };
+              return { returning: () => Promise.resolve(!rejectedByTimestampPrecision && rows.length ? [{ id: rows.at(-1)!.id }] : []) };
             },
           };
         },
@@ -310,7 +321,7 @@ describe("AI-first Project Portfolio updates", () => {
     });
   });
 
-  it("requires expected_updated_at and returns the actual updated Project ID", async () => {
+  it("updates a locked Project when PostgreSQL has finer timestamp precision than ISO readback", async () => {
     process.env.APP_SECRET = "project-portfolio-test-secret";
     const db = createDb();
     const updatedAt = new Date("2026-08-15T01:00:00.000Z");
@@ -331,6 +342,7 @@ describe("AI-first Project Portfolio updates", () => {
       createdAt: updatedAt,
       updatedAt,
     });
+    db.state.rejectTimestampGuard = true;
     const update = {
       projects: [{
         action: "update" as const,

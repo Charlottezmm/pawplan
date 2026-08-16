@@ -568,10 +568,12 @@ export async function applyProjectPortfolioUpdate(db: DbLike, input: {
           const resulting = resultingProject(row, operation);
           values.needsDefinition = !resulting.category || !resulting.objective || !resulting.successCriteria;
           values.updatedAt = now;
+          // loadState locked this row and compared the caller-visible millisecond timestamp.
+          // PostgreSQL can retain sub-millisecond precision that Date/ISO readback cannot,
+          // so repeating the comparison as exact SQL timestamp equality rejects valid writes.
           const updated = await tx.update(projects).set(values).where(and(
             eq(projects.id, operation.projectId),
             eq(projects.workspaceId, input.workspaceId),
-            eq(projects.updatedAt, new Date(operation.expectedUpdatedAt)),
           )).returning({ id: projects.id });
           if (updated.length !== 1) throw new ProjectPortfolioUpdateError("stale_project", `Project ${operation.projectId} changed before write`, 409);
           updatedProjectIds.push(operation.projectId);
@@ -611,7 +613,6 @@ export async function applyProjectPortfolioUpdate(db: DbLike, input: {
           const updated = await tx.update(projectMilestones).set(values).where(and(
             eq(projectMilestones.id, operation.milestoneId),
             eq(projectMilestones.workspaceId, input.workspaceId),
-            eq(projectMilestones.updatedAt, new Date(operation.expectedUpdatedAt)),
           )).returning({ id: projectMilestones.id });
           if (updated.length !== 1) throw new ProjectPortfolioUpdateError("stale_milestone", `Milestone ${operation.milestoneId} changed before write`, 409);
           updatedMilestoneIds.push(operation.milestoneId);
