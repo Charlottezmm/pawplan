@@ -18,6 +18,7 @@ vi.mock("@/lib/planning/task-transitions", async () => {
     rescheduleBacklogTask: vi.fn(),
     restoreArchivedTaskToBacklog: vi.fn(),
     moveLegacySkippedTaskToBacklog: vi.fn(),
+    triageLegacySkippedTasks: vi.fn(),
   };
 });
 
@@ -141,6 +142,37 @@ describe("task transition route", () => {
       taskId,
       expectedStatus: "skipped",
       idempotencyKey: "legacy-restore-1",
+    });
+  });
+
+  it("passes exact legacy task decisions and confirmed count to the batch service", async () => {
+    const { getWorkspaceIdFromSession } = await import("@/lib/auth/session");
+    const { getDb } = await import("@/lib/db/client");
+    const { triageLegacySkippedTasks } = await import("@/lib/planning/task-transitions");
+    const db = { id: "db" };
+    const decisions = [
+      { taskId, decision: "backlog" as const },
+      { taskId: "33333333-3333-4333-8333-333333333333", decision: "archive" as const },
+    ];
+    vi.mocked(getWorkspaceIdFromSession).mockResolvedValue("workspace-1");
+    vi.mocked(getDb).mockReturnValue(db as never);
+    vi.mocked(triageLegacySkippedTasks).mockResolvedValue({ status: "succeeded" } as never);
+    const { POST } = await import("@/app/api/tasks/transitions/route");
+
+    const response = await POST(request({
+      action: "triage_legacy_skipped_tasks",
+      decisions,
+      confirmCount: 2,
+      idempotencyKey: "legacy-triage-1",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(triageLegacySkippedTasks).toHaveBeenCalledWith(db, {
+      workspaceId: "workspace-1",
+      action: "triage_legacy_skipped_tasks",
+      decisions,
+      confirmCount: 2,
+      idempotencyKey: "legacy-triage-1",
     });
   });
 });

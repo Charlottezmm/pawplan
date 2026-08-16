@@ -7,7 +7,7 @@ import { ArchiveRestoreControl } from "@/components/task-transition-controls";
 const statusLabels = {
   todo: "计划中（归档前）",
   done: "完成（归档前）",
-  skipped: "旧兼容状态（未完成）",
+  skipped: "不再继续",
   backlog: "稍后处理（归档前）",
 } as const;
 
@@ -30,9 +30,6 @@ export function ArchiveHistoryView({ data }: { data: ArchiveHistoryViewData }) {
     <div className="paw-page paw-archive-page">
       <PlanSectionNav />
       <section className="paw-page-header paw-archive-header">
-        <div className="paw-archive-heading-icon" aria-hidden="true">
-          <Archive size={21} />
-        </div>
         <div className="paw-archive-heading-copy">
           <p className="paw-project-kicker">归档记录</p>
           <div className="paw-archive-title-row">

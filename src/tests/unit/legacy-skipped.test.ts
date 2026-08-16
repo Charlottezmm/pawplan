@@ -36,9 +36,13 @@ describe("legacy skipped loader", () => {
       title: "Legacy task",
       date: new Date("2026-08-15T16:00:00.000Z"),
       estimatedMinutes: 30,
+      projectId: "project-1",
+      projectName: "Research",
+      projectColor: "#2563eb",
     }]);
     const where = vi.fn(() => ({ orderBy }));
-    const from = vi.fn(() => ({ where }));
+    const leftJoin = vi.fn(() => ({ where }));
+    const from = vi.fn(() => ({ leftJoin }));
     const select = vi.fn(() => ({ from }));
     vi.mocked(getDb).mockReturnValue({ select } as never);
     vi.mocked(getActivePlanId).mockResolvedValue("plan-1");
@@ -48,7 +52,15 @@ describe("legacy skipped loader", () => {
 
     expect(result).toEqual({
       dataUnavailable: false,
-      tasks: [{ id: "task-1", title: "Legacy task", date: "2026-08-16", estimatedMinutes: 30 }],
+      tasks: [{
+        id: "task-1",
+        title: "Legacy task",
+        date: "2026-08-16",
+        estimatedMinutes: 30,
+        projectId: "project-1",
+        projectName: "Research",
+        projectColor: "#2563eb",
+      }],
     });
     const predicate = (where.mock.calls as unknown[][])[0]?.[0];
     expect(values(predicate)).toEqual(["workspace-1", "plan-1", "skipped"]);

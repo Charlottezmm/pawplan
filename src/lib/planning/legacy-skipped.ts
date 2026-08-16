@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { tasks } from "@/lib/db/schema";
+import { projects, tasks } from "@/lib/db/schema";
 import { getActivePlanId } from "@/lib/planning/active-plan";
 
 export type LegacySkippedViewData = {
@@ -10,6 +10,9 @@ export type LegacySkippedViewData = {
     title: string;
     date: string;
     estimatedMinutes: number;
+    projectId: string | null;
+    projectName: string;
+    projectColor: string;
   }>;
 };
 
@@ -38,8 +41,12 @@ export async function getLegacySkippedTasks(workspaceId: string): Promise<Legacy
         title: tasks.title,
         date: tasks.date,
         estimatedMinutes: tasks.estimatedMinutes,
+        projectId: tasks.projectId,
+        projectName: projects.name,
+        projectColor: projects.color,
       })
       .from(tasks)
+      .leftJoin(projects, and(eq(tasks.projectId, projects.id), eq(projects.workspaceId, workspaceId)))
       .where(
         and(
           eq(tasks.workspaceId, workspaceId),
@@ -51,7 +58,12 @@ export async function getLegacySkippedTasks(workspaceId: string): Promise<Legacy
       .orderBy(desc(tasks.updatedAt));
     return {
       dataUnavailable: false,
-      tasks: rows.map((task) => ({ ...task, date: dateKey(task.date) })),
+      tasks: rows.map((task) => ({
+        ...task,
+        date: dateKey(task.date),
+        projectName: task.projectName ?? "未关联项目",
+        projectColor: task.projectColor ?? "#a89f8d",
+      })),
     };
   } catch (error) {
     if (isMissingDatabase(error)) return { dataUnavailable: true, tasks: [] };

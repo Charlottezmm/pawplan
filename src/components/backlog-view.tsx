@@ -1,9 +1,7 @@
 import { Archive, Clock3, FolderKanban } from "lucide-react";
 import { PlanSectionNav } from "@/components/plan-section-nav";
-import {
-  BacklogRescheduleControl,
-  LegacySkippedRestoreControl,
-} from "@/components/task-transition-controls";
+import { BacklogRescheduleControl } from "@/components/task-transition-controls";
+import { LegacyTaskTriage } from "@/components/legacy-task-triage";
 import type { LegacySkippedViewData } from "@/lib/planning/legacy-skipped";
 import type { BacklogViewData } from "@/lib/planning/project-view-data";
 
@@ -74,21 +72,7 @@ export function BacklogView({ data, legacySkipped }: { data: BacklogViewData; le
       {legacySkipped.dataUnavailable ? (
         <p className="paw-status-pill warn">旧兼容任务暂时无法读取。</p>
       ) : legacySkipped.tasks.length > 0 ? (
-        <details className="paw-legacy-skipped">
-          <summary>旧兼容状态任务 · {legacySkipped.tasks.length} 条</summary>
-          <p>这些任务过去被标记为 skipped，但不算完成。需要继续的任务可以先加入“稍后处理”。</p>
-          <div className="paw-backlog-list">
-            {legacySkipped.tasks.map((task) => (
-              <article key={task.id} className="paw-backlog-task">
-                <div>
-                  <h3>{task.title}</h3>
-                  <p>原日期 {task.date} · {minutesLabel(task.estimatedMinutes)}</p>
-                </div>
-                <LegacySkippedRestoreControl taskId={task.id} />
-              </article>
-            ))}
-          </div>
-        </details>
+        <LegacyTaskTriage tasks={legacySkipped.tasks} />
       ) : null}
     </div>
   );

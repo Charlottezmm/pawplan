@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: PawPlan Task State Transition API
-  version: 0.2.0
+  version: 0.3.0
 paths:
   /api/tasks/transitions:
     post:
-      summary: Reschedule one backlog task or restore one archived task to backlog
+      summary: Reschedule, restore, or explicitly classify legacy cleared tasks
       security:
         - workspaceSession: []
       requestBody:
@@ -17,6 +17,7 @@ paths:
                 - $ref: '#/components/schemas/RescheduleBacklogTask'
                 - $ref: '#/components/schemas/RestoreArchivedTask'
                 - $ref: '#/components/schemas/RestoreLegacySkippedTask'
+                - $ref: '#/components/schemas/TriageLegacySkippedTasks'
               discriminator:
                 propertyName: action
       responses:
@@ -25,7 +26,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskTransitionResult'
+                oneOf:
+                  - $ref: '#/components/schemas/TaskTransitionResult'
+                  - $ref: '#/components/schemas/LegacyTaskTriageResult'
         '400':
           description: Invalid strict request body, date, or idempotency key
         '401':
@@ -96,6 +99,38 @@ components:
           type: string
           minLength: 8
           maxLength: 200
+    TriageLegacySkippedTasks:
+      type: object
+      additionalProperties: false
+      required: [action, decisions, confirmCount, idempotencyKey]
+      properties:
+        action:
+          const: triage_legacy_skipped_tasks
+        decisions:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items:
+            type: object
+            additionalProperties: false
+            required: [taskId, decision]
+            properties:
+              taskId:
+                type: string
+                format: uuid
+              decision:
+                type: string
+                enum: [backlog, archive]
+        confirmCount:
+          type: integer
+          minimum: 1
+          maximum: 200
+          description: Must exactly match the number of explicit decisions
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 200
     TaskReadback:
       type: object
       additionalProperties: false
@@ -158,3 +193,50 @@ components:
                 todo: { type: integer, minimum: 0 }
                 backlog: { type: integer, minimum: 0 }
                 archived: { type: integer, minimum: 0 }
+    LegacyTaskTriageResult:
+      type: object
+      additionalProperties: false
+      required: [status, operationId, idempotencyKey, processedCount, movedToBacklog, archived, readback]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, duplicate]
+        originalStatus:
+          type: string
+          enum: [succeeded]
+        operationId:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+        processedCount:
+          type: integer
+          minimum: 1
+          maximum: 200
+        movedToBacklog:
+          $ref: '#/components/schemas/TaskIdSet'
+        archived:
+          $ref: '#/components/schemas/TaskIdSet'
+        readback:
+          type: object
+          additionalProperties: false
+          required: [verification, legacySkippedRemaining, backlogCount, archivedCount]
+          properties:
+            verification:
+              const: succeeded
+            legacySkippedRemaining: { type: integer, minimum: 0 }
+            backlogCount: { type: integer, minimum: 0 }
+            archivedCount: { type: integer, minimum: 0 }
+    TaskIdSet:
+      type: object
+      additionalProperties: false
+      required: [count, taskIds]
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        taskIds:
+          type: array
+          items:
+            type: string
+            format: uuid

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { changeLogs, planOperations, tasks } from "@/lib/db/schema";
 import { ActivePlanError, resolveActivePlanContext } from "@/lib/planning/active-plan";
 
@@ -38,6 +38,7 @@ export class TaskTransitionError extends Error {
     public code:
       | "invalid_date"
       | "invalid_idempotency_key"
+      | "invalid_request"
       | "active_plan_missing"
       | "task_not_found"
       | "task_state_conflict"
@@ -404,5 +405,219 @@ export async function moveLegacySkippedTaskToBacklog(
         .returning({ id: tasks.id });
       if (!updated) throw new TaskTransitionError("task_state_conflict", "Task changed before restoration", 409);
     },
+  });
+}
+
+export type LegacyTaskTriageDecision = {
+  taskId: string;
+  decision: "backlog" | "archive";
+};
+
+export type LegacyTaskTriageResult = {
+  status: "succeeded" | "duplicate";
+  originalStatus?: "succeeded";
+  operationId: string;
+  idempotencyKey: string;
+  processedCount: number;
+  movedToBacklog: { count: number; taskIds: string[] };
+  archived: { count: number; taskIds: string[] };
+  readback: {
+    verification: "succeeded";
+    legacySkippedRemaining: number;
+    backlogCount: number;
+    archivedCount: number;
+  };
+};
+
+export async function triageLegacySkippedTasks(
+  db: TransitionDb,
+  input: {
+    workspaceId: string;
+    decisions: LegacyTaskTriageDecision[];
+    confirmCount: number;
+    idempotencyKey: string;
+    now?: Date;
+  },
+): Promise<LegacyTaskTriageResult> {
+  validateIdempotencyKey(input.idempotencyKey);
+  if (input.decisions.length < 1 || input.decisions.length > 200 || input.confirmCount !== input.decisions.length) {
+    throw new TaskTransitionError("invalid_request", "Confirmed task count does not match the selected tasks", 400);
+  }
+  const taskIds = input.decisions.map((decision) => decision.taskId);
+  if (new Set(taskIds).size !== taskIds.length) {
+    throw new TaskTransitionError("invalid_request", "Each task can only be classified once", 400);
+  }
+
+  const canonicalDecisions = [...input.decisions].sort((left, right) => left.taskId.localeCompare(right.taskId));
+  const requestHash = stableHash({ action: "triage_legacy_skipped_tasks", decisions: canonicalDecisions });
+  const now = input.now ?? new Date();
+
+  return db.transaction(async (tx) => {
+    let plan;
+    try {
+      plan = await resolveActivePlanContext(tx, input.workspaceId, { lock: true });
+    } catch (error) {
+      if (error instanceof ActivePlanError && error.code === "active_plan_missing") {
+        throw new TaskTransitionError("active_plan_missing", "No active plan", 409);
+      }
+      throw error;
+    }
+
+    const [claimed] = await tx
+      .insert(planOperations)
+      .values({
+        workspaceId: input.workspaceId,
+        planId: plan.id,
+        operationKind: "triage_legacy_skipped_tasks",
+        idempotencyKey: input.idempotencyKey,
+        requestHash,
+        status: "started",
+        resultJson: {},
+      })
+      .onConflictDoNothing({ target: [planOperations.workspaceId, planOperations.idempotencyKey] })
+      .returning({ id: planOperations.id });
+
+    if (!claimed) {
+      const [existing] = await tx
+        .select()
+        .from(planOperations)
+        .where(and(
+          eq(planOperations.workspaceId, input.workspaceId),
+          eq(planOperations.idempotencyKey, input.idempotencyKey),
+        ))
+        .limit(1)
+        .for("update");
+      if (!existing || existing.requestHash !== requestHash) {
+        throw new TaskTransitionError(
+          "idempotency_payload_mismatch",
+          "Idempotency key was already used with a different request",
+          409,
+        );
+      }
+      if (existing.status === "succeeded") {
+        return {
+          ...(existing.resultJson as LegacyTaskTriageResult),
+          status: "duplicate",
+          originalStatus: "succeeded",
+        };
+      }
+      if (existing.status === "failed") {
+        throw new TaskTransitionError("operation_failed", "The original task triage failed", 409, {
+          operationId: existing.id,
+          error: existing.errorJson,
+        });
+      }
+      throw new TaskTransitionError("operation_in_progress", "Task triage is still in progress", 409, {
+        operationId: existing.id,
+      });
+    }
+
+    let selectedQuery = tx
+      .select()
+      .from(tasks)
+      .where(and(
+        eq(tasks.workspaceId, input.workspaceId),
+        eq(tasks.planId, plan.id),
+        inArray(tasks.id, taskIds),
+      ));
+    if (typeof selectedQuery.for === "function") selectedQuery = selectedQuery.for("update");
+    const selectedTasks = await selectedQuery;
+    const selectedById = new Map(selectedTasks.map((task: { id: string }) => [task.id, task]));
+    const conflicts = taskIds.filter((taskId) => {
+      const task = selectedById.get(taskId) as { status?: string; archivedAt?: Date | null } | undefined;
+      return !task || task.status !== "skipped" || task.archivedAt !== null;
+    });
+    if (conflicts.length > 0) {
+      throw new TaskTransitionError(
+        "task_state_conflict",
+        "Some selected tasks are no longer waiting to be organized",
+        409,
+        { taskIds: conflicts },
+      );
+    }
+
+    const backlogTaskIds = input.decisions
+      .filter((decision) => decision.decision === "backlog")
+      .map((decision) => decision.taskId);
+    const archivedTaskIds = input.decisions
+      .filter((decision) => decision.decision === "archive")
+      .map((decision) => decision.taskId);
+
+    if (backlogTaskIds.length > 0) {
+      const updated = await tx
+        .update(tasks)
+        .set({ status: "backlog", updatedAt: now })
+        .where(and(
+          eq(tasks.workspaceId, input.workspaceId),
+          eq(tasks.planId, plan.id),
+          eq(tasks.status, "skipped"),
+          isNull(tasks.archivedAt),
+          inArray(tasks.id, backlogTaskIds),
+        ))
+        .returning({ id: tasks.id });
+      if (updated.length !== backlogTaskIds.length) {
+        throw new TaskTransitionError("task_state_conflict", "Some tasks changed before they could be restored", 409);
+      }
+    }
+
+    if (archivedTaskIds.length > 0) {
+      const updated = await tx
+        .update(tasks)
+        .set({ archivedAt: now, updatedAt: now })
+        .where(and(
+          eq(tasks.workspaceId, input.workspaceId),
+          eq(tasks.planId, plan.id),
+          eq(tasks.status, "skipped"),
+          isNull(tasks.archivedAt),
+          inArray(tasks.id, archivedTaskIds),
+        ))
+        .returning({ id: tasks.id });
+      if (updated.length !== archivedTaskIds.length) {
+        throw new TaskTransitionError("task_state_conflict", "Some tasks changed before they could be archived", 409);
+      }
+    }
+
+    const taskSurface = await tx
+      .select({ id: tasks.id, status: tasks.status, archivedAt: tasks.archivedAt })
+      .from(tasks)
+      .where(and(eq(tasks.workspaceId, input.workspaceId), eq(tasks.planId, plan.id)));
+    const result: LegacyTaskTriageResult = {
+      status: "succeeded",
+      operationId: claimed.id,
+      idempotencyKey: input.idempotencyKey,
+      processedCount: input.decisions.length,
+      movedToBacklog: { count: backlogTaskIds.length, taskIds: backlogTaskIds },
+      archived: { count: archivedTaskIds.length, taskIds: archivedTaskIds },
+      readback: {
+        verification: "succeeded",
+        legacySkippedRemaining: taskSurface.filter(
+          (task: { status: string; archivedAt: Date | null }) => task.status === "skipped" && task.archivedAt === null,
+        ).length,
+        backlogCount: taskSurface.filter(
+          (task: { status: string; archivedAt: Date | null }) => task.status === "backlog" && task.archivedAt === null,
+        ).length,
+        archivedCount: taskSurface.filter((task: { archivedAt: Date | null }) => task.archivedAt !== null).length,
+      },
+    };
+
+    await tx.insert(changeLogs).values({
+      workspaceId: input.workspaceId,
+      planId: plan.id,
+      source: "manual",
+      summary: "Organized legacy skipped tasks",
+      detailsJson: {
+        operationId: claimed.id,
+        idempotencyKey: input.idempotencyKey,
+        movedToBacklog: backlogTaskIds,
+        archived: archivedTaskIds,
+        readback: result.readback,
+      },
+    });
+    await tx
+      .update(planOperations)
+      .set({ status: "succeeded", resultJson: result, errorJson: null, updatedAt: now })
+      .where(and(eq(planOperations.id, claimed.id), eq(planOperations.workspaceId, input.workspaceId)));
+
+    return result;
   });
 }
