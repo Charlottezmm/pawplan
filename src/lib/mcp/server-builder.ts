@@ -10,6 +10,7 @@ import {
   type PawPlanToolName,
 } from "@/lib/mcp/tools";
 import { McpTaskBatchError } from "@/lib/mcp/task-batch";
+import { TaskNotesBatchError } from "@/lib/mcp/task-notes-batch";
 import { McpTaskArchiveError } from "@/lib/mcp/task-archive";
 import { ReplacePlanWindowError } from "@/lib/mcp/replace-plan-window";
 import { TimeBlockSeriesError } from "@/lib/constraints/time-block-series";
@@ -87,7 +88,8 @@ export function createPawPlanMcpServer(input: { workspaceId: string; permission:
             error instanceof ActivePlanError ||
             error instanceof OperationApprovalError ||
             error instanceof McpPermissionError ||
-            error instanceof ProjectPortfolioUpdateError
+            error instanceof ProjectPortfolioUpdateError ||
+            error instanceof TaskNotesBatchError
           ) {
             return jsonOperationError(error);
           }

@@ -157,8 +157,7 @@ async function handle(request: Request) {
         },
       });
       const outcome = await responseOutcome(response);
-      const duplicateBatch = toolName === "update_tasks_batch" && outcome.duplicate;
-      if (reservationId && (!outcome.succeeded || duplicateBatch)) {
+      if (reservationId && (!outcome.succeeded || outcome.duplicate)) {
         await releaseHostedMcpWriteReservation(db, reservationId);
       } else if (!reservationId) {
         await recordHostedMcpUsage(db, { ...usageInput, success: outcome.succeeded });

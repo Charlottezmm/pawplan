@@ -31,6 +31,24 @@ export default async function ReviewPage() {
           count: typeof raw.count === "number" ? raw.count : undefined,
           totalMinutes: typeof raw.totalMinutes === "number" ? raw.totalMinutes : undefined,
           items: Array.isArray(raw.items) ? raw.items.filter((item): item is string => typeof item === "string") : undefined,
+          noteChanges: Array.isArray(raw.noteChanges)
+            ? raw.noteChanges.flatMap((item) => {
+                if (!item || typeof item !== "object") return [];
+                const change = item as Record<string, unknown>;
+                if (
+                  typeof change.taskId !== "string" ||
+                  typeof change.title !== "string" ||
+                  (change.before !== null && typeof change.before !== "string") ||
+                  typeof change.after !== "string"
+                ) return [];
+                return [{
+                  taskId: change.taskId,
+                  title: change.title,
+                  before: change.before as string | null,
+                  after: change.after,
+                }];
+              })
+            : undefined,
         },
         expiresAt: approval.expiresAt.toISOString(),
       };

@@ -13,6 +13,12 @@ export type PendingOperationApproval = {
     count?: number;
     totalMinutes?: number;
     items?: string[];
+    noteChanges?: Array<{
+      taskId: string;
+      title: string;
+      before: string | null;
+      after: string;
+    }>;
   };
   expiresAt: string;
 };
@@ -66,12 +72,28 @@ export function OperationApprovalList({ approvals }: { approvals: PendingOperati
               {typeof approval.summary.totalMinutes === "number" ? (
                 <p className="paw-row-meta">预计总时长 {approval.summary.totalMinutes} 分钟</p>
               ) : null}
-              {approval.summary.items?.length ? (
+              {approval.summary.items?.length && !approval.summary.noteChanges?.length ? (
                 <details className="paw-row-meta mt-2">
                   <summary>查看全部 {approval.summary.items.length} 个标题</summary>
                   <ul className="mt-2">
                     {approval.summary.items.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}
                   </ul>
+                </details>
+              ) : null}
+              {approval.summary.noteChanges?.length ? (
+                <details className="paw-row-meta mt-2">
+                  <summary>查看全部 {approval.summary.noteChanges.length} 条修改前后内容</summary>
+                  <div className="mt-3 space-y-3">
+                    {approval.summary.noteChanges.map((change) => (
+                      <section className="rounded-xl border border-[var(--paw-line)] p-3" key={change.taskId}>
+                        <h4 className="paw-row-title">{change.title}</h4>
+                        <p className="paw-row-meta mt-2">修改前</p>
+                        <pre className="mt-1 whitespace-pre-wrap break-words text-sm">{change.before ?? "（无）"}</pre>
+                        <p className="paw-row-meta mt-3">修改后</p>
+                        <pre className="mt-1 whitespace-pre-wrap break-words text-sm">{change.after}</pre>
+                      </section>
+                    ))}
+                  </div>
                 </details>
               ) : null}
               <p className="paw-row-meta">批准有效期至 {new Date(approval.expiresAt).toLocaleString("zh-CN")}</p>

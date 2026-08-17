@@ -38,6 +38,8 @@ export const pawPlanToolPermissions = {
   update_task_status: "write",
   update_task_schedule: "write",
   update_task_notes: "write",
+  propose_task_notes_batch: "review",
+  apply_task_notes_batch: "write",
   update_tasks_batch: "write",
   archive_tasks_batch: "write",
   restore_tasks_batch: "write",

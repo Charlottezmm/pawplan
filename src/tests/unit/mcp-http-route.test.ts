@@ -338,7 +338,7 @@ describe("hosted MCP route", () => {
     expect(releaseHostedMcpWriteReservation).toHaveBeenCalledWith({}, "usage-2");
   });
 
-  it("does not charge quota again when an idempotent task batch returns duplicate", async () => {
+  it("does not charge quota again when an idempotent write returns duplicate", async () => {
     const { releaseHostedMcpWriteReservation, reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
     const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
     vi.mocked(verifyMcpBearerToken).mockResolvedValue({
@@ -367,7 +367,14 @@ describe("hosted MCP route", () => {
           jsonrpc: "2.0",
           id: 1,
           method: "tools/call",
-          params: { name: "update_tasks_batch", arguments: { idempotency_key: "batch-retry", operations: [] } },
+          params: {
+            name: "apply_task_notes_batch",
+            arguments: {
+              approval_id: "22222222-2222-4222-8222-222222222222",
+              preview_token: "x".repeat(40),
+              idempotency_key: "batch-retry",
+            },
+          },
         }),
       }),
     );

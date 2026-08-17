@@ -253,6 +253,7 @@ describe("MCP planning tools", () => {
       "get_project_portfolio",
       "propose_project_portfolio_update",
       "get_tasks",
+      "propose_task_notes_batch",
       "propose_patch",
       "propose_daily_rebalance",
       "propose_week_rebalance",
@@ -261,6 +262,7 @@ describe("MCP planning tools", () => {
     ]);
     for (const directWriteTool of [
       "apply_project_portfolio_update",
+      "apply_task_notes_batch",
       "preview_task_batch",
       "update_task_schedule",
       "update_tasks_batch",

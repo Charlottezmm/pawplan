@@ -29,6 +29,7 @@ import {
 } from "@/lib/mcp/conversation-tools";
 import { proposeTimetableImport, proposeTimetableImportArgsSchema } from "@/lib/mcp/timetable-import";
 import { updateTasksBatch } from "@/lib/mcp/task-batch";
+import { applyTaskNotesBatch, proposeTaskNotesBatch } from "@/lib/mcp/task-notes-batch";
 import {
   applyTaskArchiveBatch,
   attachTaskBatchPostCommitReadback,
@@ -550,6 +551,38 @@ export const pawPlanToolSchemas = {
         .describe("Structured Markdown notes. Prefer labels: 目标, 完成标准, 资源, 下一步, 备注."),
     })
     .strict(),
+  propose_task_notes_batch: z
+    .object({
+      idempotency_key: z.string().trim().min(8).max(200),
+      reason: z.string().trim().min(1).max(4000).optional(),
+      operations: z
+        .array(
+          z
+            .object({
+              task_id: z.string().uuid(),
+              notes: z
+                .string()
+                .trim()
+                .min(1)
+                .max(2000)
+                .describe("Exact replacement notes to show in the single batch Review."),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(50)
+        .refine((operations) => new Set(operations.map((operation) => operation.task_id)).size === operations.length, {
+          message: "task_id values must be unique",
+        }),
+    })
+    .strict(),
+  apply_task_notes_batch: z
+    .object({
+      approval_id: z.string().uuid(),
+      preview_token: z.string().min(32),
+      idempotency_key: z.string().trim().min(8).max(200),
+    })
+    .strict(),
   update_tasks_batch: z
     .object({
       idempotency_key: z.string().trim().min(8).max(200),
@@ -686,7 +719,7 @@ Required workflow:
     "Do not apply changes automatically.",
     "Do not edit constraints through MCP.",
     "Use create_checkin, update_task_status, update_task_schedule, or update_task_notes only when the user explicitly asks to record a fact or make a trusted direct edit.",
-    "For multiple trusted direct task edits, use one update_tasks_batch call; do not loop low-level writes. Routine planning still uses Review-first rebalance tools.",
+    "For multiple trusted direct status/schedule edits, use one update_tasks_batch call; do not loop low-level writes. Multiple notes edits must use propose_task_notes_batch, one user approval, then apply_task_notes_batch. Routine planning still uses Review-first rebalance tools.",
   ],
   reviewStatusMeanings: {
     draft_created: "A new Review draft was created.",
@@ -698,7 +731,7 @@ Required workflow:
 };
 
 export const pawPlanServerInstructions =
-  "PawPlan is review-first. Rebalance tools create a Review draft only. AI Project Portfolio changes must use propose_project_portfolio_update to create a pending approval, then wait for the user to approve the exact Preview in PawPlan Review before apply_project_portfolio_update with approval_id. An MCP agent cannot approve its own proposal. Before daily planning or task cleanup, call get_agent_guidance and follow its daily prompt. Never claim changes are applied until persisted readback succeeds.";
+  "PawPlan is review-first. Rebalance tools create a Review draft only. AI Project Portfolio changes must use propose_project_portfolio_update to create a pending approval, then wait for the user to approve the exact Preview in PawPlan Review before apply_project_portfolio_update with approval_id. Multiple task-notes edits must use propose_task_notes_batch, wait for the single exact Review approval, then use apply_task_notes_batch; approval alone is authorization, not proof of persistence. An MCP agent cannot approve its own proposal. Before daily planning or task cleanup, call get_agent_guidance and follow its daily prompt. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_agent_guidance: "Read PawPlan daily agent guidance, Review-first safety rules, and the recommended daily task cleanup prompt.",
@@ -738,6 +771,10 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   update_task_status: "Update a task status with MCP source attribution.",
   update_task_schedule: "Update a task date or day segment with MCP source attribution.",
   update_task_notes: "Update only a task's notes/details with MCP source attribution; this does not change schedule, status, priority, or title.",
+  propose_task_notes_batch:
+    "Create one Review for 1 to 50 exact task-notes replacements, with every before/after diff visible. This never changes live tasks and does not support partial approval.",
+  apply_task_notes_batch:
+    "Atomically apply one user-approved task-notes batch using only its approval_id, signed Preview token, and idempotency key, then verify every note by readback.",
   update_tasks_batch:
     "Atomically apply up to 50 trusted direct task status/schedule edits with idempotency and final readback. Routine planning must use Review-first rebalance tools.",
   save_conversation_summary: "Save a structured conversation summary without storing raw transcript, with MCP provenance.",
@@ -1363,6 +1400,29 @@ export async function runPawPlanTool(
     if (!task) throw new Error("Task not found");
 
     return { task };
+  }
+
+  if (toolName === "propose_task_notes_batch") {
+    const parsed = pawPlanToolSchemas.propose_task_notes_batch.parse(args);
+    return proposeTaskNotesBatch(db, {
+      workspaceId,
+      idempotencyKey: parsed.idempotency_key,
+      reason: parsed.reason,
+      operations: parsed.operations.map((operation) => ({
+        taskId: operation.task_id,
+        notes: operation.notes,
+      })),
+    });
+  }
+
+  if (toolName === "apply_task_notes_batch") {
+    const parsed = pawPlanToolSchemas.apply_task_notes_batch.parse(args);
+    return applyTaskNotesBatch(db, {
+      workspaceId,
+      approvalId: parsed.approval_id,
+      previewToken: parsed.preview_token,
+      idempotencyKey: parsed.idempotency_key,
+    });
   }
 
   if (toolName === "update_tasks_batch") {

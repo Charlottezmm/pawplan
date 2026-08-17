@@ -185,6 +185,7 @@ describe("PawPlan MCP server builder", () => {
         "get_today",
         "get_tasks",
         "propose_project_portfolio_update",
+        "propose_task_notes_batch",
         "propose_patch",
         "propose_daily_rebalance",
         "propose_week_rebalance",
@@ -193,6 +194,7 @@ describe("PawPlan MCP server builder", () => {
       ]));
       for (const directWriteTool of [
         "apply_project_portfolio_update",
+        "apply_task_notes_batch",
         "update_task_schedule",
         "archive_tasks_batch",
         "delete_tasks_batch",

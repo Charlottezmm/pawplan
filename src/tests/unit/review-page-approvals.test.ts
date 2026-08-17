@@ -24,12 +24,13 @@ describe("Review page operation approvals", () => {
     vi.mocked(getReschedulePageData).mockResolvedValue({} as never);
     vi.mocked(listPendingOperationApprovals).mockResolvedValue([{
       id: "approval-1",
-      operationKind: "archive_tasks_batch",
+      operationKind: "task_notes_batch",
       summaryJson: {
-        title: "归档旧任务",
+        title: "批量更新任务详情",
         count: 2,
         totalMinutes: 90,
         items: ["任务 A", "任务 B"],
+        noteChanges: [{ taskId: "task-1", title: "任务 A", before: "旧内容", after: "新内容" }],
       },
       expiresAt: new Date("2026-08-16T01:00:00.000Z"),
     }] as never);
@@ -40,13 +41,14 @@ describe("Review page operation approvals", () => {
 
     expect(children[1].props.approvals).toEqual([{
       id: "approval-1",
-      operationKind: "archive_tasks_batch",
+      operationKind: "task_notes_batch",
       summary: {
-        title: "归档旧任务",
+        title: "批量更新任务详情",
         description: undefined,
         count: 2,
         totalMinutes: 90,
         items: ["任务 A", "任务 B"],
+        noteChanges: [{ taskId: "task-1", title: "任务 A", before: "旧内容", after: "新内容" }],
       },
       expiresAt: "2026-08-16T01:00:00.000Z",
     }]);
