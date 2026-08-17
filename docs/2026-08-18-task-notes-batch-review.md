@@ -7,6 +7,7 @@
 ## Permission and API contract
 
 - `propose_task_notes_batch` has the `review` capability, so `review_only` tokens may create the Review but cannot write task notes.
+- A newly created Review returns `status: draft_created`; an idempotent retry returns `status: duplicate` with the original approval ID.
 - Proposal calls require their own idempotency key, so an identical retry returns the original Review instead of creating a second card.
 - `apply_task_notes_batch` has the `write` capability and accepts only `approval_id`, `preview_token`, and `idempotency_key`.
 - The signed Preview binds workspace, active plan, task IDs, old notes, old `updatedAt`, new notes, and a 30-minute expiry.

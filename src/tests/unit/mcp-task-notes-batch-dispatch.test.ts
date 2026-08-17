@@ -21,7 +21,7 @@ const approvalId = "22222222-2222-4222-8222-222222222222";
 
 describe("task notes batch MCP dispatch", () => {
   beforeEach(() => {
-    notesBatch.propose.mockReset().mockResolvedValue({ status: "pending_review" });
+    notesBatch.propose.mockReset().mockResolvedValue({ status: "draft_created" });
     notesBatch.apply.mockReset().mockResolvedValue({ status: "succeeded" });
   });
 

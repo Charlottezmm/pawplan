@@ -86,7 +86,7 @@ describe.runIf(runDatabaseIntegration)("task notes batch PostgreSQL integration"
       operations,
       reason: "Replace the exact 43 task notes",
     });
-    expect(preview).toMatchObject({ status: "pending_review", count: 43, liveUnchanged: true });
+    expect(preview).toMatchObject({ status: "draft_created", count: 43, liveUnchanged: true });
     const approvals = await db.select().from(operationApprovals).where(eq(operationApprovals.workspaceId, workspace.id));
     expect(approvals).toHaveLength(1);
     expect((approvals[0].summaryJson as { noteChanges: unknown[] }).noteChanges).toHaveLength(43);

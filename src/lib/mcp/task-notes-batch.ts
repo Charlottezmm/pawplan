@@ -322,7 +322,7 @@ export async function proposeTaskNotesBatch(
       },
     });
     const result = {
-      status: "pending_review" as const,
+      status: "draft_created" as const,
       planId: plan.id,
       count: previewOperations.length,
       unchangedTaskIds,

@@ -224,7 +224,7 @@ describe("task notes batch post-commit readback", () => {
       operations: [{ taskId: operations[0].taskId, notes: operations[0].afterNotes }],
       now: new Date("2026-08-18T00:00:00.000Z"),
     });
-    expect(proposal).toMatchObject({ status: "pending_review", count: 1, liveUnchanged: true });
+    expect(proposal).toMatchObject({ status: "draft_created", count: 1, liveUnchanged: true });
     expect(db.state.tasks[0].notes).toBeNull();
     expect(db.state.approvals).toHaveLength(1);
 
