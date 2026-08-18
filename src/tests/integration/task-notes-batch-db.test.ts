@@ -3,7 +3,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { decideOperationApproval } from "@/lib/approvals/service";
+import { decideOperationApproval, listRecentExpiredTaskNotesApprovals } from "@/lib/approvals/service";
 import {
   changeLogs,
   operationApprovals,
@@ -184,5 +184,101 @@ describe.runIf(runDatabaseIntegration)("task notes batch PostgreSQL integration"
     expect(approval.status).toBe("approved");
     const operations = await db.select().from(planOperations).where(eq(planOperations.workspaceId, workspace.id));
     expect(operations).toHaveLength(operationsBeforeApply.length);
+  });
+
+  it("lists only recent unconsumed expired task-notes approvals", async () => {
+    const { workspace } = await seedTasks(1);
+    const { workspace: otherWorkspace } = await seedTasks(1);
+    const now = new Date("2026-08-18T12:00:00.000Z");
+    await db.insert(operationApprovals).values([
+      {
+        workspaceId: workspace.id,
+        operationKind: "task_notes_batch",
+        requestHash: "1".repeat(64),
+        previewHash: "2".repeat(64),
+        status: "pending",
+        summaryJson: { title: "recent pending" },
+        expiresAt: new Date("2026-08-18T11:00:00.000Z"),
+      },
+      {
+        workspaceId: workspace.id,
+        operationKind: "task_notes_batch",
+        requestHash: "3".repeat(64),
+        previewHash: "4".repeat(64),
+        status: "approved",
+        summaryJson: { title: "recent approved" },
+        expiresAt: new Date("2026-08-18T10:00:00.000Z"),
+      },
+      {
+        workspaceId: workspace.id,
+        operationKind: "task_notes_batch",
+        requestHash: "5".repeat(64),
+        previewHash: "6".repeat(64),
+        status: "consumed",
+        summaryJson: { title: "consumed" },
+        expiresAt: new Date("2026-08-18T09:00:00.000Z"),
+      },
+      {
+        workspaceId: workspace.id,
+        operationKind: "archive_tasks_batch",
+        requestHash: "7".repeat(64),
+        previewHash: "8".repeat(64),
+        status: "pending",
+        summaryJson: { title: "other kind" },
+        expiresAt: new Date("2026-08-18T08:00:00.000Z"),
+      },
+      {
+        workspaceId: workspace.id,
+        operationKind: "task_notes_batch",
+        requestHash: "9".repeat(64),
+        previewHash: "a".repeat(64),
+        status: "pending",
+        summaryJson: { title: "too old" },
+        expiresAt: new Date("2026-08-17T11:59:59.000Z"),
+      },
+      {
+        workspaceId: workspace.id,
+        operationKind: "task_notes_batch",
+        requestHash: "d".repeat(64),
+        previewHash: "e".repeat(64),
+        status: "pending",
+        summaryJson: { title: "exact 24-hour boundary" },
+        expiresAt: new Date("2026-08-17T12:00:00.000Z"),
+      },
+      {
+        workspaceId: workspace.id,
+        operationKind: "task_notes_batch",
+        requestHash: "f".repeat(64),
+        previewHash: "0".repeat(64),
+        status: "rejected",
+        summaryJson: { title: "rejected" },
+        expiresAt: new Date("2026-08-18T07:00:00.000Z"),
+      },
+      {
+        workspaceId: otherWorkspace.id,
+        operationKind: "task_notes_batch",
+        requestHash: "1".repeat(64),
+        previewHash: "3".repeat(64),
+        status: "pending",
+        summaryJson: { title: "other workspace" },
+        expiresAt: new Date("2026-08-18T06:00:00.000Z"),
+      },
+      {
+        workspaceId: workspace.id,
+        operationKind: "task_notes_batch",
+        requestHash: "b".repeat(64),
+        previewHash: "c".repeat(64),
+        status: "pending",
+        summaryJson: { title: "still active" },
+        expiresAt: new Date("2026-08-18T13:00:00.000Z"),
+      },
+    ]);
+
+    const rows = await listRecentExpiredTaskNotesApprovals(db, workspace.id, now);
+    expect(rows.map((row) => (row.summaryJson as { title: string }).title)).toEqual([
+      "recent pending",
+      "recent approved",
+      "exact 24-hour boundary",
+    ]);
   });
 });

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import { operationApprovals } from "@/lib/db/schema";
 
 type ApprovalDb = {
@@ -90,6 +90,28 @@ export async function listPendingOperationApprovals(
       ),
     )
     .orderBy(desc(operationApprovals.createdAt));
+}
+
+export async function listRecentExpiredTaskNotesApprovals(
+  db: Pick<ApprovalDb, "select">,
+  workspaceId: string,
+  now = new Date(),
+) {
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return db
+    .select()
+    .from(operationApprovals)
+    .where(
+      and(
+        eq(operationApprovals.workspaceId, workspaceId),
+        eq(operationApprovals.operationKind, "task_notes_batch"),
+        inArray(operationApprovals.status, ["pending", "approved"]),
+        lte(operationApprovals.expiresAt, now),
+        gte(operationApprovals.expiresAt, oneDayAgo),
+      ),
+    )
+    .orderBy(desc(operationApprovals.expiresAt))
+    .limit(10);
 }
 
 export async function decideOperationApproval(

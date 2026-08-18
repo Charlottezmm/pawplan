@@ -7,7 +7,7 @@ import { resolveActivePlanContext } from "@/lib/planning/active-plan";
 
 const operationKind = "task_notes_batch";
 const proposalOperationKind = "propose_task_notes_batch";
-const tokenTtlMs = 30 * 60 * 1000;
+const tokenTtlMs = 24 * 60 * 60 * 1000;
 
 type NotesOperation = { taskId: string; notes: string };
 export type TaskNotesPreviewOperation = {

@@ -3,6 +3,7 @@ import {
   approvalPreviewHash,
   consumeOperationApproval,
   createOperationApproval,
+  listRecentExpiredTaskNotesApprovals,
   OperationApprovalError,
   verifyOperationApproval,
 } from "@/lib/approvals/service";
@@ -16,7 +17,7 @@ function selectDb(rows: Array<Record<string, unknown>>, onUpdate?: (values: Reco
             where() {
               return {
                 orderBy() {
-                  return { limit: () => Promise.resolve(rows.slice(0, 1)) };
+                  return { limit: (count: number) => Promise.resolve(rows.slice(0, count)) };
                 },
                 limit() {
                   return {
@@ -115,5 +116,16 @@ describe("operation approval service", () => {
     });
 
     expect(update).toMatchObject({ status: "consumed", consumedAt: now });
+  });
+
+  it("limits the recent expired task-notes history", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({ id: `approval-${index + 1}` }));
+    const result = await listRecentExpiredTaskNotesApprovals(
+      selectDb(rows),
+      "workspace-1",
+      new Date("2026-08-18T12:00:00.000Z"),
+    );
+
+    expect(result).toEqual(rows.slice(0, 10));
   });
 });

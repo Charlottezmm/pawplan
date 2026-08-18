@@ -2626,6 +2626,11 @@ input.paw-input[type="time"] {
   background: var(--app-positive-soft);
 }
 
+.paw-suggestion-card.expired {
+  border-color: color-mix(in srgb, var(--app-warn) 35%, var(--app-line));
+  background: var(--app-warn-soft);
+}
+
 .paw-suggestion-what {
   color: var(--app-ink);
   font-size: 16px;
