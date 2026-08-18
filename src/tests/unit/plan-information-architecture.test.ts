@@ -32,20 +32,24 @@ describe("Plan information architecture", () => {
 
   it("does not repeat raw notes when structured task details are available", () => {
     const source = readFileSync("src/components/plan-view.tsx", "utf8");
+    const detailSource = readFileSync("src/components/task-detail-content.tsx", "utf8");
 
-    expect(source).toContain("task.detail.sections.length === 0");
-    expect(source).toContain('task.notes\n          ? <p className="paw-plan-detail-notes">{task.notes}</p>');
+    expect(source).toContain('<TaskDetailContent detail={task.detail} notes={task.notes} />');
+    expect(detailSource).toContain("if (detail.sections.length === 0)");
+    expect(detailSource).toContain('<p className="paw-task-detail-raw">{notes}</p>');
   });
 
-  it("keeps task detail content inside the original sidebar", () => {
+  it("keeps shared structured task detail inside the original sidebar", () => {
     const source = readFileSync("src/components/plan-view.tsx", "utf8");
+    const todaySource = readFileSync("src/components/today-view.tsx", "utf8");
+    const detailSource = readFileSync("src/components/task-detail-content.tsx", "utf8");
     const css = readFileSync("src/app/globals.css", "utf8");
-    const detailTextRule = css.match(/\.paw-plan-detail \.paw-goal-title,[\s\S]*?\}/)?.[0] ?? "";
+    const detailRule = css.match(/\.paw-task-detail-content \{[\s\S]*?\}/)?.[0] ?? "";
 
     expect(source).toContain('<section className="paw-plan-view paw-plan-split">');
-    expect(source).toContain('<DetailLine line={line} />');
-    expect(source).toContain('className="paw-plan-resource-link"');
-    expect(detailTextRule).toContain("overflow-wrap: anywhere;");
-    expect(detailTextRule).toContain("word-break: break-word;");
+    expect(source).toContain('<TaskDetailContent detail={task.detail} notes={task.notes} />');
+    expect(todaySource).toContain('<TaskDetailContent detail={task.detail} notes={task.notes} />');
+    expect(detailSource).toContain('className="paw-detail-resource-card"');
+    expect(detailRule).toContain("display: grid;");
   });
 });

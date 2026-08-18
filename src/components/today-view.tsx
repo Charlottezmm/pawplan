@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { CatIcon } from "./cat-icon";
 import { DailyCheckin } from "./daily-checkin";
+import { TaskDetailContent } from "./task-detail-content";
 import { defaultPostponeDate, moveOutOfScheduleUpdate, postponeTaskUpdate } from "@/lib/planning/task-actions";
 import type { TodayViewData } from "@/lib/planning/view-data";
 
@@ -416,27 +417,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     <span>能量 {task.energy}</span>
                     <span>优先级 {priorityLabel[task.priority]}</span>
                   </div>
-                  {task.detail.sections.length === 0 && task.notes ? (
-                    <p className="paw-task-notes">{task.notes}</p>
-                  ) : task.detail.sections.length === 0 ? (
-                    <p className="paw-task-notes muted">这条任务还没有详细描述。</p>
-                  ) : null}
-                  {task.detail.sections.length > 0 ? (
-                    <div className="paw-task-sections">
-                      {task.detail.sections.map((section) => (
-                        <section key={section.label}>
-                          <h4>{section.label}</h4>
-                          {section.lines.length > 0 ? (
-                            <ul>
-                              {section.lines.map((line, index) => (
-                                <li key={`${section.label}-${index}`}>{line}</li>
-                              ))}
-                            </ul>
-                          ) : null}
-                        </section>
-                      ))}
-                    </div>
-                  ) : null}
+                  <TaskDetailContent detail={task.detail} notes={task.notes} />
                   <div className="paw-task-copy-row">
                     <button type="button" onClick={() => void copyTaskDetails(task)} className="paw-secondary-btn !px-3 !py-1.5 !text-xs">
                       <Copy size={14} />

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { CatIcon } from "./cat-icon";
 import { PlanSectionNav } from "./plan-section-nav";
 import { RescheduleList } from "./reschedule-list";
+import { TaskDetailContent } from "./task-detail-content";
 import type { MonthDayView, MonthViewData, PlanTaskView, TimelineItemView, TodayViewData, WeekDayView, WeekViewData } from "@/lib/planning/view-data";
 import { redactPrivateTitle } from "@/lib/display/privacy";
 
@@ -251,11 +252,8 @@ function TaskDetail({
         <span>能量 {task.energy}</span>
       </div>
       <p className="paw-goal-meta">{task.context} · {task.track}</p>
-      {task.detail.sections.length === 0 ? (
-        task.notes
-          ? <p className="paw-plan-detail-notes">{task.notes}</p>
-          : <p className="paw-plan-detail-notes muted">这条任务还没有详细描述。</p>
-      ) : null}
+      <TaskDetailContent detail={task.detail} notes={task.notes} />
+      {message ? <p className="paw-toast" role="status">{message}</p> : null}
       {canAct ? (
         <div className="paw-plan-detail-actions" aria-label="任务操作">
           <button type="button" className="paw-act-btn" disabled={isSaving} onClick={() => taskActions!.moveToday(task)}>
@@ -272,45 +270,9 @@ function TaskDetail({
           </button>
         </div>
       ) : null}
-      {message ? <p className="paw-toast" role="status">{message}</p> : null}
-      {task.detail.sections.length > 0 ? (
-        <div className="paw-plan-detail-sections">
-          {task.detail.sections.map((section) => (
-            <section key={section.label}>
-              <h3>{section.label}</h3>
-              {section.lines.length === 0 ? null : (
-                <ul>
-                  {section.lines.map((line, index) => (
-                    <li key={`${section.label}-${index}`}><DetailLine line={line} /></li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ))}
-        </div>
-      ) : null}
     </aside>
     </>
   );
-}
-
-function DetailLine({ line }: { line: string }) {
-  const parts = line.split(/(https?:\/\/[^\s；;，]+)/g);
-
-  return parts.map((part, index) => {
-    if (!part.startsWith("http://") && !part.startsWith("https://")) return part;
-    let label = "打开链接";
-    try {
-      label = new URL(part).hostname.replace(/^www\./, "");
-    } catch {
-      // Keep a readable fallback if old task data contains a malformed URL.
-    }
-    return (
-      <a key={`${part}-${index}`} className="paw-plan-resource-link" href={part} target="_blank" rel="noreferrer">
-        {label}
-      </a>
-    );
-  });
 }
 
 function WeekDayCard({ day, onOpenTask }: { day: WeekDayView; onOpenTask: (task: PlanTaskView) => void }) {

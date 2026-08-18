@@ -57,7 +57,26 @@ async function seedPlanWorkspace() {
         priority, estimated_minutes, energy_level, movable
       )
        values ($1, $2, $3, $4, $5, $6, 'morning', 'todo', 'normal', 30, 'medium', true)`,
-      [taskId, workspaceId, planId, "Mobile plan task", "目标：验证移动端详情不会挡住滚动。", taskDate],
+      [
+        taskId,
+        workspaceId,
+        planId,
+        "Mobile plan task",
+        [
+          "目标",
+          "验证结构化任务详情不会挡住滚动。",
+          "执行",
+          "1. 打开任务详情",
+          "2. 检查资源入口",
+          "完成标准",
+          "- 详情卡和链接均可访问",
+          "卡点与边界",
+          "- 不修改真实任务",
+          "快捷链接",
+          "- [MathWorks](https://example.com/rl) — 主视频",
+        ].join("\n"),
+        taskDate,
+      ],
     );
   });
 
@@ -83,6 +102,28 @@ test.beforeAll(async () => {
     });
   } catch {
     dbAvailable = false;
+  }
+});
+
+test("renders the shared structured task detail and quick link on desktop and mobile", async ({ context, page }) => {
+  test.skip(!dbAvailable, "local DATABASE_URL/Postgres unavailable or schema not migrated");
+
+  const workspaceId = await seedPlanWorkspace();
+  try {
+    await addWorkspaceSession(context, workspaceId);
+    await page.goto("/plan");
+    await page.getByRole("button", { name: /Mobile plan task/ }).click();
+
+    const detail = page.locator("#paw-plan-detail");
+    await expect(detail.getByRole("heading", { name: "目标", exact: true })).toBeVisible();
+    await expect(detail.getByRole("heading", { name: "执行", exact: true })).toBeVisible();
+    await expect(detail.getByRole("heading", { name: "完成标准", exact: true })).toBeVisible();
+    await expect(detail.getByRole("heading", { name: "卡点与边界", exact: true })).toBeVisible();
+    const resource = detail.getByRole("link", { name: /MathWorks/ });
+    await expect(resource).toHaveAttribute("href", "https://example.com/rl");
+    await expect(resource).toHaveAttribute("target", "_blank");
+  } finally {
+    await cleanupWorkspace(workspaceId);
   }
 });
 

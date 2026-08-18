@@ -457,28 +457,48 @@ function parseTaskDetail(notes: string | null | undefined): TaskDetailView {
   const raw = notes?.trim();
   if (!raw) return { summary: null, sections: [] };
 
-  const labels = new Set(["目标", "完成标准", "验收", "资源", "备注", "下一步", "重点"]);
+  const labels = new Set([
+    "目标",
+    "执行",
+    "步骤",
+    "完成标准",
+    "验收",
+    "产出",
+    "卡点与边界",
+    "卡点",
+    "边界",
+    "快捷链接",
+    "资源",
+    "备注",
+    "下一步",
+    "重点",
+  ]);
   const sections: TaskDetailSectionView[] = [];
   let current: TaskDetailSectionView | null = null;
   const looseLines: string[] = [];
 
   for (const line of raw.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
-    const match = line.match(/^([^:：]{1,12})[:：]\s*(.*)$/);
-    if (match && labels.has(match[1])) {
-      current = { label: match[1], lines: match[2] ? [match[2]] : [] };
+    const normalized = line.replace(/^#{1,6}\s+/, "");
+    const inlineHeading = normalized.match(/^([^:：]{1,12})[:：]\s*(.*)$/);
+    const standaloneHeading = labels.has(normalized) ? normalized : null;
+    const label = standaloneHeading ?? (inlineHeading && labels.has(inlineHeading[1]) ? inlineHeading[1] : null);
+    if (label) {
+      const initialLine = standaloneHeading ? "" : inlineHeading?.[2] ?? "";
+      current = { label, lines: initialLine ? [initialLine] : [] };
       sections.push(current);
       continue;
     }
 
-    if (current && /^[-*•]\s+/.test(line)) {
-      current.lines.push(line.replace(/^[-*•]\s+/, ""));
+    const listItem = normalized.match(/^(?:[-*•]|\d+[.、])\s+(.*)$/);
+    if (current) {
+      current.lines.push(listItem?.[1] ?? normalized);
     } else {
-      looseLines.push(line);
+      looseLines.push(listItem?.[1] ?? normalized);
     }
   }
 
   return {
-    summary: looseLines[0] ?? raw,
+    summary: looseLines[0] ?? (sections.length === 0 ? raw : null),
     sections,
   };
 }
