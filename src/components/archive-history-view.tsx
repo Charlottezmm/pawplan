@@ -119,7 +119,7 @@ export function ArchiveHistoryView({ data }: { data: ArchiveHistoryViewData }) {
                 </header>
                 <div className="paw-backlog-list">
                   {group.tasks.map((task) => (
-                    <article key={task.id} className="paw-backlog-task">
+                    <article key={task.id} className="paw-backlog-task paw-archive-task">
                       <div>
                         <h3>{task.title}</h3>
                         <p>{statusLabels[task.status]} · 原日期 {task.date ?? "未记录"}</p>

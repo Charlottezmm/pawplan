@@ -63,6 +63,7 @@ describe("simplified task state views", () => {
 
     expect(html).toContain("不再继续");
     expect(html).toContain("恢复到稍后处理");
+    expect(html).toContain("paw-backlog-task paw-archive-task");
     expect(html).not.toContain("已完成");
   });
 

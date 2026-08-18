@@ -3447,6 +3447,26 @@ input.paw-input[type="time"] {
   gap: 4px;
 }
 
+.paw-backlog-task.paw-archive-task {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 184px;
+  align-items: center;
+  gap: 24px;
+}
+
+.paw-archive-task > :first-child {
+  min-width: 0;
+}
+
+.paw-archive-task .paw-backlog-task-meta {
+  width: 150px;
+  align-items: flex-start;
+}
+
+.paw-archive-task > .paw-task-transition {
+  justify-self: end;
+}
+
 .paw-task-transition {
   display: flex;
   flex: none;
@@ -4813,6 +4833,19 @@ input.paw-input[type="time"] {
 
   .paw-backlog-task-meta {
     align-items: flex-start;
+  }
+
+  .paw-backlog-task.paw-archive-task {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .paw-archive-task .paw-backlog-task-meta {
+    width: auto;
+  }
+
+  .paw-archive-task > .paw-task-transition {
+    justify-self: stretch;
   }
 
   .paw-task-transition {
