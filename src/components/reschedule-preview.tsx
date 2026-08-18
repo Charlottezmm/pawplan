@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CatIcon } from "./cat-icon";
 import {
+  type ExpiredOperationApproval,
   OperationApprovalList,
   type PendingOperationApproval,
 } from "./operation-approval-list";
@@ -35,9 +36,11 @@ type PendingAction = "bulk-reject" | "single-reject" | "apply-selected";
 export function ReviewPreview({
   data,
   approvals = [],
+  expiredApprovals = [],
 }: {
   data: RescheduleViewData;
   approvals?: PendingOperationApproval[];
+  expiredApprovals?: ExpiredOperationApproval[];
 }) {
   const router = useRouter();
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
@@ -280,7 +283,7 @@ export function ReviewPreview({
 
       <div className="paw-trust-banner">Routine 和 Recovery 受保护；Agent 可以提任务调整或日程导入草稿，但只有你确认后才会写入。</div>
 
-      <OperationApprovalList approvals={approvals} />
+      <OperationApprovalList approvals={approvals} expiredApprovals={expiredApprovals} />
 
       <section className="paw-list-card mb-4">
         <div className="paw-list-header">

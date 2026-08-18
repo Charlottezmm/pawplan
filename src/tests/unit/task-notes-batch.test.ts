@@ -200,12 +200,18 @@ describe("task notes batch post-commit readback", () => {
       now,
     });
     expect(verifyTaskNotesPreviewToken({ token: created.token, workspaceId: "workspace-1", now })).toEqual(created.payload);
+    expect(created.payload.expiresAt).toBe("2026-08-19T00:00:00.000Z");
     expect(() => verifyTaskNotesPreviewToken({ token: created.token, workspaceId: "workspace-2", now }))
       .toThrowError(expect.objectContaining({ code: "preview_invalid" }));
+    expect(verifyTaskNotesPreviewToken({
+      token: created.token,
+      workspaceId: "workspace-1",
+      now: new Date("2026-08-18T23:59:59.000Z"),
+    })).toEqual(created.payload);
     expect(() => verifyTaskNotesPreviewToken({
       token: created.token,
       workspaceId: "workspace-1",
-      now: new Date("2026-08-18T00:31:00.000Z"),
+      now: new Date("2026-08-19T00:00:00.000Z"),
     })).toThrowError(expect.objectContaining({ code: "preview_expired" }));
 
     const [payload, signature] = created.token.split(".");
