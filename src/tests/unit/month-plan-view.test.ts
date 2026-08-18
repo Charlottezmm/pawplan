@@ -66,10 +66,50 @@ describe("month plan view data", () => {
     );
 
     const task = result.days.find((day) => day.key === "2026-06-12")?.tasks[0];
+    expect(task?.detail.summary).toBeNull();
     expect(task?.detail.sections).toEqual([
       { label: "目标", lines: ["建出第一个可保存模型"] },
       { label: "完成标准", lines: ["能打开并保存", "记录 3 个不熟操作"] },
       { label: "资源", lines: ["入门视频"] },
+    ]);
+  });
+
+  it("parses the concise task template with standalone headings and numbered steps", () => {
+    const result = buildMonthPlanViewData(
+      [
+        {
+          id: "task-1",
+          title: "RL first loop",
+          status: "todo",
+          date: new Date("2026-06-12T00:00:00.000Z"),
+          estimatedMinutes: 60,
+          daySegment: "morning",
+          notes: [
+            "目标",
+            "理解 agent-environment 循环。",
+            "执行",
+            "1. 观看主视频",
+            "2. 画出交互循环",
+            "完成标准",
+            "- 保存循环图",
+            "卡点与边界",
+            "- 60 分钟停止",
+            "快捷链接",
+            "- [MathWorks](https://example.com/rl) — 主视频",
+          ].join("\n"),
+        },
+      ],
+      {},
+      new Date("2026-06-12T04:00:00.000Z"),
+    );
+
+    const task = result.days.find((day) => day.key === "2026-06-12")?.tasks[0];
+    expect(task?.detail.sections).toEqual([
+      { label: "目标", lines: ["理解 agent-environment 循环。"] },
+      { label: "执行", lines: ["观看主视频", "画出交互循环"] },
+      { label: "完成标准", lines: ["保存循环图"] },
+      { label: "卡点与边界", lines: ["60 分钟停止"] },
+      { label: "快捷链接", lines: ["[MathWorks](https://example.com/rl) — 主视频"] },
     ]);
   });
 
