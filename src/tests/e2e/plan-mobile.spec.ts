@@ -65,6 +65,7 @@ async function seedPlanWorkspace() {
         [
           "目标",
           "验证结构化任务详情不会挡住滚动。",
+          "observation→agent/policy→action→environment→reward+next-observation",
           "执行",
           "1. 打开任务详情",
           "2. 检查资源入口",
@@ -122,6 +123,12 @@ test("renders the shared structured task detail and quick link on desktop and mo
     const resource = detail.getByRole("link", { name: /MathWorks/ });
     await expect(resource).toHaveAttribute("href", "https://example.com/rl");
     await expect(resource).toHaveAttribute("target", "_blank");
+    const overflowingSections = await detail.locator(".paw-detail-section").evaluateAll((sections) =>
+      sections
+        .filter((section) => section.scrollWidth > section.clientWidth + 1)
+        .map((section) => section.textContent),
+    );
+    expect(overflowingSections).toEqual([]);
   } finally {
     await cleanupWorkspace(workspaceId);
   }

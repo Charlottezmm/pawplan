@@ -979,8 +979,11 @@ a {
 
 .paw-task-detail-content {
   display: grid;
+  min-width: 0;
   gap: 10px;
   margin-top: 12px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .paw-task-detail-raw {
@@ -1068,6 +1071,10 @@ a {
   display: flex;
   align-items: flex-start;
   gap: 7px;
+}
+
+.paw-detail-list li > span {
+  min-width: 0;
 }
 
 .paw-detail-list li > svg {
