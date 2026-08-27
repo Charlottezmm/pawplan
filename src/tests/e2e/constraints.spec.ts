@@ -19,7 +19,7 @@ async function addWorkspaceSession(context: BrowserContext) {
   ]);
 }
 
-test("opens fixed courses from Plan, preserves location, and protects recurring edits", async ({ context, page, isMobile }) => {
+test("opens fixed courses from Plan without edit panels or workspace identifiers", async ({ context, page, isMobile }) => {
   await addWorkspaceSession(context);
 
   const workspaceId = "00000000-0000-0000-0000-000000000001";
@@ -82,61 +82,6 @@ test("opens fixed courses from Plan, preserves location, and protects recurring 
       return;
     }
 
-    if (request.method() === "POST") {
-      const body = request.postDataJSON() as {
-        action: "upsert_time_block";
-        timeBlock: { id?: string; title: string; kind: "course"; courseName: string; location: string | null; recurrenceRule: string | null };
-      };
-      if (body.timeBlock.id) {
-        const block = timeBlocks.find((item) => item.id === body.timeBlock.id);
-        expect(block).toBeTruthy();
-        Object.assign(block!, {
-          title: body.timeBlock.title,
-          recurrenceRule: body.timeBlock.recurrenceRule,
-        });
-        await route.fulfill({ json: { timeBlock: block, course: null } });
-        return;
-      }
-
-      expect(body).toMatchObject({
-        action: "upsert_time_block",
-        timeBlock: {
-          title: "Robotics lab",
-          kind: "course",
-          courseName: "Robotics",
-          location: "Lab 410",
-          recurrenceRule: null,
-        },
-      });
-      const created = {
-        id: "block-3",
-        title: body.timeBlock.title,
-        kind: body.timeBlock.kind,
-        startsAt: "2026-06-14T01:00:00.000Z",
-        endsAt: "2026-06-14T03:00:00.000Z",
-        recurrenceRule: body.timeBlock.recurrenceRule,
-        recurrenceWeekdayMask: null,
-        courseId: "course-2",
-        courseName: body.timeBlock.courseName,
-        location: body.timeBlock.location,
-        movable: false,
-      };
-      timeBlocks.push(created);
-      await route.fulfill({ json: { timeBlock: created, course: { id: "course-2", name: "Robotics", color: "#2563eb" } } });
-      return;
-    }
-
-    if (request.method() === "PATCH") {
-      const body = request.postDataJSON() as { action: "delete_time_block"; id: string };
-      expect(body).toEqual({ action: "delete_time_block", id: "block-3" });
-      timeBlocks.splice(
-        timeBlocks.findIndex((block) => block.id === body.id),
-        1,
-      );
-      await route.fulfill({ json: { deleted: true } });
-      return;
-    }
-
     await route.fallback();
   });
 
@@ -149,35 +94,10 @@ test("opens fixed courses from Plan, preserves location, and protects recurring 
   await expect(page.getByRole("link", { name: "导入 timetable.csv" })).toHaveAttribute("href", "/import");
   await expect(page.getByText("冲突: 1")).toBeVisible();
   await expect(page.getByText("Linear Algebra 与 Studio unavailable 时间冲突")).toBeVisible();
-  await expect(page.getByText("Linear Algebra", { exact: true })).toBeVisible();
-  await expect(page.getByText("Studio unavailable", { exact: true })).toBeVisible();
-
-  await page.getByLabel("类型").selectOption("course");
-  await page.getByLabel("标题").fill("Robotics lab");
-  await page.getByRole("textbox", { name: "日期", exact: true }).fill("2026-06-14");
-  await page.getByLabel("开始").fill("09:00");
-  await page.getByLabel("结束").fill("11:00");
-  await page.getByLabel("课程名").fill("Robotics");
-  await page.getByLabel("地点（可选）").fill("Lab 410");
-  await page.getByRole("button", { name: "保存约束" }).click();
-  await expect(page.getByText("约束已保存。")).toBeVisible();
-  await expect(page.getByText("Robotics lab", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Lab 410/).first()).toBeVisible();
-
-  await page.locator(".paw-constraint-group", { hasText: "Robotics lab" }).getByText("查看 / 编辑 1 个实例").click();
-  await page.getByRole("button", { name: "编辑 Robotics lab" }).click();
-  await page.getByLabel("标题").fill("Robotics studio");
-  await page.getByRole("button", { name: "更新约束" }).click();
-  await expect(page.getByText("Robotics studio", { exact: true })).toBeVisible();
-  await expect(page.getByText("Robotics lab", { exact: true })).toHaveCount(0);
-
-  await page.locator(".paw-constraint-group", { hasText: "Linear Algebra" }).getByText("查看 / 编辑 1 个实例").click();
-  await page.getByRole("button", { name: "编辑 Linear Algebra" }).click();
-  await expect(page.getByText(/循环安排不能直接覆盖/)).toBeVisible();
-
-  await page.locator(".paw-constraint-group", { hasText: "Robotics studio" }).getByText("查看 / 编辑 1 个实例").click();
-  await page.getByRole("button", { name: "删除 Robotics studio" }).click();
-  await expect(page.getByText("约束已删除。")).toBeVisible();
-  await expect(page.getByText("Robotics studio", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Linear Algebra", { exact: true })).toBeVisible();
+  await expect(page.getByText("地点：C 201 / 待确认")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "新增固定安排" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "周循环摘要" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "保存约束" })).toHaveCount(0);
+  await expect(page.getByText(/^Workspace:/)).toHaveCount(0);
+  await expect(page.getByText("Workspace 读取中")).toHaveCount(0);
 });
