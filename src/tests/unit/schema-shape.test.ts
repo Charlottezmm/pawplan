@@ -44,9 +44,12 @@ describe("schema shape", () => {
   it("supports task archival, recurring block exceptions, and plan-window operations", () => {
     expect(tasks.archivedAt).toBeDefined();
     expect(timeBlocks.protected).toBeDefined();
+    expect(timeBlocks.location).toBeDefined();
     expect(timeBlocks.revision).toBeDefined();
     expect(timeBlockExceptions.seriesId).toBeDefined();
     expect(timeBlockExceptions.occurrenceDate).toBeDefined();
+    expect(timeBlockExceptions.overrideLocation).toBeDefined();
+    expect(timeBlockExceptions.overrideLocationSet).toBeDefined();
     expect(planOperations.idempotencyKey).toBeDefined();
     expect(planOperations.requestHash).toBeDefined();
     expect(operationApprovals.operationKind).toBeDefined();

@@ -146,6 +146,7 @@ export function ReviewPreview({
       }
       setClosedPatchIds((current) => [...current, patchId]);
       setDecisions((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !id.startsWith(`${patchId}:`))));
+      router.refresh();
     } catch (error) {
       setApplyError(error instanceof Error ? error.message : "丢弃草稿失败");
     } finally {
@@ -169,6 +170,7 @@ export function ReviewPreview({
     setPendingAction("apply-selected");
     setApplyError(null);
     setApplyNotice(null);
+    let closedAnyPatch = false;
     try {
       for (const patchId of patchIds) {
         const acceptedOperationIndexes = acceptedByPatch.get(patchId) ?? [];
@@ -246,9 +248,11 @@ export function ReviewPreview({
           );
           setClosedPatchIds((current) => [...current, patchId]);
           setDecisions((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !id.startsWith(`${patchId}:`))));
+          closedAnyPatch = true;
         } else if (body?.status === "rejected") {
           setClosedPatchIds((current) => [...current, patchId]);
           setDecisions((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !id.startsWith(`${patchId}:`))));
+          closedAnyPatch = true;
         } else {
           throw new Error("审核结果无法确认，草稿仍保留，请刷新后核对。");
         }
@@ -257,6 +261,7 @@ export function ReviewPreview({
       setApplyError(error instanceof Error ? error.message : "应用建议失败");
     } finally {
       setPendingAction(null);
+      if (closedAnyPatch) router.refresh();
     }
   }
 

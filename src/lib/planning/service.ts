@@ -117,7 +117,7 @@ function currentShanghaiSegment(date = new Date()): DaySegment {
     new Intl.DateTimeFormat("en-GB", {
       timeZone: shanghaiTimeZone,
       hour: "2-digit",
-      hour12: false,
+      hourCycle: "h23",
     }).format(date),
   );
   if (hour < 12) return "morning";

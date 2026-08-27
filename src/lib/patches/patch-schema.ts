@@ -78,6 +78,7 @@ const timetableImportRowSchema = z.object({
   startsOn: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   endsOn: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   course: z.string().trim().nullable(),
+  location: z.string().trim().max(240).nullable().optional(),
   recurrence: z.string().trim().nullable(),
   notes: z.string().trim().nullable(),
 });

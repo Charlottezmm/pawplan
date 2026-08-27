@@ -52,7 +52,6 @@ export const pawPlanToolPermissions = {
   propose_patch: "review",
   propose_daily_rebalance: "review",
   propose_week_rebalance: "review",
-  propose_overdue_replan: "review",
   propose_timetable_import: "review",
   import_plan_bundle: "write",
 } as const satisfies Record<string, PawPlanToolCapability>;

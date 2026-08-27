@@ -36,6 +36,7 @@ export type TimeBlockSeriesChanges = {
   kind?: "course" | "meeting" | "unavailable" | "routine" | "recovery";
   startTime?: string;
   endTime?: string;
+  location?: string | null;
   weekdayMask?: number | null;
   recurrenceLabel?: string | null;
   protected?: boolean;
@@ -120,7 +121,7 @@ function timePart(date: Date) {
     timeZone: "Asia/Shanghai",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(date);
   const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
   return `${value("hour")}:${value("minute")}`;
@@ -152,6 +153,7 @@ function snapshotPayload(series: SeriesRow, exceptions: ExceptionRow[]) {
       kind: series.kind,
       startsAt: series.startsAt.toISOString(),
       endsAt: series.endsAt.toISOString(),
+      location: series.location,
       recurrenceRule: series.recurrenceRule,
       recurrenceWeekdayMask: series.recurrenceWeekdayMask,
       courseId: series.courseId,
@@ -171,6 +173,8 @@ function snapshotPayload(series: SeriesRow, exceptions: ExceptionRow[]) {
         overrideKind: exception.overrideKind,
         overrideStartsAt: serializeDate(exception.overrideStartsAt),
         overrideEndsAt: serializeDate(exception.overrideEndsAt),
+        overrideLocation: exception.overrideLocation,
+        overrideLocationSet: exception.overrideLocationSet,
         overrideProtected: exception.overrideProtected,
         updatedAt: exception.updatedAt.toISOString(),
       })),
@@ -187,6 +191,8 @@ function exceptionInput(row: ExceptionRow | PlannedException): TimeBlockExceptio
     overrideKind: row.overrideKind,
     overrideStartsAt: row.overrideStartsAt,
     overrideEndsAt: row.overrideEndsAt,
+    overrideLocation: row.overrideLocation,
+    overrideLocationSet: row.overrideLocationSet,
     overrideProtected: row.overrideProtected,
   };
 }
@@ -213,6 +219,9 @@ function validateRequest(action: TimeBlockSeriesAction, request: TimeBlockSeries
   }
   if (changes.endTime !== undefined && !timePattern.test(changes.endTime)) {
     throw new TimeBlockSeriesError("invalid_request", "Invalid end time");
+  }
+  if (changes.location !== undefined && changes.location !== null && changes.location.trim().length > 240) {
+    throw new TimeBlockSeriesError("invalid_request", "Invalid time block location");
   }
   if (changes.weekdayMask !== undefined && changes.weekdayMask !== null && (changes.weekdayMask < 0 || changes.weekdayMask > 127)) {
     throw new TimeBlockSeriesError("invalid_request", "Invalid weekday mask");
@@ -255,6 +264,7 @@ function changedSeriesValues(series: SeriesRow, changes: TimeBlockSeriesChanges,
     kind: changes.kind ?? series.kind,
     startsAt: dateTime(startsOn, startTime),
     endsAt: dateTime(endsOn, endTime),
+    location: changes.location === undefined ? series.location : changes.location?.trim() || null,
     recurrenceRule: changes.recurrenceLabel === undefined ? series.recurrenceRule : changes.recurrenceLabel?.trim() || null,
     recurrenceWeekdayMask,
     protected: changes.protected ?? series.protected,
@@ -291,6 +301,11 @@ function plannedException(
     overrideKind: action === "update" ? changes.kind ?? series.kind : null,
     overrideStartsAt: action === "update" ? dateTime(request.occurrenceDate, startTime) : null,
     overrideEndsAt: action === "update" ? dateTime(request.occurrenceDate, endTime) : null,
+    overrideLocation:
+      action === "update"
+        ? changes.location?.trim() || null
+        : null,
+    overrideLocationSet: action === "update" && changes.location !== undefined,
     overrideProtected: action === "update" ? changes.protected ?? series.protected : null,
   };
 }
@@ -307,6 +322,8 @@ function sameException(left: ExceptionRow | undefined, right: PlannedException) 
     left.overrideKind === right.overrideKind &&
     serializeDate(left.overrideStartsAt) === serializeDate(right.overrideStartsAt) &&
     serializeDate(left.overrideEndsAt) === serializeDate(right.overrideEndsAt) &&
+    left.overrideLocation === right.overrideLocation &&
+    left.overrideLocationSet === right.overrideLocationSet &&
     left.overrideProtected === right.overrideProtected
   );
 }
@@ -317,6 +334,7 @@ function sameSeriesValues(series: SeriesRow, values: Partial<SeriesRow>) {
     (values.kind === undefined || values.kind === series.kind) &&
     (values.startsAt === undefined || values.startsAt.getTime() === series.startsAt.getTime()) &&
     (values.endsAt === undefined || values.endsAt.getTime() === series.endsAt.getTime()) &&
+    (values.location === undefined || values.location === series.location) &&
     (values.recurrenceRule === undefined || values.recurrenceRule === series.recurrenceRule) &&
     (values.recurrenceWeekdayMask === undefined || values.recurrenceWeekdayMask === series.recurrenceWeekdayMask) &&
     (values.protected === undefined || values.protected === series.protected)
@@ -453,6 +471,7 @@ function occurrenceSummary(rows: Array<Record<string, any>>) {
     kind: row.kind,
     startsAt: row.startsAt.toISOString(),
     endsAt: row.endsAt.toISOString(),
+    location: row.location ?? null,
     protected: row.protected ?? true,
   }));
 }
@@ -737,6 +756,8 @@ function persistedExceptionValues(exception: PlannedException) {
     overrideKind: exception.overrideKind,
     overrideStartsAt: exception.overrideStartsAt,
     overrideEndsAt: exception.overrideEndsAt,
+    overrideLocation: exception.overrideLocation,
+    overrideLocationSet: exception.overrideLocationSet,
     overrideProtected: exception.overrideProtected,
   };
 }
@@ -748,6 +769,7 @@ function insertedSeriesValues(series: SeriesRow, values: Partial<SeriesRow>) {
     kind: values.kind ?? series.kind,
     startsAt: values.startsAt ?? series.startsAt,
     endsAt: values.endsAt ?? series.endsAt,
+    location: values.location === undefined ? series.location : values.location,
     recurrenceRule: values.recurrenceRule === undefined ? series.recurrenceRule : values.recurrenceRule,
     recurrenceWeekdayMask:
       values.recurrenceWeekdayMask === undefined ? series.recurrenceWeekdayMask : values.recurrenceWeekdayMask,
@@ -786,6 +808,8 @@ async function executeMutation(tx: any, workspaceId: string, plan: MutationPlan)
           overrideKind: exception.overrideKind,
           overrideStartsAt: exception.overrideStartsAt,
           overrideEndsAt: exception.overrideEndsAt,
+          overrideLocation: exception.overrideLocation,
+          overrideLocationSet: exception.overrideLocationSet,
           overrideProtected: exception.overrideProtected,
           updatedAt: now,
         },

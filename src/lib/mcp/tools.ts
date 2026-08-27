@@ -19,7 +19,6 @@ import {
   updateTaskStatus,
 } from "@/lib/planning/service";
 import { proposeRebalancePatch } from "@/lib/planning/rebalance";
-import { proposeOverdueReplan } from "@/lib/planning/overdue-replan";
 import { saveMcpPlanImport } from "@/lib/mcp/plan-import";
 import {
   getConversationSummaries,
@@ -141,17 +140,6 @@ const proposeRebalanceArgsSchema = z
     created_by: createdBySchema.optional(),
   })
   .strict();
-const proposeOverdueReplanArgsSchema = z
-  .object({
-    idempotency_key: z.string().trim().min(8).max(200),
-    as_of_date: dateStringSchema,
-    task_ids: z.array(z.string().min(1)).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, {
-      message: "task_ids must be unique",
-    }),
-    reason: z.string().trim().min(1).max(4000),
-    created_by: createdBySchema.optional(),
-  })
-  .strict();
 const taskBatchOperationSchema = z
   .object({
     task_id: z.string().min(1),
@@ -213,6 +201,7 @@ const timeBlockSeriesChangesSchema = z
     kind: z.enum(["course", "meeting", "unavailable", "routine", "recovery"]).optional(),
     start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
     end_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    location: z.string().trim().max(240).nullable().optional(),
     weekday_mask: z.number().int().min(0).max(127).nullable().optional(),
     recurrence_label: z.string().trim().max(160).nullable().optional(),
     protected: z.boolean().optional(),
@@ -623,7 +612,6 @@ export const pawPlanToolSchemas = {
   propose_patch: proposePatchArgsSchema,
   propose_daily_rebalance: proposeRebalanceArgsSchema,
   propose_week_rebalance: proposeRebalanceArgsSchema,
-  propose_overdue_replan: proposeOverdueReplanArgsSchema,
   propose_timetable_import: proposeTimetableImportArgsSchema,
   import_plan_bundle: z
     .object({
@@ -684,7 +672,7 @@ export const pawPlanToolNames = Object.keys(pawPlanToolSchemas) as PawPlanToolNa
 
 export const pawPlanAgentGuidance = {
   purpose: "Use PawPlan MCP as a review-first planning interface. PawPlan owns validation, persistence, Review, audit, and readback.",
-  dailyPrompt: `You are my PawPlan daily task cleanup agent.
+  planningPrompt: `Use this workflow only when the user explicitly asks to review or rebalance their PawPlan schedule. Do not run a recurring daily cleanup or create a Review merely because tasks are overdue.
 
 Read first:
 - get_today
@@ -697,13 +685,12 @@ Read first:
 - get_checkins
 
 Required workflow:
-1. Identify unfinished todo tasks from yesterday or earlier before looking at future capacity.
-2. Summarize today's risks: overdue work, overload, fixed-schedule conflicts, and recovery risk.
-3. For unfinished tasks from yesterday or earlier, call propose_overdue_replan. PawPlan chooses capacity-aware dates but creates a Review draft only. Use propose_daily_rebalance only when exact move targets are already known for other routine work.
-4. Inspect the returned status before reporting outcome:
+1. Confirm the user requested a schedule review or supplied a concrete event that requires one.
+2. Read current tasks, capacity, and fixed constraints before suggesting exact moves.
+3. If exact task targets are known, use propose_daily_rebalance or propose_week_rebalance to create one Review draft. Never choose new dates merely because a task is overdue.
+4. Inspect the returned status before reporting the outcome:
    - draft_created: say a new Review draft was created and tell the user to open Review.
    - duplicate with patchId: say an existing Review draft is already available.
-   - needs_decision: do not move the task or put it in backlog; present it for user choice.
    - no_change: explain why no draft was created.
    - failed: report the error and do not claim success.
 5. Do not apply changes automatically.
@@ -711,10 +698,11 @@ Required workflow:
 7. Do not edit constraints.
 8. Do not treat Review drafts, suggestions, briefs, or spoken advice as applied changes.`,
   boundaries: [
+    "Run planning review only after an explicit user request or a concrete user-provided event; do not perform recurring daily cleanup.",
     "Read planning context before proposing changes.",
-    "Use propose_daily_rebalance for routine daily task moves.",
-    "Use propose_week_rebalance for routine weekly task moves.",
-    "Use propose_overdue_replan for overdue todo tasks; repeated overdue tasks require a user decision and must not be moved to backlog automatically.",
+    "Use propose_daily_rebalance for user-requested daily task moves with exact targets.",
+    "Use propose_week_rebalance for user-requested weekly task moves with exact targets.",
+    "Do not choose new dates automatically for overdue tasks or move them to backlog without the user's decision.",
     "Inspect the returned status before claiming a Review draft exists.",
     "Do not apply changes automatically.",
     "Do not edit constraints through MCP.",
@@ -731,10 +719,10 @@ Required workflow:
 };
 
 export const pawPlanServerInstructions =
-  "PawPlan is review-first. Rebalance tools create a Review draft only. AI Project Portfolio changes must use propose_project_portfolio_update to create a pending approval, then wait for the user to approve the exact Preview in PawPlan Review before apply_project_portfolio_update with approval_id. Multiple task-notes edits must use propose_task_notes_batch, wait for the single exact Review approval, then use apply_task_notes_batch; approval alone is authorization, not proof of persistence. An MCP agent cannot approve its own proposal. Before daily planning or task cleanup, call get_agent_guidance and follow its daily prompt. Never claim changes are applied until persisted readback succeeds.";
+  "PawPlan is review-first. Rebalance tools create a Review draft only and must be used only after an explicit user request or concrete user-provided event, never as recurring daily cleanup. AI Project Portfolio changes must use propose_project_portfolio_update to create a pending approval, then wait for the user to approve the exact Preview in PawPlan Review before apply_project_portfolio_update with approval_id. Multiple task-notes edits must use propose_task_notes_batch, wait for the single exact Review approval, then use apply_task_notes_batch; approval alone is authorization, not proof of persistence. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
-  get_agent_guidance: "Read PawPlan daily agent guidance, Review-first safety rules, and the recommended daily task cleanup prompt.",
+  get_agent_guidance: "Read PawPlan on-demand planning guidance and Review-first safety rules.",
   get_mcp_usage: "Read the current workspace Hosted MCP daily write quota and Shanghai-midnight reset time.",
   get_today: "Read today's PawPlan planning context for the configured workspace.",
   get_week: "Read this week's PawPlan planning context for the configured workspace.",
@@ -784,8 +772,6 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
     "Create an idempotent Review draft from task move intent for daily planning. PawPlan fills current from_date/from_day_segment.",
   propose_week_rebalance:
     "Create an idempotent Review draft from task move intent for weekly planning. PawPlan fills current from_date/from_day_segment.",
-  propose_overdue_replan:
-    "Create an idempotent, capacity-aware Review draft for first-time overdue tasks. Repeated overdue or unresolved Project context returns needs_decision and never sends tasks to backlog.",
   propose_timetable_import: "Create a preview-only timetable import draft for user review; this never writes constraints directly.",
   import_plan_bundle: "Import a trusted structured plan bundle into real PawPlan tasks with MCP provenance.",
 };
@@ -1142,63 +1128,6 @@ async function runRebalanceTool(
   }
 }
 
-async function runOverdueReplanTool(db: PlanningDb, workspaceId: string, args: unknown) {
-  if (process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED !== "true") {
-    throw new Error("Overdue replan is disabled until migration and shadow verification are complete");
-  }
-  const parsed = proposeOverdueReplanArgsSchema.parse(args);
-  const planId = await getActivePlanId(db, workspaceId);
-  if (!planId) throw new Error("No active plan");
-  const createdBy = parsed.created_by ?? "codex";
-  const run = await startAgentRun(db, {
-    workspaceId,
-    planId,
-    kind: "overdue_replan",
-    idempotencyKey: parsed.idempotency_key,
-    reason: parsed.reason,
-    inputJson: {
-      tool: "propose_overdue_replan",
-      asOfDate: parsed.as_of_date,
-      taskIds: parsed.task_ids,
-    },
-    createdBy,
-  });
-  if (run.duplicate) return run.result;
-
-  try {
-    const proposal = await proposeOverdueReplan(db, {
-      workspaceId,
-      asOfDate: parsed.as_of_date,
-      taskIds: parsed.task_ids,
-      reason: parsed.reason,
-      createdBy,
-    });
-    const status = proposal.patchId && proposal.operationCount > 0
-      ? "draft_created"
-      : proposal.needsDecision.length > 0
-        ? "needs_decision"
-        : "no_change";
-    return completeAgentRun(db, {
-      workspaceId,
-      runId: run.runId,
-      idempotencyKey: parsed.idempotency_key,
-      status,
-      patchId: proposal.patchId,
-      operationCount: proposal.operationCount,
-      skipped: proposal.skipped,
-      warnings: proposal.warnings,
-      needsDecision: proposal.needsDecision,
-    });
-  } catch (error) {
-    return failAgentRun(db, {
-      workspaceId,
-      runId: run.runId,
-      idempotencyKey: parsed.idempotency_key,
-      error: compactRebalanceError(error),
-    });
-  }
-}
-
 export async function runPawPlanTool(
   db: PlanningDb,
   workspaceId: string,
@@ -1486,6 +1415,7 @@ export async function runPawPlanTool(
         kind: parsed.changes.kind,
         startTime: parsed.changes.start_time,
         endTime: parsed.changes.end_time,
+        location: parsed.changes.location,
         weekdayMask: parsed.changes.weekday_mask,
         recurrenceLabel: parsed.changes.recurrence_label,
         protected: parsed.changes.protected,
@@ -1633,10 +1563,6 @@ export async function runPawPlanTool(
 
   if (toolName === "propose_week_rebalance") {
     return runRebalanceTool(db, workspaceId, "propose_week_rebalance", "week", "weekly_rebalance", args);
-  }
-
-  if (toolName === "propose_overdue_replan") {
-    return runOverdueReplanTool(db, workspaceId, args);
   }
 
   const parsed = pawPlanToolSchemas.propose_patch.parse(args);

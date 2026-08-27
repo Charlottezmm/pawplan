@@ -10,6 +10,7 @@ const rowSchema = z.object({
   starts_on: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   ends_on: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   course: z.string().trim().max(120).optional(),
+  location: z.string().trim().max(240).optional(),
   recurrence: z.string().trim().max(240).optional(),
   notes: z.string().trim().max(1000).optional(),
 });
@@ -23,6 +24,7 @@ export type TimetableImportPreviewRow = {
   startsOn: string;
   endsOn: string;
   course: string | null;
+  location?: string | null;
   recurrence: string | null;
   notes: string | null;
 };
@@ -53,6 +55,7 @@ export function parseTimetableCsv(csv: string): TimetableImportPreviewRow[] {
       startsOn: row.starts_on,
       endsOn: row.ends_on,
       course: optionalCell(row.course),
+      location: optionalCell(row.location),
       recurrence: optionalCell(row.recurrence),
       notes: optionalCell(row.notes),
     };

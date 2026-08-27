@@ -1,0 +1,556 @@
+.timetable {
+  overflow: hidden;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+}
+
+.toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.toolbar h2,
+.detailPanel h3 {
+  margin: 2px 0 0;
+  color: var(--app-ink);
+  font-family: var(--app-font-display);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--app-accent-dark);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.hint {
+  margin: 5px 0 0;
+  color: var(--app-ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.weekActions,
+.dayActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.iconLink,
+.todayLink,
+.dayNavLink,
+.mobileTodayLink {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface);
+  color: var(--app-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.iconLink {
+  width: 40px;
+}
+
+.todayLink,
+.mobileTodayLink {
+  padding: 0 14px;
+}
+
+.iconLink:hover,
+.todayLink:hover,
+.dayNavLink:hover,
+.mobileTodayLink:hover {
+  border-color: var(--app-line-strong);
+  background: var(--app-accent-soft);
+  color: var(--app-accent-dark);
+}
+
+.iconLink:focus-visible,
+.todayLink:focus-visible,
+.dayNavLink:focus-visible,
+.mobileTodayLink:focus-visible,
+.dateChoice:focus-visible,
+.courseBlock:focus-visible,
+.detailClose:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--app-accent) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.weekHeader {
+  display: grid;
+  grid-template-columns: 58px repeat(7, minmax(0, 1fr));
+  border-bottom: 1px solid var(--app-line);
+  background: var(--app-surface);
+}
+
+.dayHeader {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border-left: 1px solid var(--app-line);
+  padding: 11px 6px;
+  color: var(--app-ink-soft);
+  text-align: center;
+}
+
+.dayHeader span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dayHeader strong {
+  color: var(--app-ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.todayHeader {
+  background: var(--app-accent-soft);
+}
+
+.todayHeader strong,
+.todayHeader span {
+  color: var(--app-accent-dark);
+}
+
+.weekBody {
+  display: grid;
+  grid-template-columns: 58px repeat(7, minmax(0, 1fr));
+  align-items: start;
+}
+
+.timeAxis,
+.dayGrid {
+  position: relative;
+  height: var(--grid-height);
+}
+
+.timeAxis {
+  background: var(--app-surface);
+}
+
+.timeAxis span {
+  position: absolute;
+  right: 8px;
+  z-index: 2;
+  color: var(--app-ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.desktopDayColumn {
+  min-width: 0;
+  border-left: 1px solid var(--app-line);
+}
+
+.dayGrid {
+  background-color: var(--app-surface);
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 29px,
+      color-mix(in srgb, var(--app-line) 54%, transparent) 29px,
+      color-mix(in srgb, var(--app-line) 54%, transparent) 30px,
+      transparent 30px,
+      transparent 59px,
+      var(--app-line) 59px,
+      var(--app-line) 60px
+    );
+}
+
+.todayColumn .dayGrid {
+  background-color: color-mix(in srgb, var(--app-accent-soft) 28%, var(--app-surface));
+}
+
+.courseBlock {
+  position: absolute;
+  top: var(--block-top);
+  left: calc(var(--lane-left) + 3px);
+  z-index: 3;
+  display: flex;
+  width: calc(var(--lane-width) - 6px);
+  height: var(--block-height);
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  overflow: visible;
+  border: 1px solid var(--course-color);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--course-color) 11%, var(--app-surface));
+  color: var(--app-ink);
+  cursor: pointer;
+  padding: 6px 6px 5px;
+  text-align: left;
+}
+
+.courseBlock::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.blockContent {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.courseBlock:hover {
+  z-index: 5;
+  box-shadow: var(--app-shadow-pop);
+}
+
+.blockTitle {
+  display: -webkit-box;
+  width: 100%;
+  overflow: hidden;
+  color: var(--app-ink);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.blockTime,
+.blockLocation {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: var(--app-ink-soft);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blockLocation {
+  display: -webkit-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.compactBlock .blockLocation {
+  display: none;
+}
+
+.conflictBlock {
+  border-style: dashed;
+  box-shadow: inset 0 0 0 1px var(--app-danger);
+}
+
+.blockConflictIcon {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  color: var(--app-danger);
+}
+
+.currentTimeLine {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 6;
+  height: 2px;
+  background: var(--app-danger);
+  pointer-events: none;
+}
+
+.currentTimeLine::before {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--app-danger);
+  content: "";
+}
+
+.currentTimeLine span {
+  position: absolute;
+  top: -8px;
+  right: 3px;
+  border-radius: 5px;
+  background: var(--app-danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 3px 4px;
+}
+
+.mobileDay {
+  display: none;
+}
+
+.unavailable {
+  margin: 20px 24px 24px;
+  border: 1px solid color-mix(in srgb, var(--app-danger) 42%, var(--app-line));
+  border-radius: var(--app-radius-sm);
+  background: color-mix(in srgb, var(--app-danger) 7%, var(--app-surface));
+  color: var(--app-danger);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.55;
+  padding: 16px;
+}
+
+.detailBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  background: rgba(46, 42, 36, 0.3);
+  padding: 24px;
+  backdrop-filter: blur(3px);
+}
+
+.detailPanel {
+  position: relative;
+  width: min(440px, 100%);
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-pop);
+  padding: 24px;
+}
+
+.detailClose {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--app-muted-soft);
+  color: var(--app-ink-soft);
+  cursor: pointer;
+}
+
+.detailList {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0 0;
+}
+
+.detailList div {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid var(--app-line);
+  padding-top: 12px;
+}
+
+.detailList dt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--app-ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.detailList dd {
+  margin: 0;
+  color: var(--app-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .timetable {
+    overflow: visible;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+    box-shadow: none;
+    margin-inline: -16px;
+  }
+
+  .toolbar {
+    display: grid;
+    gap: 14px;
+    padding: 18px 16px 14px;
+  }
+
+  .toolbar h2 {
+    font-size: 19px;
+  }
+
+  .weekActions {
+    justify-content: space-between;
+  }
+
+  .weekActions .iconLink,
+  .todayLink {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .desktopWeek {
+    display: none;
+  }
+
+  .mobileDay {
+    display: block;
+  }
+
+  .dateStrip {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+    border-bottom: 1px solid var(--app-line);
+    background: var(--app-surface);
+    padding: 8px 8px 10px;
+  }
+
+  .dateChoice {
+    display: flex;
+    min-width: 0;
+    min-height: 50px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--app-ink-soft);
+    text-decoration: none;
+  }
+
+  .dateChoice span {
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .dateChoice strong {
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .todayDate {
+    color: var(--app-accent-dark);
+  }
+
+  .selectedDate {
+    border-color: color-mix(in srgb, var(--app-accent) 34%, var(--app-line));
+    background: var(--app-accent-soft);
+    color: var(--app-accent-dark);
+  }
+
+  .dayActions {
+    justify-content: space-between;
+    border-bottom: 1px solid var(--app-line);
+    background: var(--app-surface);
+    padding: 8px 12px;
+  }
+
+  .dayNavLink,
+  .mobileTodayLink {
+    min-height: 44px;
+    border-color: transparent;
+    padding: 0 8px;
+  }
+
+  .mobileGridShell {
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .mobileGrid {
+    min-width: 0;
+    border-left: 1px solid var(--app-line);
+  }
+
+  .courseBlock {
+    left: calc(var(--lane-left) + 5px);
+    width: calc(var(--lane-width) - 10px);
+    padding: 6px 7px;
+  }
+
+  .blockTitle {
+    font-size: 13px;
+  }
+
+  .blockTime,
+  .blockLocation {
+    font-size: 11px;
+  }
+
+  .compactBlock .blockTime {
+    display: none;
+  }
+
+  .compactBlock .blockLocation {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+  }
+
+  .detailBackdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .detailPanel {
+    width: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 28px);
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 20px 20px 0 0;
+    padding: 24px 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .courseBlock,
+  .detailPanel {
+    scroll-behavior: auto;
+  }
+}

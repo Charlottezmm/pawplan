@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const sections = [
   { href: "/plan", label: "日程" },
+  { href: "/constraints", label: "固定课程" },
   { href: "/projects", label: "项目" },
   { href: "/backlog", label: "稍后处理" },
   { href: "/archive", label: "归档" },

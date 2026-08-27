@@ -96,7 +96,7 @@ describe("PawPlan MCP server builder", () => {
     }
   });
 
-  it("publishes startup instructions pointing agents to daily guidance", async () => {
+  it("publishes startup instructions pointing agents to on-demand guidance", async () => {
     const { createPawPlanMcpServer } = await import("@/lib/mcp/server-builder");
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const server = createPawPlanMcpServer({ workspaceId: "workspace-1", permission: "read_only" });
@@ -111,7 +111,7 @@ describe("PawPlan MCP server builder", () => {
       const result = await client.listTools();
       const tool = result.tools.find((candidate) => candidate.name === "get_agent_guidance");
 
-      expect(tool?.description).toContain("daily");
+      expect(tool?.description).toContain("on-demand");
       expect(tool?.description).toContain("PawPlan");
     } finally {
       await client.close();
@@ -134,7 +134,7 @@ describe("PawPlan MCP server builder", () => {
 
       expect(tool).toBeDefined();
       expect(toolNames).toContain("propose_week_rebalance");
-      expect(toolNames).toContain("propose_overdue_replan");
+      expect(toolNames).not.toContain("propose_overdue_replan");
       expect(moveSchema).toMatchObject({
         type: "object",
         properties: {
@@ -163,7 +163,6 @@ describe("PawPlan MCP server builder", () => {
       const result = await client.listTools();
       expect(result.tools.map((tool) => tool.name)).not.toContain("propose_daily_rebalance");
       expect(result.tools.map((tool) => tool.name)).not.toContain("propose_week_rebalance");
-      expect(result.tools.map((tool) => tool.name)).not.toContain("propose_overdue_replan");
     } finally {
       await client.close();
       await server.close();
@@ -189,9 +188,9 @@ describe("PawPlan MCP server builder", () => {
         "propose_patch",
         "propose_daily_rebalance",
         "propose_week_rebalance",
-        "propose_overdue_replan",
         "propose_timetable_import",
       ]));
+      expect(toolNames).not.toContain("propose_overdue_replan");
       for (const directWriteTool of [
         "apply_project_portfolio_update",
         "apply_task_notes_batch",

@@ -221,7 +221,7 @@ describe("MCP planning tools", () => {
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_timetable_import");
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_daily_rebalance");
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_week_rebalance");
-    expect(allowedPawPlanToolNames("read_write")).toContain("propose_overdue_replan");
+    expect(allowedPawPlanToolNames("read_write")).not.toContain("propose_overdue_replan");
     expect(allowedPawPlanToolNames("read_write")).toContain("update_tasks_batch");
     expect(allowedPawPlanToolNames("read_write")).toContain("archive_tasks_batch");
     expect(allowedPawPlanToolNames("read_write")).toContain("restore_tasks_batch");
@@ -233,7 +233,6 @@ describe("MCP planning tools", () => {
     expect(allowedPawPlanToolNames("read_only")).not.toContain("archive_tasks_batch");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_daily_rebalance");
     expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_week_rebalance");
-    expect(allowedPawPlanToolNames("read_only")).not.toContain("propose_overdue_replan");
   });
 
   it("allows review-only tokens to read and propose without exposing direct writes", () => {
@@ -257,7 +256,6 @@ describe("MCP planning tools", () => {
       "propose_patch",
       "propose_daily_rebalance",
       "propose_week_rebalance",
-      "propose_overdue_replan",
       "propose_timetable_import",
     ]);
     for (const directWriteTool of [
@@ -296,25 +294,33 @@ describe("MCP planning tools", () => {
     });
   });
 
-  it("exposes daily agent guidance to read-only MCP clients", async () => {
+  it("rejects the removed automatic overdue replan tool as unknown for every permission", async () => {
+    for (const permission of ["read_only", "review_only", "read_write"] as const) {
+      await expect(
+        runPawPlanTool(createFakeDb(), "workspace-1", "propose_overdue_replan", {}, permission),
+      ).rejects.toThrow("Unknown PawPlan MCP tool: propose_overdue_replan");
+    }
+  });
+
+  it("exposes on-demand planning guidance to read-only MCP clients", async () => {
     const db = createFakeDb();
 
     const result = await runPawPlanTool(db, "workspace-1", "get_agent_guidance", {}, "read_only");
 
     expect(result).toEqual(
       expect.objectContaining({
-        dailyPrompt: expect.stringContaining("propose_daily_rebalance"),
+        planningPrompt: expect.stringContaining("only when the user explicitly asks"),
         boundaries: expect.arrayContaining([
           expect.stringContaining("Do not apply changes automatically"),
           expect.stringContaining("Inspect the returned status"),
+          expect.stringContaining("do not perform recurring daily cleanup"),
         ]),
       }),
     );
     expect(JSON.stringify(result)).toContain("get_tasks");
     expect(JSON.stringify(result)).toContain("draft_created");
     expect(JSON.stringify(result)).toContain("update_tasks_batch");
-    expect(JSON.stringify(result)).toContain("propose_overdue_replan");
-    expect(JSON.stringify(result)).toContain("needs_decision");
+    expect(JSON.stringify(result)).not.toContain("propose_overdue_replan");
   });
 
   it("publishes a narrow atomic task batch schema without weakening Review-first guidance", () => {
@@ -357,28 +363,6 @@ describe("MCP planning tools", () => {
       required: ["task_id", "to_date", "to_day_segment", "reason"],
       additionalProperties: false,
     });
-  });
-
-  it("publishes a narrow overdue replan schema and rejects duplicate task ids", () => {
-    const jsonSchema = zodToJsonSchema(pawPlanToolSchemas.propose_overdue_replan) as any;
-
-    expect(jsonSchema).toMatchObject({
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        idempotency_key: { type: "string", minLength: 8, maxLength: 200 },
-        as_of_date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
-        task_ids: { type: "array", minItems: 1, maxItems: 50 },
-        reason: { type: "string", minLength: 1, maxLength: 4000 },
-      },
-      required: ["idempotency_key", "as_of_date", "task_ids", "reason"],
-    });
-    expect(() => pawPlanToolSchemas.propose_overdue_replan.parse({
-      idempotency_key: "overdue-1",
-      as_of_date: "2026-08-15",
-      task_ids: ["task-1", "task-1"],
-      reason: "duplicate",
-    })).toThrow("task_ids must be unique");
   });
 
   it("publishes strict project portfolio and task-context read schemas", () => {
@@ -434,6 +418,14 @@ describe("MCP planning tools", () => {
     expect(deleteSchema.properties.confirmation).toMatchObject({ const: "PERMANENT_DELETE" });
     expect(deleteSchema.properties.confirm_task_count).toMatchObject({ maximum: 50 });
     expect(seriesSchema.properties.scope.enum).toEqual(["occurrence", "following", "series"]);
+    expect(() => pawPlanToolSchemas.update_time_block_series.parse({
+      series_id: "00000000-0000-4000-8000-000000000001",
+      scope: "occurrence",
+      occurrence_date: "2026-08-27",
+      mode: "preview",
+      idempotency_key: "series-location-preview",
+      changes: { location: "教学楼 C 201" },
+    })).not.toThrow();
     expect(replaceSchema.properties.retire_scope.enum).toEqual(["source_managed", "all_non_completed"]);
     expect(replaceSchema.properties.tasks.maxItems).toBe(500);
     expect(() => pawPlanToolSchemas.archive_tasks_batch.parse({
@@ -1145,75 +1137,6 @@ describe("MCP planning tools", () => {
     ]);
   });
 
-  it("returns needs_decision for a repeated overdue task without creating a Review draft", async () => {
-    const previousFlag = process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED;
-    process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED = "true";
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-08-15T04:00:00.000Z"));
-    try {
-      const db = createFakeDb({
-        activePlanId: "plan-1",
-        selectRows: {
-          tasks: [{
-            id: "task-repeated",
-            workspaceId: "workspace-1",
-            planId: "plan-1",
-            projectId: "project-1",
-            milestoneId: null,
-            title: "Repeated overdue task",
-            date: new Date("2026-08-13T16:00:00.000Z"),
-            originalDate: new Date("2026-08-10T16:00:00.000Z"),
-            daySegment: "morning",
-            status: "todo",
-            blocked: false,
-            movable: true,
-            estimatedMinutes: 60,
-            energyLevel: "high",
-            priority: "normal",
-            rolloverCount: 1,
-          }],
-          projects: [{
-            id: "project-1",
-            workspaceId: "workspace-1",
-            name: "Research",
-            category: "科研",
-            objective: "Validate the model",
-            successCriteria: "Reproducible result",
-            status: "active",
-            priority: "high",
-            targetDate: new Date("2026-09-30T16:00:00.000Z"),
-            needsDefinition: false,
-          }],
-          project_milestones: [],
-        },
-      });
-
-      const result = await runPawPlanTool(db, "workspace-1", "propose_overdue_replan", {
-        idempotency_key: "overdue-repeat-1",
-        as_of_date: "2026-08-15",
-        task_ids: ["task-repeated"],
-        reason: "Inspect repeated overdue work",
-      });
-
-      expect(result).toEqual(expect.objectContaining({
-        status: "needs_decision",
-        operationCount: 0,
-        needsDecision: [expect.objectContaining({ taskId: "task-repeated", code: "repeated_overdue" })],
-      }));
-      expect(db.inserts.map((write) => write.table)).toEqual(["agent_runs"]);
-      expect(db.updates).toEqual([
-        expect.objectContaining({
-          table: "agent_runs",
-          values: expect.objectContaining({ status: "needs_decision", patchId: null }),
-        }),
-      ]);
-    } finally {
-      vi.useRealTimers();
-      if (previousFlag === undefined) delete process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED;
-      else process.env.PAWPLAN_OVERDUE_REPLAN_ENABLED = previousFlag;
-    }
-  });
-
   it("records and returns failed rebalance status when patch creation fails after run start", async () => {
     const db = createFakeDb({
       activePlanId: "plan-1",
@@ -1295,6 +1218,7 @@ describe("MCP planning tools", () => {
           starts_on: "2026-06-15",
           ends_on: "2026-06-22",
           course: "Embodied AI",
+          location: "Room 204",
         },
       ],
     });
@@ -1328,6 +1252,7 @@ describe("MCP planning tools", () => {
                     dayOfWeek: "mon",
                     startTime: "09:00",
                     endTime: "10:30",
+                    location: "Room 204",
                   }),
                 ],
                 capacity_impact: ["将创建 1 个固定时间块", "不会自动写入，需用户在 Review 确认"],
@@ -1747,6 +1672,7 @@ describe("MCP planning tools", () => {
             kind: "routine",
             startsAt: new Date("2026-06-15T05:00:00.000+08:00"),
             endsAt: new Date("2026-06-30T07:00:00.000+08:00"),
+            location: "Room 204",
             recurrenceRule: "weekly",
             recurrenceWeekdayMask: 1 << 1,
             courseId: null,
@@ -1772,6 +1698,7 @@ describe("MCP planning tools", () => {
         id: "study-rule__2026-06-15",
         startsAt: "2026-06-14T21:00:00.000Z",
         endsAt: "2026-06-14T23:00:00.000Z",
+        location: "Room 204",
       }),
     ]);
   });

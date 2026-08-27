@@ -2,6 +2,7 @@ export type RecurringTimeBlockInput = {
   id: string;
   startsAt: Date;
   endsAt: Date;
+  location?: string | null;
   recurrenceWeekdayMask?: number | null;
   protected?: boolean;
 };
@@ -20,6 +21,8 @@ export type TimeBlockExceptionInput = {
   overrideKind?: string | null;
   overrideStartsAt?: Date | null;
   overrideEndsAt?: Date | null;
+  overrideLocation?: string | null;
+  overrideLocationSet?: boolean;
   overrideProtected?: boolean | null;
 };
 
@@ -34,7 +37,7 @@ function shanghaiParts(date: Date) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "00";
   return {
@@ -145,6 +148,9 @@ export function applyTimeBlockExceptions<T extends RecurringTimeBlockInput>(
         : {}),
       ...(exception.overrideStartsAt ? { startsAt: exception.overrideStartsAt } : {}),
       ...(exception.overrideEndsAt ? { endsAt: exception.overrideEndsAt } : {}),
+      ...(exception.overrideLocationSet || (exception.overrideLocation !== null && exception.overrideLocation !== undefined)
+        ? { location: exception.overrideLocation ?? null }
+        : {}),
       ...(exception.overrideProtected !== null && exception.overrideProtected !== undefined
         ? { protected: exception.overrideProtected }
         : {}),

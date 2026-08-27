@@ -125,6 +125,7 @@ describe("review view data", () => {
                     startsOn: "2026-06-15",
                     endsOn: "2026-06-22",
                     course: "Embodied AI",
+                    location: "Science Hall 204",
                     recurrence: null,
                     notes: null,
                   },
@@ -150,7 +151,7 @@ describe("review view data", () => {
         from: "未导入",
         to: "1 行 / 1 个时间块",
         reason: "Prepare course constraints for user review.",
-        impact: ["将创建 1 个固定时间块", "不会自动写入，需用户确认"],
+        impact: ["将创建 1 个固定时间块", "不会自动写入，需用户确认", "地点：Science Hall 204"],
         protected: false,
       }),
     ]);

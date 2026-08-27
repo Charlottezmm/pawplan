@@ -26,16 +26,16 @@ test("renders Today on desktop and mobile with a workspace session", async ({ co
 
   await page.goto("/today");
   await expect(page.getByText(/月\d+日 星期/)).toBeVisible();
-  await expect(page.getByText("今天还没有安排任务。", { exact: true })).toBeVisible();
+  await expect(page.getByText("今天还没有安排任务", { exact: true })).toBeVisible();
   await expect(page.getByText("今日任务")).toBeVisible();
   await expect(page.getByRole("heading", { name: "收工反馈" })).toBeVisible();
   const nav = page.getByLabel(isMobile ? "Mobile navigation" : "Primary navigation");
-  await expect(nav.getByRole("link", { name: "Today", exact: true })).toBeVisible();
-  await expect(nav.getByRole("link", { name: "Plan", exact: true })).toBeVisible();
-  await expect(nav.getByRole("link", { name: "Fixed", exact: true })).toBeVisible();
-  await expect(nav.getByRole("link", { name: "Inbox", exact: true })).toBeVisible();
-  await expect(nav.getByRole("link", { name: "Review", exact: true })).toBeVisible();
-  await expect(nav.getByRole("link", { name: "More", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "今天", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "计划", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "收集", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "审核", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link")).toHaveCount(4);
+  await expect(page.getByRole("button", { name: "账户与设置" })).toBeVisible();
 });
 
 test("renders real settings surfaces without fake recovery saves", async ({ context, page }) => {
@@ -113,7 +113,7 @@ test("renders real settings surfaces without fake recovery saves", async ({ cont
   await expect(page.getByText("Metadata verified", { exact: true })).toHaveCount(2);
 });
 
-test("keeps fixed schedule out of More because it is a top-level tab", async ({ context, page }) => {
+test("keeps legacy More free of duplicate Settings and Plan destinations", async ({ context, page }) => {
   await context.addCookies([
     {
       name: "daily_progress_workspace",
@@ -130,4 +130,6 @@ test("keeps fixed schedule out of More because it is a top-level tab", async ({ 
   await expect(page.locator('a[href="/constraints"]').filter({ hasText: "固定安排" })).toHaveCount(0);
   await expect(page.locator('a[href="/settings#routines"]').filter({ hasText: "日常事项" })).toHaveCount(0);
   await expect(page.locator('a[href="/constraints"]').filter({ hasText: "日历与课程" })).toHaveCount(0);
+  await expect(page.locator(".paw-more-sections").locator('a[href="/settings"]')).toHaveCount(1);
+  await expect(page.getByText("MCP 连接", { exact: true })).toHaveCount(0);
 });

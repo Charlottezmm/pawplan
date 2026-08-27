@@ -2,13 +2,16 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("Plan information architecture", () => {
-  it("keeps schedule, projects, later, and archive as the four Plan sections", () => {
+  it("keeps fixed courses inside Plan instead of the primary navigation", () => {
     const source = readFileSync("src/components/plan-section-nav.tsx", "utf8");
+    const shellSource = readFileSync("src/components/app-shell.tsx", "utf8");
 
     expect(source).toContain('{ href: "/plan", label: "日程" }');
+    expect(source).toContain('{ href: "/constraints", label: "固定课程" }');
     expect(source).toContain('{ href: "/projects", label: "项目" }');
     expect(source).toContain('{ href: "/backlog", label: "稍后处理" }');
     expect(source).toContain('{ href: "/archive", label: "归档" }');
+    expect(shellSource).not.toContain('{ href: "/constraints", label:');
   });
 
   it("removes Plan destinations from More", () => {
@@ -17,6 +20,29 @@ describe("Plan information architecture", () => {
     expect(source).not.toContain('href: "/projects"');
     expect(source).not.toContain('href: "/backlog"');
     expect(source).not.toContain('href: "/archive"');
+    expect(source.match(/href: "\/settings"/g)).toHaveLength(1);
+    expect(source).not.toContain('title: "MCP 连接"');
+  });
+
+  it("uses four Chinese high-frequency destinations and no global capture cat", () => {
+    const source = readFileSync("src/components/app-shell.tsx", "utf8");
+
+    expect(source).toContain('{ href: "/today", label: "今天"');
+    expect(source).toContain('{ href: "/plan", label: "计划"');
+    expect(source).toContain('{ href: "/inbox", label: "收集"');
+    expect(source).toContain('{ href: "/review", label: "审核"');
+    expect(source).not.toContain("FloatingCat");
+    expect(source).not.toContain('href: "/more"');
+  });
+
+  it("refreshes the server Review badge after single-patch decisions", () => {
+    const source = readFileSync("src/components/reschedule-preview.tsx", "utf8");
+    const dismissBlock = source.slice(source.indexOf("async function dismissPatch"), source.indexOf("async function applySelected"));
+    const applyBlock = source.slice(source.indexOf("async function applySelected"), source.indexOf("function formatConflictSide"));
+
+    expect(dismissBlock).toContain("router.refresh();");
+    expect(applyBlock).toContain("closedAnyPatch = true;");
+    expect(applyBlock).toContain("if (closedAnyPatch) router.refresh();");
   });
 
   it("keeps the four schedule views and standard month navigation", () => {

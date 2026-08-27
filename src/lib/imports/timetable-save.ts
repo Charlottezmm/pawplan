@@ -168,7 +168,7 @@ function shanghaiDateTimeLabel(date: Date) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(date);
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "00";
   return `${value("year")}-${value("month")}-${value("day")} ${value("hour")}:${value("minute")}`;
@@ -321,6 +321,7 @@ export async function saveTimetableRowsInTransaction(
       recurrenceRule: block.row.recurrence,
       recurrenceWeekdayMask: block.recurrenceWeekdayMask,
       courseId: courseName ? courseIds.get(courseName) ?? null : null,
+      location: block.row.location ?? null,
       movable: false,
     };
   });

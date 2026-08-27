@@ -2,9 +2,12 @@
 
 import { CalendarDays, Pencil, Plus, Save, Table, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BackLink } from "./back-link";
 import { CatIcon } from "./cat-icon";
+import { PlanSectionNav } from "./plan-section-nav";
+import { TimeBlockTimetable, type TimetableWeekView } from "./time-block-timetable";
 import { redactPrivateTitle } from "@/lib/display/privacy";
 
 type EditableKind = "course" | "meeting" | "unavailable" | "routine" | "recovery";
@@ -26,6 +29,7 @@ type TimeBlock = {
   recurrenceWeekdayMask: number | null;
   courseId: string | null;
   courseName: string | null;
+  location?: string | null;
   movable: false;
 };
 
@@ -45,6 +49,8 @@ type ConstraintsResponse = {
     secondTitle: string;
     startsAt: string;
     endsAt: string;
+    firstLocation: string | null;
+    secondLocation: string | null;
   }>;
 };
 
@@ -62,17 +68,28 @@ type TimeBlockForm = {
   start: string;
   end: string;
   courseName: string;
+  location: string;
   recurrenceRule: string;
 };
+
+function todayInShanghai() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 const emptyForm: TimeBlockForm = {
   id: null,
   kind: "course",
   title: "",
-  date: new Date().toISOString().slice(0, 10),
+  date: todayInShanghai(),
   start: "09:00",
   end: "10:00",
   courseName: "",
+  location: "",
   recurrenceRule: "",
 };
 
@@ -132,7 +149,7 @@ function formatTime(value: string) {
     timeZone: "Asia/Shanghai",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).format(new Date(value));
 }
 
@@ -158,7 +175,7 @@ function shanghaiInputParts(value: string) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(new Date(value));
   const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "00";
   return {
@@ -176,6 +193,7 @@ type ConstraintGroup = {
   title: string;
   kind: EditableKind;
   courseName: string | null;
+  location: string | null;
   recurrenceRule: string | null;
   startTime: string;
   endTime: string;
@@ -212,6 +230,7 @@ export function buildConstraintGroups(blocks: TimeBlock[]): ConstraintGroup[] {
       block.kind,
       block.title.trim().toLowerCase(),
       block.courseName?.trim().toLowerCase() ?? "",
+      block.location?.trim().toLowerCase() ?? "",
       block.recurrenceRule?.trim().toLowerCase() ?? "",
       startTime,
       endTime,
@@ -233,6 +252,7 @@ export function buildConstraintGroups(blocks: TimeBlock[]): ConstraintGroup[] {
       title: block.title,
       kind: block.kind,
       courseName: block.courseName,
+      location: block.location ?? null,
       recurrenceRule: block.recurrenceRule,
       startTime,
       endTime,
@@ -276,7 +296,8 @@ function timeBarClass(row: { kind: EditableKind; title: string }) {
   return "routine";
 }
 
-export function ConstraintsView() {
+export function ConstraintsView({ timetable }: { timetable: TimetableWeekView }) {
+  const router = useRouter();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
@@ -286,14 +307,9 @@ export function ConstraintsView() {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [dataUnavailable, setDataUnavailable] = useState(false);
-  const [timelineDay, setTimelineDay] = useState<WeekdayKey>("mon");
 
   const visibleBlocks = useMemo(() => sortedBlocks(timeBlocks), [timeBlocks]);
   const constraintGroups = useMemo(() => buildConstraintGroups(visibleBlocks), [visibleBlocks]);
-  const timelineRows = useMemo(
-    () => buildConstraintTimelineRows(constraintGroups, timelineDay),
-    [constraintGroups, timelineDay],
-  );
 
   useEffect(() => {
     let active = true;
@@ -354,6 +370,7 @@ export function ConstraintsView() {
           startsAt: shanghaiDateTime(form.date, form.start),
           endsAt: shanghaiDateTime(form.date, form.end),
           courseName: form.kind === "course" ? form.courseName.trim() : null,
+          location: form.location.trim() || null,
           recurrenceRule: form.recurrenceRule.trim() || null,
         },
       }),
@@ -389,6 +406,7 @@ export function ConstraintsView() {
     }
     setForm(emptyForm);
     setMessage("约束已保存。");
+    router.refresh();
   }
 
   function editExistingTimeBlock(block: TimeBlock) {
@@ -406,6 +424,7 @@ export function ConstraintsView() {
       start: start.time,
       end: end.time,
       courseName: block.courseName ?? "",
+      location: block.location ?? "",
       recurrenceRule: block.recurrenceRule ?? "",
     });
     setMessage("正在编辑现有约束。");
@@ -432,12 +451,14 @@ export function ConstraintsView() {
 
     setTimeBlocks((current) => current.filter((item) => item.id !== block.id));
     setMessage("约束已删除。");
+    router.refresh();
   }
 
   return (
     <div className="paw-page">
+      <PlanSectionNav />
       <section className="paw-page-header">
-        <BackLink />
+        <BackLink href="/plan" label="计划" />
         <h1 className="paw-page-date">固定安排</h1>
         <div className="paw-agent-row">
           <CatIcon size={40} mood="think" />
@@ -457,8 +478,8 @@ export function ConstraintsView() {
       <section className="paw-list-card mb-4">
         <div className="paw-list-header">
           <div>
-            <h2 className="paw-list-title">固定安排时间线</h2>
-            <p className="paw-list-subtitle">按星期查看一天怎么排；这里展示课程、日常事项、恢复和不可用时间。</p>
+            <h2 className="paw-list-title">固定课程与时间占用</h2>
+            <p className="paw-list-subtitle">课表按真实分钟与时长绘制；空白只表示没有固定占用，不会自动塞入任务。</p>
           </div>
           <Link href="/import" className="paw-secondary-btn !px-4 !py-2 !text-sm" aria-label="导入 timetable.csv">
             <Table size={15} />
@@ -466,41 +487,8 @@ export function ConstraintsView() {
           </Link>
         </div>
 
-        <div className="paw-weekday-tabs mt-4" role="tablist" aria-label="选择星期">
-          {weekdayOrder.map((day) => (
-            <button
-              key={day}
-              type="button"
-              className={`paw-weekday-tab ${timelineDay === day ? "active" : ""}`}
-              onClick={() => setTimelineDay(day)}
-            >
-              {weekdayLabels[day]}
-            </button>
-          ))}
-        </div>
-
-        <div className="paw-constraint-timeline mt-4">
-          {timelineRows.length === 0 ? (
-            <div className="paw-time-block">
-              <span className="paw-time-label">--</span>
-              <div className="paw-time-bar empty">这一天还没有固定安排。</div>
-            </div>
-          ) : (
-            timelineRows.map((row) => (
-              <div key={row.key} className="paw-time-block">
-                <span className="paw-time-label">
-                  {row.startTime}–{row.endTime}
-                </span>
-                <div className={`paw-time-bar ${timeBarClass(row)}`}>
-                  <span>{redactPrivateTitle(row.title)}</span>
-                  <span className="ml-2 text-xs opacity-70">
-                    {kindLabels[row.kind]}{row.courseName ? ` · ${row.courseName}` : ""}
-                    {row.instanceCount > 1 ? ` · ${row.instanceCount} 个日期` : ""}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
+        <div className="mt-4">
+          <TimeBlockTimetable week={timetable} />
         </div>
 
         <div className="paw-mcp-grid mt-4">
@@ -518,8 +506,11 @@ export function ConstraintsView() {
             {conflicts.map((conflict) => (
               <div key={conflict.id} className="paw-list-row">
                 <div className="min-w-0">
-                  <p className="paw-row-title">{conflict.firstTitle} overlaps {conflict.secondTitle}</p>
+                  <p className="paw-row-title">{redactPrivateTitle(conflict.firstTitle)} 与 {redactPrivateTitle(conflict.secondTitle)} 时间冲突</p>
                   <p className="paw-row-meta">{formatDateTime(conflict.startsAt)} - {formatDateTime(conflict.endsAt)}</p>
+                  {(conflict.firstLocation || conflict.secondLocation) ? (
+                    <p className="paw-row-meta">地点：{conflict.firstLocation ?? "待确认"} / {conflict.secondLocation ?? "待确认"}</p>
+                  ) : null}
                 </div>
                 <span className="paw-status-pill warn">conflict</span>
               </div>
@@ -624,6 +615,16 @@ export function ConstraintsView() {
                 </datalist>
               </label>
             ) : null}
+            <label>
+              <span className="paw-field-label">地点（可选）</span>
+              <input
+                value={form.location}
+                onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))}
+                className="paw-input"
+                maxLength={240}
+                placeholder="教学楼 / 教室 / 线上会议"
+              />
+            </label>
             <div className="paw-save-row !mt-6">
               <button type="submit" disabled={pending === "save"} className="paw-primary-btn !px-4 !py-2 !text-sm">
                 {pending === "save" ? <Save size={15} /> : <Plus size={15} />}
@@ -662,6 +663,7 @@ export function ConstraintsView() {
                   <p className="paw-row-meta">
                     {kindLabels[group.kind]} · {group.startTime}–{group.endTime} · {weekdaySummary(group.weekdays)}
                     {group.courseName ? ` · ${group.courseName}` : ""}
+                    {group.location ? ` · ${group.location}` : " · 地点待确认"}
                     {group.recurrenceRule ? ` · ${group.recurrenceRule}` : ""}
                   </p>
                   <p className="paw-row-meta">
@@ -677,6 +679,7 @@ export function ConstraintsView() {
                           <p className="paw-row-title">{formatDateTime(block.startsAt)} - {formatDateTime(block.endsAt)}</p>
                           <p className="paw-row-meta">
                             {kindLabels[block.kind]} · movable: false
+                            {block.location ? ` · ${block.location}` : " · 地点待确认"}
                           </p>
                         </div>
                         <div className="paw-row-actions">

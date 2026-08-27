@@ -23,6 +23,7 @@ type TimetablePreviewRow = {
   startsOn: string;
   endsOn: string;
   course: string | null;
+  location?: string | null;
   recurrence: string | null;
   notes: string | null;
 };
@@ -46,8 +47,8 @@ const planExample = `Goal: ship PawPlan tomorrow
 - protect tomorrow morning for verification
 `;
 
-const timetableExample = `title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,recurrence,notes
-Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learning,weekly,Room 204
+const timetableExample = `title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,location,recurrence,notes
+Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learning,Room 204,weekly,
 `;
 
 async function postJson<T>(url: string, body: Record<string, string>): Promise<T> {
@@ -323,6 +324,7 @@ export function ImportView() {
                     <span className="paw-row-title">{row.title}</span>
                     <span className="paw-row-meta">
                       {row.kind} · {row.dayOfWeek ?? row.startsOn} · {row.startTime}-{row.endTime}
+                      {row.location ? ` · ${row.location}` : " · 地点待确认"}
                     </span>
                   </li>
                 ))}

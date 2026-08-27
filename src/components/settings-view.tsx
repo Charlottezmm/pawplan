@@ -706,7 +706,7 @@ export function SettingsView() {
                 className="paw-input"
               >
                 <option value="read_only">只读</option>
-                <option value="review_only">仅审核（推荐自动化）</option>
+                <option value="review_only">仅审核</option>
                 <option value="read_write">读写</option>
               </select>
             </label>
@@ -766,7 +766,7 @@ export function SettingsView() {
           {mcpTokens.length === 0 ? (
             <div className="paw-empty">
               <h3>还没有 MCP token</h3>
-              <p>每日自动化建议创建“仅审核”token；只有可信的直接写入流程才使用“读写”。</p>
+              <p>按实际用途选择“读取”或“仅审核”；只有可信、明确授权的直接写入流程才使用“读写”。</p>
             </div>
           ) : (
             mcpTokens.map((token) => (

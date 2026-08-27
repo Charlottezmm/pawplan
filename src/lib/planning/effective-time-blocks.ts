@@ -29,6 +29,8 @@ function exceptionInput(row: TimeBlockExceptionRow): TimeBlockExceptionInput {
     overrideKind: row.overrideKind,
     overrideStartsAt: row.overrideStartsAt,
     overrideEndsAt: row.overrideEndsAt,
+    overrideLocation: row.overrideLocation,
+    overrideLocationSet: row.overrideLocationSet,
     overrideProtected: row.overrideProtected,
   };
 }

@@ -18,6 +18,7 @@ function series(overrides: Record<string, unknown> = {}) {
     kind: "routine" as const,
     startsAt: new Date("2026-08-03T05:00:00.000+08:00"),
     endsAt: new Date("2026-08-31T07:00:00.000+08:00"),
+    location: "Engineering 204",
     recurrenceRule: "weekly",
     recurrenceWeekdayMask: 1 << 1,
     courseId: null,
@@ -68,7 +69,13 @@ describe("time block series mutation planning", () => {
         seriesId: series().id,
         scope: "occurrence",
         occurrenceDate: "2026-08-10",
-        changes: { title: "Hardware exam", startTime: "08:00", endTime: "09:30", protected: false },
+        changes: {
+          title: "Hardware exam",
+          startTime: "08:00",
+          endTime: "09:30",
+          location: "Engineering 305",
+          protected: false,
+        },
       },
       series: series(),
       exceptions: [],
@@ -83,6 +90,8 @@ describe("time block series mutation planning", () => {
         overrideTitle: "Hardware exam",
         overrideStartsAt: new Date("2026-08-10T08:00:00.000+08:00"),
         overrideEndsAt: new Date("2026-08-10T09:30:00.000+08:00"),
+        overrideLocation: "Engineering 305",
+        overrideLocationSet: true,
         overrideProtected: false,
       }),
     ]);
@@ -95,7 +104,7 @@ describe("time block series mutation planning", () => {
         seriesId: series().id,
         scope: "following",
         occurrenceDate: "2026-08-17",
-        changes: { title: "Research hardware", startTime: "09:00", endTime: "11:00" },
+        changes: { title: "Research hardware", startTime: "09:00", endTime: "11:00", location: "Lab 2" },
       },
       series: series(),
       exceptions: [],
@@ -108,7 +117,41 @@ describe("time block series mutation planning", () => {
       title: "Research hardware",
       startsAt: new Date("2026-08-17T09:00:00.000+08:00"),
       endsAt: new Date("2026-08-31T11:00:00.000+08:00"),
+      location: "Lab 2",
     });
+  });
+
+  it("keeps occurrence location inherited unless the request explicitly overrides it", () => {
+    const plan = planTimeBlockSeriesMutation({
+      action: "update",
+      request: {
+        seriesId: series().id,
+        scope: "occurrence",
+        occurrenceDate: "2026-08-10",
+        changes: { title: "Hardware exam" },
+      },
+      series: series(),
+      exceptions: [],
+    });
+
+    expect(plan.nextExceptions[0]).toMatchObject({ overrideLocation: null, overrideLocationSet: false });
+    expect(plan.nextSeries[0].location).toBe("Engineering 204");
+  });
+
+  it("records an explicit nullable occurrence location override", () => {
+    const plan = planTimeBlockSeriesMutation({
+      action: "update",
+      request: {
+        seriesId: series().id,
+        scope: "occurrence",
+        occurrenceDate: "2026-08-10",
+        changes: { location: null },
+      },
+      series: series(),
+      exceptions: [],
+    });
+
+    expect(plan.nextExceptions[0]).toMatchObject({ overrideLocation: null, overrideLocationSet: true });
   });
 
   it("stops this-and-future without removing earlier occurrences", () => {

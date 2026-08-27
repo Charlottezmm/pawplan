@@ -60,6 +60,7 @@ describe("constraints route", () => {
             kind: "routine",
             startsAt: "2026-06-12T01:00:00.000Z",
             endsAt: "2026-06-12T02:00:00.000Z",
+            location: "Room 204",
           },
         }),
       }),
@@ -82,7 +83,12 @@ describe("constraints route", () => {
 
     expect(routineResponse.status).toBe(200);
     expect(await routineResponse.json()).toEqual({
-      timeBlock: expect.objectContaining({ id: "block-1", kind: "routine", title: "Morning routine" }),
+      timeBlock: expect.objectContaining({
+        id: "block-1",
+        kind: "routine",
+        title: "Morning routine",
+        location: "Room 204",
+      }),
       course: null,
     });
     expect(recoveryResponse.status).toBe(200);
@@ -137,6 +143,35 @@ describe("constraints route", () => {
             startsAt: "2026-06-12T01:00:00.000Z",
             endsAt: "2026-06-12T02:00:00.000Z",
             courseName: "",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid constraints action" });
+    expect(vi.mocked(getDb)).not.toHaveBeenCalled();
+  });
+
+  it("rejects locations longer than 240 characters", async () => {
+    const { getWorkspaceIdFromSession } = await import("@/lib/auth/session");
+    const { getDb } = await import("@/lib/db/client");
+    vi.mocked(getWorkspaceIdFromSession).mockResolvedValue("workspace-1");
+    const { POST } = await import("@/app/api/constraints/route");
+
+    const response = await POST(
+      new Request("http://localhost/api/constraints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert_time_block",
+          timeBlock: {
+            title: "Lecture",
+            kind: "course",
+            startsAt: "2026-06-12T01:00:00.000Z",
+            endsAt: "2026-06-12T02:00:00.000Z",
+            courseName: "Robotics",
+            location: "x".repeat(241),
           },
         }),
       }),

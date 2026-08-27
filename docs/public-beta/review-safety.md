@@ -1,6 +1,6 @@
 # PawPlan Review Safety
 
-Review is the only apply boundary in PawPlan. Claude, Codex, and scheduled automation can create drafts, but they cannot apply planning changes directly.
+Review is the only apply boundary in PawPlan. Claude or Codex may create a draft only after the user explicitly asks for a planning adjustment or provides a concrete event; they cannot apply planning changes directly.
 
 ## What Counts As Applied
 

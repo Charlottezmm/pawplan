@@ -12,6 +12,7 @@ describe("recurring time block expansion", () => {
           id: "block-1",
           title: "Study block",
           kind: "routine",
+          location: "Lab 101",
           startsAt: new Date("2026-06-15T05:00:00.000+08:00"),
           endsAt: new Date("2026-06-30T07:00:00.000+08:00"),
           recurrenceWeekdayMask: (1 << 1) | (1 << 3),
@@ -65,6 +66,7 @@ describe("recurring time block expansion", () => {
           overrideTitle: "Moved study block",
           overrideStartsAt: new Date("2026-06-17T08:00:00.000+08:00"),
           overrideEndsAt: new Date("2026-06-17T09:00:00.000+08:00"),
+          overrideLocation: "Lab 203",
           overrideProtected: false,
         },
       ],
@@ -78,9 +80,58 @@ describe("recurring time block expansion", () => {
       recurrenceSourceId: "block-1",
       occurrenceDate: "2026-06-17",
       title: "Moved study block",
+      location: "Lab 203",
       protected: false,
       startsAt: new Date("2026-06-17T08:00:00.000+08:00"),
       endsAt: new Date("2026-06-17T09:00:00.000+08:00"),
     });
+  });
+
+  it("inherits the series location when an override has no explicit location", () => {
+    const [occurrence] = expandEffectiveRecurringBlocks(
+      [{
+        id: "block-1",
+        location: "Lab 101",
+        startsAt: new Date("2026-06-15T05:00:00.000+08:00"),
+        endsAt: new Date("2026-06-30T07:00:00.000+08:00"),
+        recurrenceWeekdayMask: 1 << 1,
+      }],
+      [{
+        id: "override-1",
+        seriesId: "block-1",
+        occurrenceDate: "2026-06-15",
+        action: "override",
+        overrideTitle: "Moved title only",
+        overrideLocation: null,
+      }],
+      new Date("2026-06-15T00:00:00.000+08:00"),
+      new Date("2026-06-16T00:00:00.000+08:00"),
+    );
+
+    expect(occurrence.location).toBe("Lab 101");
+  });
+
+  it("clears the inherited location when a nullable override is explicit", () => {
+    const [occurrence] = expandEffectiveRecurringBlocks(
+      [{
+        id: "block-1",
+        location: "Lab 101",
+        startsAt: new Date("2026-06-15T05:00:00.000+08:00"),
+        endsAt: new Date("2026-06-30T07:00:00.000+08:00"),
+        recurrenceWeekdayMask: 1 << 1,
+      }],
+      [{
+        id: "override-1",
+        seriesId: "block-1",
+        occurrenceDate: "2026-06-15",
+        action: "override",
+        overrideLocation: null,
+        overrideLocationSet: true,
+      }],
+      new Date("2026-06-15T00:00:00.000+08:00"),
+      new Date("2026-06-16T00:00:00.000+08:00"),
+    );
+
+    expect(occurrence.location).toBeNull();
   });
 });

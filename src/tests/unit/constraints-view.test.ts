@@ -9,6 +9,7 @@ function block(input: {
   startsAt: string;
   endsAt: string;
   recurrenceWeekdayMask?: number | null;
+  location?: string | null;
 }) {
   return {
     id: input.id,
@@ -20,6 +21,7 @@ function block(input: {
     recurrenceWeekdayMask: input.recurrenceWeekdayMask ?? null,
     courseId: null,
     courseName: null,
+    location: input.location ?? null,
     movable: false as const,
   };
 }
@@ -118,5 +120,28 @@ describe("constraints view helpers", () => {
         instanceCount: 1,
       }),
     ]);
+  });
+
+  it("keeps same-time course instances separate when their locations differ", () => {
+    const groups = buildConstraintGroups([
+      block({
+        id: "course-room-a",
+        title: "Linear Algebra",
+        kind: "course",
+        startsAt: "2026-06-15T09:00:00.000+08:00",
+        endsAt: "2026-06-15T10:00:00.000+08:00",
+        location: "C 201",
+      }),
+      block({
+        id: "course-room-b",
+        title: "Linear Algebra",
+        kind: "course",
+        startsAt: "2026-06-22T09:00:00.000+08:00",
+        endsAt: "2026-06-22T10:00:00.000+08:00",
+        location: "C 305",
+      }),
+    ]);
+
+    expect(groups.map((group) => group.location)).toEqual(["C 201", "C 305"]);
   });
 });

@@ -226,8 +226,8 @@ describe("import save services", () => {
     const result = await saveTimetableImport(db, {
       workspaceId: "workspace-1",
       confirmation: "CONFIRM_TIMETABLE_IMPORT",
-      csv: `title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,recurrence,notes
-Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learning,weekly,Room 204
+      csv: `title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,location,recurrence,notes
+Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learning,Room 204,weekly,Bring laptop
 `,
     });
 
@@ -255,6 +255,7 @@ Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learn
             startsAt: new Date("2026-09-01T01:00:00.000Z"),
             endsAt: new Date("2026-09-14T03:00:00.000Z"),
             courseId: "courses-1",
+            location: "Room 204",
             recurrenceRule: "weekly",
             recurrenceWeekdayMask: 2,
           }),

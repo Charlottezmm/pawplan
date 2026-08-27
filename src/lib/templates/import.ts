@@ -346,6 +346,7 @@ export async function importWorkspaceTemplate(
           kind: block.kind,
           startsAt: parseDate(block.startsAt),
           endsAt: parseDate(block.endsAt),
+          location: block.location ?? null,
           recurrenceRule: block.recurrenceRule,
           recurrenceWeekdayMask: block.recurrenceWeekdayMask ?? null,
           courseId: mappedId(courseIdMap, block.courseId),
@@ -373,6 +374,8 @@ export async function importWorkspaceTemplate(
                 overrideKind: exception.overrideKind,
                 overrideStartsAt: exception.overrideStartsAt ? parseDate(exception.overrideStartsAt) : null,
                 overrideEndsAt: exception.overrideEndsAt ? parseDate(exception.overrideEndsAt) : null,
+                overrideLocation: exception.overrideLocation ?? null,
+                overrideLocationSet: exception.overrideLocationSet ?? (exception.overrideLocation != null),
                 overrideProtected: exception.overrideProtected,
               }]
             : [];

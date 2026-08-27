@@ -1,4 +1,4 @@
-import { Archive, ChevronRight, Download, KeyRound, Settings, ShieldCheck } from "lucide-react";
+import { ChevronRight, Download, Settings, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { CatIcon } from "./cat-icon";
 import { LogoutButton } from "./logout-button";
@@ -7,22 +7,15 @@ type Tool = {
   href: string;
   title: string;
   text: string;
-  icon: typeof Archive;
+  icon: typeof Settings;
   active: boolean;
   featured?: boolean;
 };
 
 const sections: Array<{ title: string; tools: Tool[] }> = [
   {
-    title: "收集",
+    title: "工具",
     tools: [
-      {
-        href: "/inbox",
-        title: "暂存池",
-        text: "临时捕捉琐事，不占今日容量。",
-        icon: Archive,
-        active: true,
-      },
       {
         href: "/import",
         title: "导入",
@@ -33,20 +26,13 @@ const sections: Array<{ title: string; tools: Tool[] }> = [
     ],
   },
   {
-    title: "连接",
+    title: "设置",
     tools: [
       {
         href: "/settings",
         title: "设置",
-        text: "Workspace、规则默认值和恢复目标。",
+        text: "Workspace、日常事项、MCP 连接和规则默认值。",
         icon: Settings,
-        active: true,
-      },
-      {
-        href: "/settings",
-        title: "MCP 连接",
-        text: "给 Codex / Cowork 读取计划数据。",
-        icon: KeyRound,
         active: true,
       },
     ],
@@ -77,7 +63,7 @@ export function MoreView({ showAdminInvites = false }: { showAdminInvites?: bool
         <h1 className="paw-page-date">更多</h1>
         <div className="paw-agent-row">
           <CatIcon size={40} mood="sleep" />
-          <p className="paw-agent-msg">不常用的入口都收在这里。每天看 Today、Plan、Review 就够了。</p>
+          <p className="paw-agent-msg">这是旧入口的兼容页；日常使用右上角的账户菜单即可。</p>
         </div>
       </section>
 

@@ -19,12 +19,12 @@ async function addWorkspaceSession(context: BrowserContext) {
   ]);
 }
 
-test("exposes Inbox as a primary navigation destination", async ({ context, page, isMobile }) => {
+test("exposes 收集 as a primary navigation destination", async ({ context, page, isMobile }) => {
   await addWorkspaceSession(context);
 
   await page.goto("/today");
   const nav = page.getByLabel(isMobile ? "Mobile navigation" : "Primary navigation");
-  const inboxLink = nav.getByRole("link", { name: "Inbox", exact: true });
+  const inboxLink = nav.getByRole("link", { name: "收集", exact: true });
   await expect(inboxLink).toBeVisible();
 
   await inboxLink.click();

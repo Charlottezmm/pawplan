@@ -65,6 +65,7 @@ const timeBlockTemplateSchema = z.object({
   kind: timeBlockKindSchema,
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime(),
+  location: z.string().max(240).nullable().optional(),
   recurrenceRule: z.string().nullable(),
   recurrenceWeekdayMask: z.number().int().min(0).max(127).nullable().optional(),
   courseId: z.string().nullable(),
@@ -84,6 +85,8 @@ const timeBlockExceptionTemplateSchema = z.object({
   overrideKind: timeBlockKindSchema.nullable(),
   overrideStartsAt: z.string().datetime().nullable(),
   overrideEndsAt: z.string().datetime().nullable(),
+  overrideLocation: z.string().max(240).nullable().optional(),
+  overrideLocationSet: z.boolean().optional(),
   overrideProtected: z.boolean().nullable(),
 });
 
@@ -284,6 +287,7 @@ export async function exportWorkspaceTemplate(
       kind: block.kind,
       startsAt: iso(block.startsAt),
       endsAt: iso(block.endsAt),
+      location: block.location,
       recurrenceRule: block.recurrenceRule,
       recurrenceWeekdayMask: block.recurrenceWeekdayMask,
       courseId: block.courseId,
@@ -302,6 +306,8 @@ export async function exportWorkspaceTemplate(
       overrideKind: exception.overrideKind,
       overrideStartsAt: exception.overrideStartsAt ? iso(exception.overrideStartsAt) : null,
       overrideEndsAt: exception.overrideEndsAt ? iso(exception.overrideEndsAt) : null,
+      overrideLocation: exception.overrideLocation,
+      overrideLocationSet: exception.overrideLocationSet,
       overrideProtected: exception.overrideProtected,
     })),
     tasks: activeTaskRows.map((task: typeof tasks.$inferSelect) => ({

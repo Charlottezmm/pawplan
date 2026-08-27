@@ -1,0 +1,1 @@
+ALTER TABLE "time_block_exceptions" ADD COLUMN "override_location_set" boolean DEFAULT false NOT NULL;

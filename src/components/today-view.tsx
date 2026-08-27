@@ -1,12 +1,14 @@
 "use client";
 
-import { AlertTriangle, Archive, CalendarClock, Check, ChevronDown, Clock3, Copy, Plus, RotateCcw } from "lucide-react";
+import { AlertTriangle, Archive, CalendarClock, Check, ChevronDown, Clock3, Copy, RotateCcw } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { CatIcon } from "./cat-icon";
 import { DailyCheckin } from "./daily-checkin";
 import { TaskDetailContent } from "./task-detail-content";
+import { EmptyState } from "./ui/primitives";
 import { defaultPostponeDate, moveOutOfScheduleUpdate, postponeTaskUpdate } from "@/lib/planning/task-actions";
 import type { TodayViewData } from "@/lib/planning/view-data";
 
@@ -73,49 +75,11 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     })),
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [choreText, setChoreText] = useState("");
-  const [choreSaving, setChoreSaving] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
   const [postponeTask, setPostponeTask] = useState<Task | null>(null);
   const [postponeDate, setPostponeDate] = useState(() => defaultPostponeDate());
   const [savingActionId, setSavingActionId] = useState<string | null>(null);
   const [taskActionFeedback, setTaskActionFeedback] = useState<{ tone: "ok" | "error"; message: string } | null>(null);
-
-  async function addChore(event: React.FormEvent) {
-    event.preventDefault();
-    const title = choreText.trim();
-    if (!title || choreSaving || data.dataUnavailable) return;
-    setChoreSaving(true);
-    const response = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    });
-    setChoreSaving(false);
-    if (!response.ok) return;
-    const { task } = (await response.json()) as { task: { id: string; daySegment: Task["segment"] } };
-    setTasks((current) => [
-      {
-        id: task.id,
-        segment: task.daySegment,
-        title,
-        context: "未分类",
-        track: "未分类",
-        minutes: 15,
-        energy: "中",
-        priority: "normal",
-        notes: null,
-        detail: { summary: null, sections: [] },
-        status: "todo",
-        blocked: false,
-        done: false,
-        isChore: true,
-        displayStatus: "todo",
-      },
-      ...current,
-    ]);
-    setChoreText("");
-  }
 
   const doneCount = tasks.filter((task) => task.displayStatus === "done").length;
   const unresolvedTasks = tasks.filter((task) => task.displayStatus !== "done");
@@ -349,21 +313,6 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
           </p>
         ) : null}
 
-        <form className="paw-chore-add" onSubmit={addChore}>
-          <input
-            type="text"
-            value={choreText}
-            onChange={(event) => setChoreText(event.target.value)}
-            placeholder="记个杂事，回车加进今天（15 分钟）"
-            disabled={data.dataUnavailable}
-            className="paw-chore-input"
-            aria-label="记个今日杂事"
-          />
-          <button type="submit" disabled={!choreText.trim() || choreSaving || data.dataUnavailable} className="paw-chore-btn">
-            <Plus size={15} /> 加杂事
-          </button>
-        </form>
-
         {tasks.length > 0 && doneCount === tasks.length ? (
           <div className="paw-celebrate" role="status">
             <CatIcon size={44} mood="celebrate" />
@@ -372,10 +321,11 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         ) : null}
 
         {tasks.length === 0 ? (
-          <div className="paw-empty">
-            <p>今天还没有安排任务。</p>
-            <p>点右下角的小猫记个想法，或者在「更多 → 导入」里放入你的计划。</p>
-          </div>
+          <EmptyState
+            title="今天还没有安排任务"
+            description="临时想法统一放进收集箱；需要时再决定要不要安排。"
+            action={<Link href="/inbox" className="paw-ui-button paw-ui-button-secondary">去收集</Link>}
+          />
         ) : null}
 
         <div className="paw-task-list" ref={listRef}>

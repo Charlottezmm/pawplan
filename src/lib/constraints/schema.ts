@@ -12,6 +12,7 @@ export const timeBlockInputSchema = z
     kind: editableTimeBlockKindSchema,
     startsAt: dateTimeSchema,
     endsAt: dateTimeSchema,
+    location: z.string().trim().max(240).nullish(),
     recurrenceRule: z.string().trim().max(240).nullish(),
     courseName: z.string().trim().max(120).nullish(),
     color: z.string().trim().max(32).nullish(),

@@ -63,6 +63,7 @@ describe("agent patch schema", () => {
               startsOn: "2026-06-15",
               endsOn: "2026-06-22",
               course: "Embodied AI",
+              location: "Room 204",
               recurrence: null,
               notes: "Imported from MCP draft.",
             },

@@ -162,6 +162,7 @@ describe("constraints service", () => {
           kind: "course",
           startsAt: new Date("2026-06-12T01:00:00.000Z"),
           endsAt: new Date("2026-06-12T03:00:00.000Z"),
+          location: "Engineering 204",
           recurrenceRule: "weekly",
           courseId: "course-1",
           movable: false,
@@ -181,6 +182,7 @@ describe("constraints service", () => {
         id: "course-block-1",
         kind: "course",
         courseName: "Robotics",
+        location: "Engineering 204",
         movable: false,
       }),
       expect.objectContaining({
@@ -207,6 +209,8 @@ describe("constraints service", () => {
         id: "course-block-1__meeting-1",
         firstTitle: "Robotics lecture",
         secondTitle: "Study group",
+        firstLocation: "Engineering 204",
+        secondLocation: null,
         startsAt: "2026-06-12T02:30:00.000Z",
         endsAt: "2026-06-12T03:00:00.000Z",
       },
@@ -260,6 +264,7 @@ describe("constraints service", () => {
       endsAt: new Date("2026-06-12T03:00:00.000Z"),
       recurrenceRule: "weekly",
       courseName: "Robotics",
+      location: "  Engineering 204  ",
     });
 
     expect(result).toEqual({
@@ -275,6 +280,7 @@ describe("constraints service", () => {
             title: "Robotics lab",
             kind: "course",
             courseId: "course-1",
+            location: "Engineering 204",
             movable: false,
           }),
           inTransaction: true,
@@ -304,6 +310,7 @@ describe("constraints service", () => {
       endsAt: new Date("2026-06-12T03:00:00.000Z"),
       recurrenceRule: null,
       courseName: "Robotics",
+      location: "   ",
     });
 
     expect(db.inserts).toEqual(
@@ -315,7 +322,7 @@ describe("constraints service", () => {
         }),
         expect.objectContaining({
           table: "time_blocks",
-          values: expect.objectContaining({ courseId: "courses-1" }),
+          values: expect.objectContaining({ courseId: "courses-1", location: null }),
           inTransaction: true,
         }),
       ]),

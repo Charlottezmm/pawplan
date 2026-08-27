@@ -694,7 +694,7 @@ function timeLabel(date: Date) {
     timeZone: "Asia/Shanghai",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).format(date);
 }
 
@@ -1579,14 +1579,19 @@ export function buildReschedulePatchItems(input: {
         });
       } else if (operation.type === "import_timetable") {
         const blockCount = materializeTimetableRows(operation.rows).length;
+        const locations = [...new Set(operation.rows.map((row) => row.location?.trim()).filter(Boolean))] as string[];
+        const suppliedImpact = evidenceList(operation.capacity_impact);
         patchItems.push({
           ...base,
           title: `导入日程表：${operation.source_label ?? "MCP draft"}`,
           from: "未导入",
           to: `${operation.rows.length} 行 / ${blockCount} 个时间块`,
-          impact: evidenceList(operation.capacity_impact).length
-            ? evidenceList(operation.capacity_impact)
-            : [`将创建 ${blockCount} 个固定时间块`, "不会自动写入，需用户确认"],
+          impact: [
+            ...(suppliedImpact.length > 0
+              ? suppliedImpact
+              : [`将创建 ${blockCount} 个固定时间块`, "不会自动写入，需用户确认"]),
+            locations.length > 0 ? `地点：${locations.slice(0, 3).join(" / ")}` : "地点未提供",
+          ],
         });
       } else {
         patchItems.push({

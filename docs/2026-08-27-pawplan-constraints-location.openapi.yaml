@@ -1,0 +1,227 @@
+openapi: 3.1.0
+info:
+  title: PawPlan Constraints Location API
+  version: 0.1.0
+  description: Implemented contract for per-series and per-occurrence locations on fixed constraints.
+paths:
+  /api/constraints:
+    get:
+      summary: List editable fixed constraints and their conflict summary
+      security:
+        - workspaceSession: []
+      responses:
+        '200':
+          description: Workspace-scoped constraints
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConstraintsResponse'
+        '401':
+          description: Missing workspace session
+    post:
+      summary: Create or update one non-recurring fixed constraint
+      security:
+        - workspaceSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertConstraintRequest'
+      responses:
+        '200':
+          description: Constraint saved and read back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpsertConstraintResponse'
+        '400':
+          description: Invalid strict request body, datetime, duration, or location
+        '401':
+          description: Missing workspace session
+        '404':
+          description: Constraint is outside the session workspace
+        '409':
+          description: Recurring constraints require explicit occurrence, following, or series scope
+components:
+  securitySchemes:
+    workspaceSession:
+      type: apiKey
+      in: cookie
+      name: daily_progress_workspace
+  schemas:
+    EditableConstraintKind:
+      type: string
+      enum: [course, meeting, unavailable, routine, recovery]
+    Location:
+      type: [string, 'null']
+      maxLength: 240
+      description: Per-series fixed-block location. Null means unknown; the UI renders 地点待确认.
+    Course:
+      type: object
+      additionalProperties: false
+      required: [id, name, color]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        color:
+          type: string
+          maxLength: 32
+    TimeBlock:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - title
+        - kind
+        - startsAt
+        - endsAt
+        - recurrenceRule
+        - recurrenceWeekdayMask
+        - courseId
+        - courseName
+        - location
+        - movable
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 180
+        kind:
+          $ref: '#/components/schemas/EditableConstraintKind'
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        recurrenceRule:
+          type: [string, 'null']
+          maxLength: 240
+        recurrenceWeekdayMask:
+          type: [integer, 'null']
+        courseId:
+          type: [string, 'null']
+          format: uuid
+        courseName:
+          type: [string, 'null']
+          maxLength: 120
+        location:
+          $ref: '#/components/schemas/Location'
+        movable:
+          const: false
+    ConstraintConflict:
+      type: object
+      additionalProperties: false
+      required: [id, firstTitle, secondTitle, startsAt, endsAt]
+      properties:
+        id:
+          type: string
+        firstTitle:
+          type: string
+        secondTitle:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        firstLocation:
+          $ref: '#/components/schemas/Location'
+        secondLocation:
+          $ref: '#/components/schemas/Location'
+    ConstraintsResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, courses, timeBlocks, summary, conflicts]
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        courses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Course'
+        timeBlocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeBlock'
+        summary:
+          type: object
+          additionalProperties: false
+          required: [courseCount, timeBlockCount, conflictCount, nextStartsAt]
+          properties:
+            courseCount:
+              type: integer
+              minimum: 0
+            timeBlockCount:
+              type: integer
+              minimum: 0
+            conflictCount:
+              type: integer
+              minimum: 0
+            nextStartsAt:
+              type: [string, 'null']
+              format: date-time
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConstraintConflict'
+    TimeBlockInput:
+      type: object
+      additionalProperties: false
+      required: [title, kind, startsAt, endsAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        kind:
+          $ref: '#/components/schemas/EditableConstraintKind'
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        recurrenceRule:
+          type: [string, 'null']
+          maxLength: 240
+        courseName:
+          type: [string, 'null']
+          maxLength: 120
+        color:
+          type: [string, 'null']
+          maxLength: 32
+        location:
+          $ref: '#/components/schemas/Location'
+    UpsertConstraintRequest:
+      type: object
+      additionalProperties: false
+      required: [action, timeBlock]
+      properties:
+        action:
+          const: upsert_time_block
+        timeBlock:
+          $ref: '#/components/schemas/TimeBlockInput'
+    UpsertConstraintResponse:
+      type: object
+      additionalProperties: false
+      required: [timeBlock, course]
+      properties:
+        timeBlock:
+          $ref: '#/components/schemas/TimeBlock'
+        course:
+          oneOf:
+            - $ref: '#/components/schemas/Course'
+            - type: 'null'

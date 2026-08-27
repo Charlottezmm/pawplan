@@ -41,7 +41,7 @@ It lets you:
 
 - Capture tasks, chores, decisions, check-ins, and planning context.
 - Keep protected schedule blocks, routines, courses, and capacity visible to agents.
-- Let external agents propose daily or weekly rebalances **without** touching the plan directly.
+- Let external agents propose a daily or weekly rebalance **when you ask**, without touching the plan directly.
 - Show every agent change as a Review draft before anything is applied.
 - Record each agent run with status, idempotency, structured outputs, failures, and readback.
 - Hold life-admin items in Inbox until you promote them into scheduled work.
@@ -51,7 +51,7 @@ It lets you:
 ## 🔄 Core Workflow
 
 1. You record tasks, fixed schedule, routines, and constraints in PawPlan.
-2. An external agent reads context through MCP.
+2. When you ask for a planning adjustment, an external agent reads context through MCP.
 3. The agent proposes a change via a narrow tool like `propose_daily_rebalance` or `propose_week_rebalance`.
 4. PawPlan creates an **idempotent Review draft** and records the agent run.
 5. You open `/review`, check the draft, and apply or reject it.
@@ -91,7 +91,7 @@ npm run test:e2e
 - Invite-link workspace creation + password login for existing workspaces.
 - Owner-only invite admin for creating links and viewing workspace signups.
 - Hosted MCP endpoint for Codex bearer-token clients, plus a Claude Custom Connector OAuth adapter.
-- Today, Week, Month, Inbox, Fixed Schedule, Review, Import, and Settings surfaces.
+- Chinese primary navigation for Today, Plan, Collect, and Review; fixed courses live inside Plan, while Import and Settings live in the account menu.
 - Inbox capture for life-admin items and promotion into planned work.
 - Agent run status, idempotency, failure visibility, and draft readback.
 - Review-confirmed task changes, daily/weekly rebalance drafts, and timetable imports.
@@ -142,8 +142,8 @@ https://pawplan.charlottezmm.info/api/mcp   # hosted endpoint
 Local MCP requires `DATABASE_URL` and `PAWPLAN_WORKSPACE_ID`.
 
 The surface is intentionally narrow: `read_only` tokens inspect, `review_only` tokens inspect and create Review drafts,
-and `read_write` tokens can access explicitly authorized direct writes. Scheduled review automation should use
-`review_only`; it cannot apply drafts, archive/delete tasks, replace plan windows, import live tasks, or edit time blocks.
+and `read_write` tokens can access explicitly authorized direct writes. `review_only` cannot apply drafts,
+archive/delete tasks, replace plan windows, import live tasks, or edit time blocks.
 
 <details>
 <summary><strong>Tool reference</strong> (9 read · 11 write/draft)</summary>
@@ -156,11 +156,11 @@ Hosted clients can call `get_mcp_usage` before a trusted write to read the 50-ca
 
 </details>
 
-Daily/weekly automation is configured **outside** PawPlan (Codex / Cowork / Claude): the agent reads through MCP, proposes changes with Review-safe tools, and waits for you to confirm in `/review`. See `docs/automation/pawplan-scheduled-automation.md`.
+PawPlan does not recommend recurring daily Review automation. When you explicitly request an adjustment, an external agent can read through MCP, propose exact moves with Review-safe daily/weekly rebalance tools, and wait for you to confirm in `/review`.
 
 ## ✅ Production Smoke
 
-Before sharing an invite, run the smoke checklist at `docs/public-beta/2026-06-13-public-beta-smoke-checklist.md`. Daily agent loop prompts live at `docs/public-beta/2026-06-13-daily-agent-loop-prompts.md`.
+Before sharing an invite, run the smoke checklist at `docs/public-beta/2026-06-13-public-beta-smoke-checklist.md`.
 
 Connector guides: `connect-codex.md` · `connect-claude.md` · `review-safety.md` · `agent-runs-troubleshooting.md` (all under `docs/public-beta/`).
 
@@ -179,7 +179,7 @@ Connector guides: `connect-codex.md` · `connect-claude.md` · `review-safety.md
 ### 核心流程
 
 1. 用户在 PawPlan 维护任务、固定安排、routine 和约束。
-2. 外部 Agent 通过 MCP 读取上下文。
+2. 用户主动要求调整计划后，外部 Agent 通过 MCP 读取上下文。
 3. Agent 调用 `propose_daily_rebalance`、`propose_week_rebalance` 等窄工具提修改。
 4. PawPlan 创建幂等的 Review 草稿，并记录 agent run。
 5. 用户进入 `/review` 检查草稿，应用或拒绝。
@@ -197,7 +197,7 @@ Connector guides: `connect-codex.md` · `connect-claude.md` · `review-safety.md
 - 邀请链接创建 workspace，已有 workspace 密码登录。
 - Owner-only 邀请后台，用来创建链接和查看 workspace 注册情况。
 - 给 Codex bearer-token client 的 hosted MCP endpoint，以及 Claude Custom Connector OAuth adapter。
-- Today / Week / Month / Inbox / Fixed Schedule / Review / Import / Settings 主要界面。
+- 中文主导航为“今天 / 计划 / 收集 / 审核”；固定课程归入“计划”，导入与设置归入账户菜单。
 - Inbox life-admin capture 和 promotion。
 - Agent run 状态、幂等、失败可见、draft readback。
 - Review-confirmed task changes、daily/weekly rebalance drafts、timetable imports。
@@ -212,7 +212,7 @@ Connector guides: `connect-codex.md` · `connect-claude.md` · `review-safety.md
 - Google / Apple / Outlook Calendar sync。
 - 复杂拖拽日历编辑。
 
-外部 Agent 可在 Codex / Cowork / Claude 里自行定时运行；PawPlan 只负责数据、校验、Review 和审计边界。
+PawPlan 不再推荐固定频率的每日自动 Review。用户主动要求调整时，外部 Agent 才读取上下文并创建 Review 草稿；PawPlan 继续负责数据、校验、Review 和审计边界。
 
 **技术结构** — Next.js + Postgres，MCP 是它和外部 Agent 之间的受控边界。
 

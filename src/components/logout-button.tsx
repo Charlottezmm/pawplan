@@ -2,8 +2,9 @@
 
 import { LogOut } from "lucide-react";
 import { useState } from "react";
+import { Button } from "./ui/primitives";
 
-export function LogoutButton() {
+export function LogoutButton({ compact = false }: { compact?: boolean }) {
   const [pending, setPending] = useState(false);
 
   async function logout() {
@@ -17,6 +18,20 @@ export function LogoutButton() {
       window.location.replace("/login");
     }
   }
+
+  if (compact) return (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={logout}
+      disabled={pending}
+      className="app-account-link app-account-logout"
+      aria-busy={pending}
+    >
+      <LogOut size={17} />
+      {pending ? "退出中…" : "退出登录"}
+    </Button>
+  );
 
   return (
     <button

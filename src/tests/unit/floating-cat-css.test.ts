@@ -1,15 +1,16 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-describe("mobile floating cat positioning", () => {
-  it("anchors the mobile floating capture affordance near the top-right", () => {
+describe("mobile app shell", () => {
+  it("uses four bottom destinations with a safe-area aware compact header", () => {
     const css = readFileSync("src/app/globals.css", "utf8");
     const mobileBlock = css.match(/@media \(max-width: 760px\) \{[\s\S]*?\.paw-page-header/s)?.[0] ?? "";
-    const floatingRule = mobileBlock.match(/\.floating-cat-root \{[\s\S]*?\}/)?.[0] ?? "";
+    const tabbarRule = mobileBlock.match(/\.mobile-tabbar \{[\s\S]*?\}/)?.[0] ?? "";
+    const topnavRule = mobileBlock.match(/\.app-topnav-inner \{[\s\S]*?\}/)?.[0] ?? "";
 
-    expect(floatingRule).toContain("right: 16px;");
-    expect(floatingRule).toContain("top: calc(env(safe-area-inset-top, 0px) + 14px);");
-    expect(floatingRule).toContain("bottom: auto;");
+    expect(tabbarRule).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
+    expect(tabbarRule).toContain("env(safe-area-inset-bottom, 0px)");
+    expect(topnavRule).toContain("env(safe-area-inset-top, 0px)");
   });
 });
 

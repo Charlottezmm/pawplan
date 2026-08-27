@@ -31,6 +31,7 @@ type TimeBlockRow = {
   kind: string;
   startsAt: Date;
   endsAt: Date;
+  location: string | null;
   recurrenceRule: string | null;
   recurrenceWeekdayMask: number | null;
   courseId: string | null;
@@ -56,6 +57,7 @@ function normalizeNullable(value: string | null | undefined) {
 function serializeTimeBlock(row: TimeBlockRow, courseNames: Map<string, string>) {
   return {
     ...row,
+    location: row.location ?? null,
     courseName: row.courseId ? courseNames.get(row.courseId) ?? null : null,
     movable: false,
   };
@@ -87,6 +89,8 @@ function buildConstraintConflicts(blocks: TimeBlockRow[]) {
     secondTitle: string;
     startsAt: string;
     endsAt: string;
+    firstLocation: string | null;
+    secondLocation: string | null;
   }> = [];
 
   for (let index = 0; index < blocks.length; index += 1) {
@@ -98,6 +102,8 @@ function buildConstraintConflicts(blocks: TimeBlockRow[]) {
         id: `${first.id}__${second.id}`,
         firstTitle: first.title,
         secondTitle: second.title,
+        firstLocation: first.location ?? null,
+        secondLocation: second.location ?? null,
         ...overlapWindow(first, second),
       });
     }
@@ -207,6 +213,7 @@ export async function upsertTimeBlock(db: DbLike, workspaceId: string, input: Ti
       kind: input.kind,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
+      location: normalizeNullable(input.location),
       recurrenceRule,
       recurrenceWeekdayMask: weekdayMaskFromRecurrence(recurrenceRule, input.startsAt),
       courseId,
@@ -247,6 +254,7 @@ export async function upsertTimeBlock(db: DbLike, workspaceId: string, input: Ti
       kind: input.kind,
       title: input.title,
       courseName,
+      location: normalizeNullable(input.location),
     });
 
     return {

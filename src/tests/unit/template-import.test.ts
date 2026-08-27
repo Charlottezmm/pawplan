@@ -157,6 +157,7 @@ const template: PawPlanTemplate = {
       kind: "course",
       startsAt: "2026-09-07T01:00:00.000Z",
       endsAt: "2026-09-07T03:00:00.000Z",
+      location: "Room 204",
       recurrenceRule: "weekly",
       courseId: "source-course",
       trackId: "source-track",
@@ -258,6 +259,7 @@ describe("template import", () => {
           values: expect.objectContaining({
             workspaceId: "target-workspace",
             title: "Deep Learning Lecture",
+            location: "Room 204",
             courseId: "courses-1",
             trackId: "tracks-1",
             protected: true,
@@ -302,6 +304,7 @@ describe("template import", () => {
         overrideKind: "course",
         overrideStartsAt: "2026-09-14T03:00:00.000Z",
         overrideEndsAt: "2026-09-14T05:00:00.000Z",
+        overrideLocation: "Room 305",
         overrideProtected: false,
       }],
     };
@@ -320,6 +323,7 @@ describe("template import", () => {
           seriesId: "time_blocks-1",
           occurrenceDate: "2026-09-14",
           action: "override",
+          overrideLocation: "Room 305",
           overrideProtected: false,
         }),
       }),

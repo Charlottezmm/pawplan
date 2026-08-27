@@ -4,9 +4,9 @@ import { buildTimetableImportPreview } from "@/lib/imports/timetable-save";
 
 describe("timetable csv parser", () => {
   it("extracts fixed weekly blocks with camelCase fields", () => {
-    const result = parseTimetableCsv(`title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,recurrence,notes
-Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-12-20,Deep Learning,weekly,Room 204
-Office Hours,meeting,Tuesday,14:00,15:00,2026-09-01,2026-12-20,,weekly,
+    const result = parseTimetableCsv(`title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,location,recurrence,notes
+Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-12-20,Deep Learning,Room 204,weekly,Bring laptop
+Office Hours,meeting,Tuesday,14:00,15:00,2026-09-01,2026-12-20,,,weekly,
 `);
 
     expect(result).toEqual([
@@ -19,8 +19,9 @@ Office Hours,meeting,Tuesday,14:00,15:00,2026-09-01,2026-12-20,,weekly,
         startsOn: "2026-09-01",
         endsOn: "2026-12-20",
         course: "Deep Learning",
+        location: "Room 204",
         recurrence: "weekly",
-        notes: "Room 204",
+        notes: "Bring laptop",
       },
       {
         title: "Office Hours",
@@ -31,6 +32,7 @@ Office Hours,meeting,Tuesday,14:00,15:00,2026-09-01,2026-12-20,,weekly,
         startsOn: "2026-09-01",
         endsOn: "2026-12-20",
         course: null,
+        location: null,
         recurrence: "weekly",
         notes: null,
       },
@@ -43,6 +45,15 @@ Office Hours,meeting,Tuesday,14:00,15:00,2026-09-01,2026-12-20,,weekly,
 Errand,personal,Monday,09:00,10:00,2026-09-01,2026-12-20,,weekly,
 `),
     ).toThrow();
+  });
+
+  it("does not infer a location from notes", () => {
+    const [row] = parseTimetableCsv(`title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,recurrence,notes
+Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-12-20,Deep Learning,weekly,Room 204
+`);
+
+    expect(row.location).toBeNull();
+    expect(row.notes).toBe("Room 204");
   });
 
   it("builds a public beta preview with duplicate warnings and Asia/Shanghai time blocks", () => {

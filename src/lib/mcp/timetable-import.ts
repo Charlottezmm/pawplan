@@ -30,6 +30,7 @@ export const mcpTimetableRowSchema = z
     starts_on: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
     ends_on: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
     course: z.string().trim().max(120).optional().nullable(),
+    location: z.string().trim().max(240).optional().nullable(),
     recurrence: z
       .string()
       .trim()
@@ -70,6 +71,7 @@ function normalizeRows(args: ProposeTimetableImportArgs): TimetableImportPreview
     startsOn: row.starts_on,
     endsOn: row.ends_on,
     course: emptyToNull(row.course),
+    location: emptyToNull(row.location),
     recurrence: emptyToNull(row.recurrence),
     notes: emptyToNull(row.notes),
   }));
