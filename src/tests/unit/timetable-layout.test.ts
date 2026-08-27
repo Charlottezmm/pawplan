@@ -82,15 +82,43 @@ describe("timetable layout", () => {
 
   it("keeps short blocks visually proportional while exposing a 44px hit area", () => {
     const css = readFileSync("src/components/time-block-timetable.module.css", "utf8");
+    const component = readFileSync("src/components/time-block-timetable.tsx", "utf8");
     const blockRule = css.match(/\.courseBlock \{[\s\S]*?\}/)?.[0] ?? "";
+    const stripRule = css.match(/\.courseBlock::before \{[\s\S]*?\}/)?.[0] ?? "";
     const hitRule = css.match(/\.courseBlock::after \{[\s\S]*?\}/)?.[0] ?? "";
     const contentRule = css.match(/\.blockContent \{[\s\S]*?\}/)?.[0] ?? "";
+    const titleRule = css.match(/\.blockTitle \{[\s\S]*?\}/)?.[0] ?? "";
+    const metaRule = css.match(/\.blockMeta \{[\s\S]*?\}/)?.[0] ?? "";
+    const mobileRule = css.slice(css.indexOf("@media (max-width: 760px)"));
 
+    expect(blockRule).toContain("top: var(--block-top);");
     expect(blockRule).toContain("height: var(--block-height);");
     expect(blockRule).not.toContain("min-height: 44px;");
     expect(blockRule).toContain("overflow: visible;");
+    expect(blockRule).toContain("var(--course-color) 5%");
+    expect(stripRule).toContain("width: 3px;");
+    expect(stripRule).toContain("var(--course-color) 72%");
     expect(hitRule).toContain("width: max(100%, 44px);");
     expect(hitRule).toContain("height: max(100%, 44px);");
+    expect(hitRule).not.toContain("background:");
+    expect(css).toContain(".hitExtendBefore::after");
+    expect(css).toContain(".hitExtendAfter::after");
     expect(contentRule).toContain("overflow: hidden;");
+    expect(titleRule).toContain("text-overflow: ellipsis;");
+    expect(titleRule).toContain("white-space: nowrap;");
+    expect(metaRule).toContain("display: flex;");
+    expect(metaRule).toContain("overflow: hidden;");
+    expect(css).not.toMatch(/\.compactBlock \.blockTime\s*\{[^}]*display:\s*none/);
+    expect(css).not.toMatch(/\.compactBlock \.blockLocation\s*\{[^}]*display:\s*none/);
+    expect(component).toContain("item.courseName?.trim() || item.title");
+    expect(component).toContain("styles.blockTime");
+    expect(component).toContain("styles.blockLocation");
+    expect(component).toContain('item.location?.trim() || "地点待确认"');
+    expect(component).toContain('selected?.location?.trim() || "地点待确认"');
+    expect(component).toContain("redactPrivateTitle(selected.courseName?.trim() || selected.title)");
+    expect(component).not.toContain("candidate.height < 44");
+    expect(mobileRule).toContain("width: calc(100% + 32px);");
+    expect(mobileRule).toContain("grid-template-columns: repeat(7, minmax(44px, 1fr));");
+    expect(mobileRule).toContain("min-width: 44px;");
   });
 });

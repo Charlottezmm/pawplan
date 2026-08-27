@@ -1699,6 +1699,7 @@ input.paw-input[type="time"] {
 .paw-primary-btn,
 .paw-secondary-btn {
   display: inline-flex;
+  min-height: var(--app-control-min);
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -1773,17 +1774,27 @@ input.paw-input[type="time"] {
   gap: 6px;
   margin-bottom: 24px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   border-bottom: 1px solid var(--app-line);
+  -webkit-overflow-scrolling: touch;
 }
 
 .paw-plan-section-link {
+  display: inline-flex;
+  min-width: var(--app-control-min);
+  min-height: var(--app-control-min);
   flex: none;
+  align-items: center;
+  justify-content: center;
   border-bottom: 2px solid transparent;
   color: var(--app-ink-soft);
   font-size: 14px;
   font-weight: 700;
+  line-height: 1.2;
   padding: 10px 14px;
+  text-align: center;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .paw-plan-section-link:hover {
@@ -1796,6 +1807,10 @@ input.paw-input[type="time"] {
 }
 
 .paw-sub-tab {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -1803,7 +1818,9 @@ input.paw-input[type="time"] {
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
+  line-height: 1;
   padding: 8px 24px;
+  text-align: center;
   text-decoration: none;
   transition:
     background 150ms ease,
@@ -4801,20 +4818,43 @@ input.paw-input[type="time"] {
   }
 
   .paw-plan-section-nav {
-    width: calc(100% - 72px);
+    width: 100%;
     gap: 2px;
     margin-bottom: 18px;
   }
 
   .paw-plan-section-link {
-    flex: 1;
-    padding-inline: 4px;
+    min-height: var(--app-control-min);
+    flex: 1 0 max-content;
+    padding: 0 8px;
     font-size: 13px;
-    text-align: center;
   }
 
   .paw-sub-tab {
-    padding-inline: 10px;
+    min-height: var(--app-control-min);
+    padding: 0 10px;
+  }
+
+  .paw-act-btn,
+  .paw-sg-btn,
+  .paw-weekday-tab,
+  .quick-capture-button,
+  .paw-today-rebalance,
+  .paw-back {
+    display: inline-flex;
+    min-height: var(--app-control-min);
+    align-items: center;
+    justify-content: center;
+  }
+
+  .paw-task-check {
+    position: relative;
+  }
+
+  .paw-task-check::after {
+    position: absolute;
+    inset: -7px;
+    content: "";
   }
 
   .paw-plan-split {

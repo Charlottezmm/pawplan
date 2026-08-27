@@ -38,6 +38,58 @@ test("renders Today on desktop and mobile with a workspace session", async ({ co
   await expect(page.getByRole("button", { name: "账户与设置" })).toBeVisible();
 });
 
+test("keeps both Plan navigation levels complete and centered at 375px", async ({ context, page, isMobile }) => {
+  test.skip(!isMobile, "mobile-only responsive regression");
+  await page.setViewportSize({ width: 375, height: 812 });
+  await context.addCookies([
+    {
+      name: "daily_progress_workspace",
+      value: signedWorkspaceSession("00000000-0000-0000-0000-000000000001"),
+      domain: "127.0.0.1",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+
+  await page.goto("/plan");
+  const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
+  const sectionLinks = sectionNav.getByRole("link");
+  await expect(sectionLinks).toHaveCount(5);
+  await expect(sectionNav.getByRole("link", { name: "固定课程", exact: true })).toBeVisible();
+  await expect(sectionNav.getByRole("link", { name: "稍后处理", exact: true })).toBeVisible();
+
+  const sectionMetrics = await sectionLinks.evaluateAll((links) => links.map((link) => ({
+    height: Math.round(link.getBoundingClientRect().height),
+    clipped: link.scrollWidth > link.clientWidth + 1,
+  })));
+  expect(new Set(sectionMetrics.map((item) => item.height))).toEqual(new Set([44]));
+  expect(sectionMetrics.every((item) => !item.clipped)).toBe(true);
+
+  const viewNav = page.getByRole("navigation", { name: "日程视图" });
+  const viewLinks = viewNav.getByRole("link");
+  await expect(viewLinks).toHaveCount(4);
+  const viewMetrics = await viewLinks.evaluateAll((links) => links.map((link) => {
+    const style = getComputedStyle(link);
+    return {
+      height: Math.round(link.getBoundingClientRect().height),
+      alignItems: style.alignItems,
+      justifyContent: style.justifyContent,
+    };
+  }));
+  expect(viewMetrics.every((item) => item.height === 44)).toBe(true);
+  expect(viewMetrics.every((item) => item.alignItems === "center" && item.justifyContent === "center")).toBe(true);
+
+  await page.setViewportSize({ width: 280, height: 720 });
+  const overflow = await sectionNav.evaluate((nav) => ({
+    clientWidth: nav.clientWidth,
+    scrollWidth: nav.scrollWidth,
+    overflowX: getComputedStyle(nav).overflowX,
+  }));
+  expect(overflow.overflowX).toBe("auto");
+  expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth);
+});
+
 test("renders real settings surfaces without fake recovery saves", async ({ context, page }) => {
   await context.addCookies([
     {
