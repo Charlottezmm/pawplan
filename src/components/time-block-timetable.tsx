@@ -209,7 +209,7 @@ export function TimeBlockTimetable({
     if (window.matchMedia("(max-width: 760px)").matches) return;
     const shell = desktopWeekRef.current;
     if (!shell) return;
-    shell.scrollTop = Math.max(0, earliestStartMinute - week.axis.startMinute - 60);
+    shell.scrollTop = Math.max(0, earliestStartMinute - week.axis.startMinute - 30);
   }, [earliestStartMinute, week.axis.startMinute, week.selectedDateKey]);
 
   useEffect(() => {
