@@ -1,10 +1,9 @@
 "use client";
 
-import { CalendarDays, Clock3, MapPin, Plus, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Clock3, MapPin, Save, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { CatIcon } from "./cat-icon";
 import { PlanSectionNav } from "./plan-section-nav";
 import {
   TimeBlockTimetable,
@@ -242,9 +241,7 @@ function shanghaiInputParts(value: string) {
 
 export function ConstraintsView({ timetable }: { timetable: TimetableWeekView }) {
   const router = useRouter();
-  const [courses, setCourses] = useState<Course[]>([]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
-  const [summary, setSummary] = useState<ConstraintsResponse["summary"]>(undefined);
   const [conflicts, setConflicts] = useState<NonNullable<ConstraintsResponse["conflicts"]>>([]);
   const [form, setForm] = useState<TimeBlockForm>(() => emptyForm(timetable.selectedDateKey));
   const [editorOpen, setEditorOpen] = useState(false);
@@ -253,9 +250,6 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
   const [pending, setPending] = useState<"save" | "delete" | null>(null);
   const [dataUnavailable, setDataUnavailable] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
-
-  const visibleBlocks = useMemo(() => sortedBlocks(timeBlocks), [timeBlocks]);
-  const constraintGroups = useMemo(() => buildConstraintGroups(visibleBlocks), [visibleBlocks]);
 
   const loadConstraints = useCallback(async () => {
     try {
@@ -266,9 +260,7 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
         return;
       }
       const data = (await response.json()) as ConstraintsResponse;
-      setCourses(data.courses ?? []);
       setTimeBlocks(data.timeBlocks ?? []);
-      setSummary(data.summary);
       setConflicts(data.conflicts ?? []);
       setDataUnavailable(false);
     } catch {
@@ -407,45 +399,17 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
   return (
     <div className="paw-page">
       <PlanSectionNav />
-      <section className="paw-page-header">
-        <h1 className="paw-page-date">日程</h1>
-        <div className="paw-agent-row">
-          <CatIcon size={40} mood="think" />
-          <p className="paw-agent-msg">课程、考试、会议和其他确定时间的安排都放在这里；空白时间不会自动填入任务。</p>
-        </div>
-        <div className="paw-status-pills">
-          <span className="paw-status-pill">日程: {summary?.timeBlockCount ?? timeBlocks.length}</span>
-          <span className="paw-status-pill">课程: {summary?.courseCount ?? courses.length}</span>
-          <span className="paw-status-pill">系列: {constraintGroups.length}</span>
-          <span className={conflicts.length > 0 ? "paw-status-pill warn" : "paw-status-pill"}>冲突: {summary?.conflictCount ?? conflicts.length}</span>
-          {dataUnavailable ? <span className="paw-status-pill warn">数据源不可用</span> : null}
-          {message ? <span className="paw-status-pill link" role="status">{message}</span> : null}
-        </div>
-      </section>
-
+      {message ? <p className={dataUnavailable ? "paw-schedule-feedback error" : "paw-schedule-feedback"} role="status">{message}</p> : null}
       <TimeBlockTimetable week={timetable} onCreate={openCreate} onEdit={openEdit} />
 
-      <section className="paw-list-card mt-4">
-        <div className="paw-list-header">
-          <div>
-            <h2 className="paw-list-title">日程状态</h2>
-            <p className="paw-list-subtitle">重叠只会提示，不会自动移动任何日程。</p>
+      {conflicts.length > 0 ? (
+        <section className="paw-list-card mt-4">
+          <div className="paw-list-header">
+            <div>
+              <h2 className="paw-list-title paw-conflict-title"><AlertTriangle size={18} />时间冲突</h2>
+              <p className="paw-list-subtitle">重叠只会提示，不会自动移动任何日程。</p>
+            </div>
           </div>
-          <button type="button" className="paw-primary-btn !min-h-11 !px-4 !py-2 !text-sm" onClick={() => openCreate()}>
-            <Plus size={16} />新建日程
-          </button>
-        </div>
-        <div className="paw-mcp-grid mt-4">
-          <div className="paw-mcp-info">
-            <p className="paw-field-label">已载入</p>
-            <p className="paw-mcp-value">{summary?.timeBlockCount ?? timeBlocks.length} 条日程</p>
-          </div>
-          <div className="paw-mcp-info">
-            <p className="paw-field-label">冲突检查</p>
-            <p className="paw-mcp-value">{conflicts.length > 0 ? `${conflicts.length} 个冲突需查看` : "未发现冲突"}</p>
-          </div>
-        </div>
-        {conflicts.length > 0 ? (
           <div className="paw-list mt-4">
             {conflicts.map((conflict) => (
               <div key={conflict.id} className="paw-list-row">
@@ -458,8 +422,8 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
               </div>
             ))}
           </div>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
 
       {editorOpen ? createPortal((
         <div className={editorStyles.backdrop} onMouseDown={(event) => event.target === event.currentTarget && !pending && setEditorOpen(false)}>

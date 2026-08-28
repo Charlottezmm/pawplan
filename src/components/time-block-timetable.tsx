@@ -184,6 +184,9 @@ export function TimeBlockTimetable({
   const days = useMemo(() => positionedDays(week), [week]);
   const ticks = useMemo(() => hourTicks(week.axis), [week.axis]);
   const selectedDay = days.find((day) => day.dateKey === week.selectedDateKey) ?? days[0];
+  const [, selectedMonth = "", selectedDate = ""] = week.selectedDateKey.split("-");
+  const selectedMonthLabel = `${Number(selectedMonth)}月`;
+  const selectedDateLabel = String(Number(selectedDate));
   const gridHeight = week.axis.endMinute - week.axis.startMinute;
   const gridStyle: TimetableStyle = { "--grid-height": `${gridHeight}px` };
   const selectedTitle = selected ? redactPrivateTitle(selected.title) : "";
@@ -260,19 +263,25 @@ export function TimeBlockTimetable({
   return (
     <section className={styles.timetable} aria-labelledby="timetable-heading">
       <div className={styles.toolbar}>
-        <div>
-          <p className={styles.eyebrow}>时间轴</p>
-          <h2 id="timetable-heading">{week.weekLabel}</h2>
-          <p className={styles.hint}>空白表示没有确定安排；点击空白时间可预填新日程。</p>
+        <div className={styles.toolbarCopy}>
+          <div className={styles.desktopHeading}>
+            <p className={styles.eyebrow}>日程</p>
+            <h2 id="timetable-heading">{week.weekLabel}</h2>
+            <p className={styles.hint}>课程、考试、会议和其他确定时间的安排。空白时间不会自动填入任务。</p>
+          </div>
+          <div className={styles.mobileHeading} aria-hidden="true">
+            <p>{selectedMonthLabel} · {selectedDay.weekdayLabel}</p>
+            <strong>{selectedDateLabel}</strong>
+          </div>
         </div>
         <div className={styles.toolbarActions}>
           <div className={styles.primaryActions}>
             <Link href="/import" className={styles.importLink} aria-label="导入日程">
-              <Table size={16} />导入
+              <Table size={17} /><span className={styles.actionLabel}>导入</span>
             </Link>
             {onCreate ? (
               <button type="button" className={styles.createButton} onClick={() => onCreate(week.selectedDateKey)}>
-                <Plus size={17} />新建
+                <Plus size={18} /><span className={styles.actionLabel}>新建</span>
               </button>
             ) : null}
           </div>
@@ -327,20 +336,11 @@ export function TimeBlockTimetable({
               className={`${styles.dateChoice} ${day.dateKey === week.selectedDateKey ? styles.selectedDate : ""} ${day.isToday ? styles.todayDate : ""}`}
               aria-current={day.dateKey === week.selectedDateKey ? "date" : undefined}
             >
+              <strong>{Number(day.dateKey.slice(-2))}</strong>
               <span>{day.weekdayLabel}</span>
-              <strong>{day.dateLabel}</strong>
             </Link>
           ))}
         </nav>
-        <div className={styles.dayActions}>
-          <Link href={dateHref(week.previousDateKey)} className={styles.dayNavLink} aria-label="上一天">
-            <ChevronLeft size={18} /> 上一天
-          </Link>
-          <Link href={dateHref(week.todayDateKey)} className={styles.mobileTodayLink}>今天</Link>
-          <Link href={dateHref(week.nextDateKey)} className={styles.dayNavLink} aria-label="下一天">
-            下一天 <ChevronRight size={18} />
-          </Link>
-        </div>
         <div className={styles.mobileGridShell}>
           <div className={styles.timeAxis} style={gridStyle} aria-hidden="true">
             {ticks.map((minute) => (

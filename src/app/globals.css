@@ -519,6 +519,30 @@ a {
   margin-bottom: 28px;
 }
 
+.paw-schedule-feedback {
+  margin: 0 0 12px;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface);
+  color: var(--app-ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.5;
+  padding: 11px 14px;
+}
+
+.paw-schedule-feedback.error {
+  border-color: color-mix(in srgb, var(--app-danger) 35%, var(--app-line));
+  background: var(--app-danger-soft);
+  color: var(--app-danger);
+}
+
+.paw-conflict-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .paw-greeting {
   color: var(--app-ink-soft);
   font-size: 15px;

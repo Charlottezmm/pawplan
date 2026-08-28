@@ -1,9 +1,17 @@
 .timetable {
+  --schedule-canvas: #fcfaf7;
+  --schedule-card: #fffefd;
+  --schedule-line: #ebe5dd;
+  --schedule-line-strong: #ddd4ca;
+  --schedule-ink: #302923;
+  --schedule-muted: #837a72;
+  --schedule-accent: #a66f50;
+  --schedule-accent-soft: #f1e4dc;
   overflow: hidden;
-  border: 1px solid var(--app-line);
-  border-radius: var(--app-radius);
-  background: var(--app-surface);
-  box-shadow: var(--app-shadow-card);
+  border: 1px solid var(--schedule-line);
+  border-radius: 22px;
+  background: var(--schedule-canvas);
+  box-shadow: 0 16px 40px rgba(62, 48, 36, 0.07);
 }
 
 .toolbar {
@@ -11,8 +19,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 22px 24px 18px;
-  border-bottom: 1px solid var(--app-line);
+  padding: 24px 26px 20px;
+  border-bottom: 1px solid var(--schedule-line);
+  background: var(--schedule-canvas);
+}
+
+.toolbarCopy {
+  min-width: 0;
+}
+
+.mobileHeading {
+  display: none;
 }
 
 .toolbarActions {
@@ -31,7 +48,7 @@
 .toolbar h2,
 .detailPanel h3 {
   margin: 2px 0 0;
-  color: var(--app-ink);
+  color: var(--schedule-ink);
   font-family: var(--app-font-display);
   font-size: 20px;
   font-weight: 600;
@@ -40,7 +57,7 @@
 
 .eyebrow {
   margin: 0;
-  color: var(--app-accent-dark);
+  color: var(--schedule-accent);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -48,7 +65,7 @@
 
 .hint {
   margin: 5px 0 0;
-  color: var(--app-ink-soft);
+  color: var(--schedule-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -72,10 +89,10 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  border: 1px solid var(--app-line);
+  border: 1px solid var(--schedule-line);
   border-radius: var(--app-radius-sm);
-  background: var(--app-surface);
-  color: var(--app-ink-soft);
+  background: var(--schedule-card);
+  color: var(--schedule-muted);
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
@@ -89,14 +106,14 @@
 }
 
 .importLink {
-  border-color: transparent;
-  background: var(--app-muted-soft);
+  border-color: var(--schedule-line);
+  background: var(--schedule-card);
 }
 
 .createButton {
-  border-color: var(--app-ink);
-  background: var(--app-ink);
-  color: var(--app-surface);
+  border-color: var(--schedule-accent);
+  background: var(--schedule-accent);
+  color: #fff;
   cursor: pointer;
 }
 
@@ -113,19 +130,19 @@
 .todayLink:hover,
 .dayNavLink:hover,
 .mobileTodayLink:hover {
-  border-color: var(--app-line-strong);
-  background: var(--app-accent-soft);
-  color: var(--app-accent-dark);
+  border-color: var(--schedule-line-strong);
+  background: var(--schedule-accent-soft);
+  color: var(--schedule-accent);
 }
 
 .importLink:hover {
-  border-color: var(--app-line-strong);
-  background: var(--app-accent-soft);
-  color: var(--app-accent-dark);
+  border-color: var(--schedule-line-strong);
+  background: var(--schedule-accent-soft);
+  color: var(--schedule-accent);
 }
 
 .createButton:hover {
-  background: color-mix(in srgb, var(--app-ink) 88%, var(--app-surface));
+  background: color-mix(in srgb, var(--schedule-accent) 88%, #2f241d);
 }
 
 .iconLink:focus-visible,
@@ -149,17 +166,17 @@
 .weekHeader {
   display: grid;
   grid-template-columns: 58px repeat(7, minmax(0, 1fr));
-  border-bottom: 1px solid var(--app-line);
-  background: var(--app-surface);
+  border-bottom: 1px solid var(--schedule-line);
+  background: var(--schedule-card);
 }
 
 .dayHeader {
   display: grid;
   min-width: 0;
   gap: 3px;
-  border-left: 1px solid var(--app-line);
+  border-left: 1px solid var(--schedule-line);
   padding: 11px 6px;
-  color: var(--app-ink-soft);
+  color: var(--schedule-muted);
   text-align: center;
 }
 
@@ -169,18 +186,18 @@
 }
 
 .dayHeader strong {
-  color: var(--app-ink);
+  color: var(--schedule-ink);
   font-size: 13px;
   font-weight: 800;
 }
 
 .todayHeader {
-  background: var(--app-accent-soft);
+  background: var(--schedule-accent-soft);
 }
 
 .todayHeader strong,
 .todayHeader span {
-  color: var(--app-accent-dark);
+  color: var(--schedule-accent);
 }
 
 .weekBody {
@@ -196,14 +213,14 @@
 }
 
 .timeAxis {
-  background: var(--app-surface);
+  background: var(--schedule-canvas);
 }
 
 .timeAxis span {
   position: absolute;
   right: 8px;
   z-index: 2;
-  color: var(--app-ink-soft);
+  color: var(--schedule-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -212,22 +229,22 @@
 
 .desktopDayColumn {
   min-width: 0;
-  border-left: 1px solid var(--app-line);
+  border-left: 1px solid var(--schedule-line);
 }
 
 .dayGrid {
-  background-color: var(--app-surface);
+  background-color: var(--schedule-canvas);
   background-image:
     repeating-linear-gradient(
       to bottom,
       transparent 0,
       transparent 29px,
-      color-mix(in srgb, var(--app-line) 54%, transparent) 29px,
-      color-mix(in srgb, var(--app-line) 54%, transparent) 30px,
+      color-mix(in srgb, var(--schedule-line) 42%, transparent) 29px,
+      color-mix(in srgb, var(--schedule-line) 42%, transparent) 30px,
       transparent 30px,
       transparent 59px,
-      var(--app-line) 59px,
-      var(--app-line) 60px
+      var(--schedule-line) 59px,
+      var(--schedule-line) 60px
     );
 }
 
@@ -236,7 +253,7 @@
 }
 
 .todayColumn .dayGrid {
-  background-color: color-mix(in srgb, var(--app-accent-soft) 28%, var(--app-surface));
+  background-color: color-mix(in srgb, var(--schedule-accent-soft) 25%, var(--schedule-canvas));
 }
 
 .courseBlock {
@@ -251,13 +268,13 @@
   flex-direction: column;
   align-items: flex-start;
   overflow: visible;
-  border: 1px solid color-mix(in srgb, var(--course-color) 18%, var(--app-line));
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--course-color) 10%, var(--app-surface));
+  border: 1px solid color-mix(in srgb, var(--course-color) 14%, var(--schedule-line));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--course-color) 10%, var(--schedule-card));
   box-shadow:
     0 1px 2px rgba(62, 52, 38, 0.06),
     0 5px 14px color-mix(in srgb, var(--course-color) 10%, transparent);
-  color: var(--app-ink);
+  color: var(--schedule-ink);
   cursor: pointer;
   padding: 6px 7px 5px 12px;
   text-align: left;
@@ -309,8 +326,8 @@
 
 .courseBlock:hover {
   z-index: 5;
-  border-color: color-mix(in srgb, var(--course-color) 24%, var(--app-line-strong));
-  background: color-mix(in srgb, var(--course-color) 14%, var(--app-surface));
+  border-color: color-mix(in srgb, var(--course-color) 22%, var(--schedule-line-strong));
+  background: color-mix(in srgb, var(--course-color) 14%, var(--schedule-card));
   box-shadow:
     0 2px 5px rgba(62, 52, 38, 0.08),
     0 8px 18px color-mix(in srgb, var(--course-color) 10%, transparent);
@@ -320,7 +337,7 @@
   display: block;
   width: 100%;
   overflow: hidden;
-  color: var(--app-ink);
+  color: var(--schedule-ink);
   font-size: 12px;
   font-weight: 800;
   line-height: 1.2;
@@ -335,7 +352,7 @@
   align-items: center;
   gap: 3px;
   overflow: hidden;
-  color: var(--app-ink-soft);
+  color: var(--schedule-muted);
   font-size: 10px;
   font-weight: 650;
   line-height: 1.15;
@@ -532,42 +549,100 @@
     border-right: 0;
     border-left: 0;
     border-radius: 0;
+    background: var(--schedule-canvas);
     box-shadow: none;
     margin-inline: -16px;
   }
 
   .toolbar {
     display: grid;
-    gap: 14px;
-    padding: 18px 16px 14px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 16px;
+    border-bottom: 0;
+    padding: 22px 18px 10px;
   }
 
   .toolbarActions {
-    width: 100%;
-    justify-items: stretch;
+    display: flex;
+    width: auto;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
+    justify-items: auto;
+  }
+
+  .desktopHeading {
+    display: none;
+  }
+
+  .mobileHeading {
+    display: block;
+  }
+
+  .mobileHeading p {
+    margin: 0 0 8px;
+    color: var(--schedule-muted);
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 1;
+  }
+
+  .mobileHeading strong {
+    display: block;
+    color: var(--schedule-ink);
+    font-family: var(--app-font-display);
+    font-size: 62px;
+    font-weight: 500;
+    letter-spacing: -0.06em;
+    line-height: 0.9;
   }
 
   .primaryActions {
-    order: 2;
+    gap: 7px;
   }
 
   .importLink,
   .createButton {
-    flex: 1;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex: none;
+    border-radius: 14px;
+    padding: 0;
   }
 
-  .toolbar h2 {
-    font-size: 19px;
+  .importLink {
+    color: var(--schedule-accent);
+  }
+
+  .createButton {
+    box-shadow: 0 8px 18px rgba(122, 75, 50, 0.2);
+  }
+
+  .actionLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
   }
 
   .weekActions {
-    justify-content: space-between;
+    gap: 6px;
   }
 
-  .weekActions .iconLink,
-  .todayLink {
-    min-width: 44px;
+  .weekActions .iconLink {
+    width: 44px;
     min-height: 44px;
+    border-color: transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--schedule-ink);
+  }
+
+  .todayLink {
+    display: none;
   }
 
   .desktopWeek {
@@ -583,86 +658,163 @@
     grid-template-columns: repeat(7, minmax(44px, 1fr));
     gap: 3px;
     overflow-x: auto;
-    border-bottom: 1px solid var(--app-line);
-    background: var(--app-surface);
-    padding: 8px 8px 10px;
+    border-bottom: 0;
+    background: var(--schedule-canvas);
+    padding: 12px 12px 18px;
+    scrollbar-width: none;
+  }
+
+  .dateStrip::-webkit-scrollbar {
+    display: none;
   }
 
   .dateChoice {
     display: flex;
     min-width: 44px;
-    min-height: 50px;
+    min-height: 66px;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    color: var(--app-ink-soft);
+    gap: 7px;
+    border: 0;
+    border-radius: 16px;
+    color: var(--schedule-muted);
     text-decoration: none;
   }
 
   .dateChoice span {
-    font-size: 10px;
-    font-weight: 700;
+    order: 2;
+    font-size: 11px;
+    font-weight: 650;
   }
 
   .dateChoice strong {
-    font-size: 12px;
-    font-weight: 800;
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border: 1px solid var(--schedule-line);
+    border-radius: 999px;
+    background: var(--schedule-card);
+    color: var(--schedule-ink);
+    font-size: 13px;
+    font-weight: 750;
   }
 
   .todayDate {
-    color: var(--app-accent-dark);
+    color: var(--schedule-accent);
   }
 
-  .selectedDate {
-    border-color: color-mix(in srgb, var(--app-accent) 34%, var(--app-line));
-    background: var(--app-accent-soft);
-    color: var(--app-accent-dark);
+  .selectedDate strong {
+    border-color: var(--schedule-accent);
+    background: var(--schedule-accent);
+    box-shadow: 0 6px 14px rgba(122, 75, 50, 0.2);
+    color: #fff;
   }
 
-  .dayActions {
-    justify-content: space-between;
-    border-bottom: 1px solid var(--app-line);
-    background: var(--app-surface);
-    padding: 8px 12px;
-  }
-
-  .dayNavLink,
-  .mobileTodayLink {
-    min-height: 44px;
-    border-color: transparent;
-    padding: 0 8px;
+  .selectedDate span {
+    color: var(--schedule-accent);
+    font-weight: 750;
   }
 
   .mobileGridShell {
+    position: relative;
     display: grid;
-    grid-template-columns: 54px minmax(0, 1fr);
+    grid-template-columns: 64px minmax(0, 1fr);
     align-items: start;
+    border-top: 1px solid var(--schedule-line);
+    background: var(--schedule-canvas);
+    padding-top: 12px;
+  }
+
+  .mobileGridShell::before {
+    position: absolute;
+    top: 12px;
+    bottom: 0;
+    left: 51px;
+    width: 1px;
+    background: var(--schedule-line);
+    content: "";
+    pointer-events: none;
   }
 
   .mobileGrid {
     min-width: 0;
-    border-left: 1px solid var(--app-line);
+    border-left: 0;
+    padding-right: 14px;
+  }
+
+  .mobileGrid .dayGrid {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 59px,
+      var(--schedule-line) 59px,
+      var(--schedule-line) 60px
+    );
+  }
+
+  .mobileGridShell .timeAxis {
+    background: transparent;
+  }
+
+  .mobileGridShell .timeAxis span {
+    right: 8px;
+    display: grid;
+    min-width: 43px;
+    height: 23px;
+    place-items: center;
+    border: 1px solid var(--schedule-line);
+    border-radius: 999px;
+    background: var(--schedule-card);
+    box-shadow: 0 3px 9px rgba(62, 48, 36, 0.06);
+    color: var(--schedule-muted);
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  .mobileGridShell .timeAxis span:first-child {
+    transform: none;
+  }
+
+  .mobileGridShell .timeAxis span:last-child {
+    transform: translateY(-100%);
+  }
+
+  .interactiveGrid {
+    cursor: default;
   }
 
   .courseBlock {
-    left: calc(var(--lane-left) + 5px);
-    width: calc(var(--lane-width) - 10px);
-    padding: 5px 7px 4px 11px;
+    left: calc(var(--lane-left) + 9px);
+    width: calc(var(--lane-width) - 17px);
+    border-color: color-mix(in srgb, var(--course-color) 12%, var(--schedule-line));
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--course-color) 8%, var(--schedule-card));
+    box-shadow: 0 7px 18px rgba(62, 48, 36, 0.09);
+    padding: 7px 9px 6px 16px;
+  }
+
+  .courseBlock::before {
+    top: 7px;
+    bottom: 7px;
+    left: 6px;
+    width: 4px;
   }
 
   .blockTitle {
-    font-size: 12px;
+    font-size: 13px;
+    line-height: 1.25;
   }
 
   .blockMeta {
-    font-size: 11px;
+    gap: 4px;
+    font-size: 10px;
+    line-height: 1.25;
   }
 
   .compactBlock {
-    padding: 2px 5px 2px 10px;
+    padding: 3px 7px 3px 14px;
   }
 
   .compactBlock .blockTitle {
