@@ -19,10 +19,11 @@ async function addWorkspaceSession(context: BrowserContext) {
   ]);
 }
 
-test("opens fixed courses from Plan without edit panels or workspace identifiers", async ({ context, page, isMobile }) => {
+test("opens schedules from Plan with a compact manual-create flow and no workspace identifiers", async ({ context, page, isMobile }) => {
   await addWorkspaceSession(context);
 
   const workspaceId = "00000000-0000-0000-0000-000000000001";
+  let savedPayload: Record<string, any> | null = null;
   const timeBlocks = [
     {
       id: "block-1",
@@ -82,22 +83,57 @@ test("opens fixed courses from Plan without edit panels or workspace identifiers
       return;
     }
 
+    if (request.method() === "POST") {
+      savedPayload = request.postDataJSON();
+      const input = savedPayload?.timeBlock as Record<string, any>;
+      await route.fulfill({
+        json: {
+          timeBlock: {
+            id: "00000000-0000-0000-0000-000000000099",
+            ...input,
+            recurrenceRule: input.recurrenceRule ?? null,
+            recurrenceWeekdayMask: null,
+            courseId: null,
+            courseName: null,
+            movable: false,
+          },
+          course: null,
+        },
+      });
+      return;
+    }
+
     await route.fallback();
   });
 
   await page.goto("/today");
   const primaryNav = page.getByLabel(isMobile ? "Mobile navigation" : "Primary navigation");
   await primaryNav.getByRole("link", { name: "计划", exact: true }).click();
-  await page.getByRole("link", { name: "固定课程", exact: true }).click();
+  await page.getByRole("link", { name: "日程", exact: true }).click();
   await expect(page).toHaveURL(/\/constraints$/);
-  await expect(page.getByRole("heading", { name: "固定安排", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "导入 timetable.csv" })).toHaveAttribute("href", "/import");
+  await expect(page.getByRole("heading", { name: "日程", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "导入日程" })).toHaveAttribute("href", "/import");
   await expect(page.getByText("冲突: 1")).toBeVisible();
   await expect(page.getByText("Linear Algebra 与 Studio unavailable 时间冲突")).toBeVisible();
   await expect(page.getByText("地点：C 201 / 待确认")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "新增固定安排" })).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "周循环摘要" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "保存约束" })).toHaveCount(0);
+  await page.getByRole("button", { name: "新建日程" }).first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存日程" })).toBeVisible();
+  await page.getByRole("button", { name: "考试", exact: true }).click();
+  await page.getByLabel("标题").fill("MATH 3700 期中考试");
+  await page.getByLabel("地点（可选）").fill("C 201");
+  await page.getByRole("button", { name: "保存日程" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(savedPayload).toMatchObject({
+    action: "upsert_time_block",
+    timeBlock: {
+      kind: "exam",
+      title: "MATH 3700 期中考试",
+      location: "C 201",
+    },
+  });
   await expect(page.getByText(/^Workspace:/)).toHaveCount(0);
   await expect(page.getByText("Workspace 读取中")).toHaveCount(0);
 });

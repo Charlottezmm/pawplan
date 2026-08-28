@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, BookOpen, CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, X } from "lucide-react";
+import { AlertTriangle, BookOpen, CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Pencil, Plus, Table, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   layoutTimetableIntervals,
   minuteLabel,
@@ -16,7 +17,7 @@ export type TimetableOccurrenceView = {
   seriesId: string;
   dateKey: string;
   title: string;
-  kind: "course" | "meeting" | "unavailable" | "routine" | "recovery";
+  kind: "course" | "exam" | "meeting" | "unavailable" | "routine" | "recovery";
   startsAt: string;
   endsAt: string;
   startMinute: number;
@@ -58,6 +59,15 @@ type PositionedOccurrence = TimetableOccurrenceView & {
 type ShortHitExpansion = "center" | "before" | "after";
 
 type TimetableStyle = CSSProperties & Record<`--${string}`, string | number>;
+
+const kindLabels: Record<TimetableOccurrenceView["kind"], string> = {
+  course: "课程",
+  exam: "考试",
+  meeting: "会议",
+  routine: "个人安排",
+  unavailable: "不可用",
+  recovery: "休息",
+};
 
 function dateHref(dateKey: string) {
   return `/constraints?date=${dateKey}`;
@@ -139,11 +149,14 @@ function CourseBlock({
       type="button"
       className={`${styles.courseBlock} ${compact ? styles.compactBlock : ""} ${item.conflict ? styles.conflictBlock : ""} ${hitExpansion === "before" ? styles.hitExtendBefore : ""} ${hitExpansion === "after" ? styles.hitExtendAfter : ""}`}
       style={occurrenceStyle(item)}
-      onClick={(event) => onOpen(item, event.currentTarget)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen(item, event.currentTarget);
+      }}
       aria-label={`${accessibleTitle}，${minuteLabel(item.startMinute)} 至 ${minuteLabel(item.endMinute)}，${locationLabel}${item.conflict ? "，存在时间冲突" : ""}`}
     >
       <span className={styles.blockContent}>
-        <strong className={styles.blockTitle}>{displayCourseName}</strong>
+        <strong className={styles.blockTitle}>{displayTitle}</strong>
         <span className={styles.blockMeta}>
           <span className={styles.blockTime}>{timeLabel}</span>
           <span className={styles.metaSeparator} aria-hidden="true">·</span>
@@ -155,7 +168,15 @@ function CourseBlock({
   );
 }
 
-export function TimeBlockTimetable({ week }: { week: TimetableWeekView }) {
+export function TimeBlockTimetable({
+  week,
+  onCreate,
+  onEdit,
+}: {
+  week: TimetableWeekView;
+  onCreate?: (dateKey: string, startMinute?: number) => void;
+  onEdit?: (item: TimetableOccurrenceView) => boolean | void;
+}) {
   const [selected, setSelected] = useState<TimetableOccurrenceView | null>(null);
   const [now, setNow] = useState(shanghaiNow);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -210,8 +231,20 @@ export function TimeBlockTimetable({ week }: { week: TimetableWeekView }) {
       if (hasAdjacentBefore && !hasAdjacentAfter) return "after";
       return "center";
     }
+    function createFromPointer(event: React.MouseEvent<HTMLDivElement>) {
+      if (!onCreate || event.target !== event.currentTarget) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const clickedMinute = week.axis.startMinute + (event.clientY - bounds.top);
+      const snappedMinute = Math.round(clickedMinute / 30) * 30;
+      onCreate(day.dateKey, snappedMinute);
+    }
     return (
-      <div className={styles.dayGrid} style={gridStyle} aria-label={`${day.dateLabel} 固定课程时间轴`}>
+      <div
+        className={`${styles.dayGrid} ${onCreate ? styles.interactiveGrid : ""}`}
+        style={gridStyle}
+        aria-label={`${day.dateLabel} 日程时间轴`}
+        onClick={createFromPointer}
+      >
         {day.dateKey === now.dateKey && currentTop >= 0 && currentTop <= gridHeight ? (
           <div className={styles.currentTimeLine} style={{ top: `${currentTop}px` }} aria-label={`当前时间 ${minuteLabel(now.minute)}`}>
             <span>{minuteLabel(now.minute)}</span>
@@ -228,24 +261,36 @@ export function TimeBlockTimetable({ week }: { week: TimetableWeekView }) {
     <section className={styles.timetable} aria-labelledby="timetable-heading">
       <div className={styles.toolbar}>
         <div>
-          <p className={styles.eyebrow}>固定课程表</p>
+          <p className={styles.eyebrow}>时间轴</p>
           <h2 id="timetable-heading">{week.weekLabel}</h2>
-          <p className={styles.hint}>空白表示当前没有固定课程占用，不代表必须安排任务。</p>
+          <p className={styles.hint}>空白表示没有确定安排；点击空白时间可预填新日程。</p>
         </div>
-        <div className={styles.weekActions} aria-label="切换周">
-          <Link href={dateHref(week.previousWeekDateKey)} className={styles.iconLink} aria-label="上一周">
-            <ChevronLeft size={19} />
-          </Link>
-          <Link href={dateHref(week.todayDateKey)} className={styles.todayLink}>今天</Link>
-          <Link href={dateHref(week.nextWeekDateKey)} className={styles.iconLink} aria-label="下一周">
-            <ChevronRight size={19} />
-          </Link>
+        <div className={styles.toolbarActions}>
+          <div className={styles.primaryActions}>
+            <Link href="/import" className={styles.importLink} aria-label="导入日程">
+              <Table size={16} />导入
+            </Link>
+            {onCreate ? (
+              <button type="button" className={styles.createButton} onClick={() => onCreate(week.selectedDateKey)}>
+                <Plus size={17} />新建
+              </button>
+            ) : null}
+          </div>
+          <div className={styles.weekActions} aria-label="切换周">
+            <Link href={dateHref(week.previousWeekDateKey)} className={styles.iconLink} aria-label="上一周">
+              <ChevronLeft size={19} />
+            </Link>
+            <Link href={dateHref(week.todayDateKey)} className={styles.todayLink}>今天</Link>
+            <Link href={dateHref(week.nextWeekDateKey)} className={styles.iconLink} aria-label="下一周">
+              <ChevronRight size={19} />
+            </Link>
+          </div>
         </div>
       </div>
 
       {week.unavailable ? (
         <div className={styles.unavailable} role="alert">
-          课表暂时无法读取。请稍后刷新；这里不会用示例课程代替真实数据。
+          日程暂时无法读取。请稍后刷新；这里不会用示例数据代替真实安排。
         </div>
       ) : null}
 
@@ -306,13 +351,13 @@ export function TimeBlockTimetable({ week }: { week: TimetableWeekView }) {
         </div>
       </div>
 
-      {selected ? (
+      {selected ? createPortal((
         <div className={styles.detailBackdrop} onMouseDown={(event) => event.target === event.currentTarget && closeDetail()}>
           <section className={styles.detailPanel} role="dialog" aria-modal="true" aria-labelledby="course-detail-title">
-            <button ref={closeButtonRef} type="button" className={styles.detailClose} onClick={closeDetail} aria-label="关闭课程详情">
+            <button ref={closeButtonRef} type="button" className={styles.detailClose} onClick={closeDetail} aria-label="关闭日程详情">
               <X size={20} />
             </button>
-            <p className={styles.eyebrow}>固定安排详情</p>
+            <p className={styles.eyebrow}>日程详情</p>
             <h3 id="course-detail-title">{selectedTitle}</h3>
             <dl className={styles.detailList}>
               {selected.courseName?.trim() && selectedCourseName !== selectedTitle ? (
@@ -331,12 +376,23 @@ export function TimeBlockTimetable({ week }: { week: TimetableWeekView }) {
               </div>
               <div>
                 <dt><Clock3 size={17} />类型</dt>
-                <dd>{selected.kind === "course" ? "固定课程" : "固定时间占用"}</dd>
+                <dd>{kindLabels[selected.kind]}</dd>
               </div>
             </dl>
+            {onEdit ? (
+              <button
+                type="button"
+                className={styles.detailEdit}
+                onClick={() => {
+                  if (onEdit(selected) !== false) closeDetail();
+                }}
+              >
+                <Pencil size={16} />编辑日程
+              </button>
+            ) : null}
           </section>
         </div>
-      ) : null}
+      ), document.body) : null}
     </section>
   );
 }

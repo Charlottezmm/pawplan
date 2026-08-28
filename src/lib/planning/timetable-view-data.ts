@@ -9,6 +9,13 @@ const shanghaiTimeZone = "Asia/Shanghai";
 const dayMs = 24 * 60 * 60 * 1000;
 const dateKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const coursePalette = ["#2563eb", "#7c3aed", "#0f766e", "#c2410c", "#be123c", "#0369a1", "#4d7c0f"];
+const kindPalette = {
+  exam: "#b7663d",
+  meeting: "#537e9f",
+  unavailable: "#7f7a72",
+  routine: "#7a9561",
+  recovery: "#8b72a7",
+} as const;
 
 export function shanghaiTimetableParts(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -88,7 +95,9 @@ function occurrenceView(
     endMinute: end.minute,
     courseName: course?.name ?? null,
     location: occurrence.location ?? null,
-    color: stableColor(occurrence.courseId ?? seriesId, course?.color),
+    color: occurrence.kind === "course"
+      ? stableColor(occurrence.courseId ?? seriesId, course?.color)
+      : kindPalette[occurrence.kind],
   };
 }
 
@@ -109,7 +118,7 @@ export async function getTimetableWeekView(
         workspaceId,
         rangeStart: new Date(`${weekStartKey}T00:00:00.000+08:00`),
         rangeEnd: new Date(`${weekEndKey}T00:00:00.000+08:00`),
-        kinds: ["course", "meeting", "unavailable", "routine", "recovery"],
+        kinds: ["course", "exam", "meeting", "unavailable", "routine", "recovery"],
       }),
       db.select({ id: courses.id, name: courses.name, color: courses.color })
         .from(courses)

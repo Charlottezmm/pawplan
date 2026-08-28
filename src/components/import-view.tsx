@@ -16,7 +16,7 @@ type PlanPreview = {
 
 type TimetablePreviewRow = {
   title: string;
-  kind: "course" | "meeting" | "unavailable" | "routine" | "recovery";
+  kind: "course" | "exam" | "meeting" | "unavailable" | "routine" | "recovery";
   dayOfWeek: string | null;
   startTime: string;
   endTime: string;

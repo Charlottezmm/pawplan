@@ -95,9 +95,9 @@ describe("timetable layout", () => {
     expect(blockRule).toContain("height: var(--block-height);");
     expect(blockRule).not.toContain("min-height: 44px;");
     expect(blockRule).toContain("overflow: visible;");
-    expect(blockRule).toContain("var(--course-color) 5%");
-    expect(stripRule).toContain("width: 3px;");
-    expect(stripRule).toContain("var(--course-color) 72%");
+    expect(blockRule).toContain("var(--course-color) 10%");
+    expect(stripRule).toContain("width: 4px;");
+    expect(stripRule).toContain("background: var(--course-color);");
     expect(hitRule).toContain("width: max(100%, 44px);");
     expect(hitRule).toContain("height: max(100%, 44px);");
     expect(hitRule).not.toContain("background:");

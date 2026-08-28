@@ -1,0 +1,1 @@
+ALTER TYPE "public"."time_block_kind" ADD VALUE 'exam' BEFORE 'meeting';

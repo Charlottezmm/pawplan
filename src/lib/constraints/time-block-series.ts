@@ -33,7 +33,7 @@ export type TimeBlockSeriesAction = "update" | "delete";
 
 export type TimeBlockSeriesChanges = {
   title?: string;
-  kind?: "course" | "meeting" | "unavailable" | "routine" | "recovery";
+  kind?: "course" | "exam" | "meeting" | "unavailable" | "routine" | "recovery";
   startTime?: string;
   endTime?: string;
   location?: string | null;

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const sections = [
-  { href: "/plan", label: "日程" },
-  { href: "/constraints", label: "固定课程" },
+  { href: "/plan", label: "任务" },
+  { href: "/constraints", label: "日程" },
   { href: "/projects", label: "项目" },
   { href: "/backlog", label: "稍后处理" },
   { href: "/archive", label: "归档" },

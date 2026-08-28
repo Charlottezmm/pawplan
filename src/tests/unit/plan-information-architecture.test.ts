@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("Plan information architecture", () => {
-  it("keeps fixed courses inside Plan instead of the primary navigation", () => {
+  it("separates rough tasks from fixed-time schedules inside Plan", () => {
     const source = readFileSync("src/components/plan-section-nav.tsx", "utf8");
     const shellSource = readFileSync("src/components/app-shell.tsx", "utf8");
 
-    expect(source).toContain('{ href: "/plan", label: "日程" }');
-    expect(source).toContain('{ href: "/constraints", label: "固定课程" }');
+    expect(source).toContain('{ href: "/plan", label: "任务" }');
+    expect(source).toContain('{ href: "/constraints", label: "日程" }');
     expect(source).toContain('{ href: "/projects", label: "项目" }');
     expect(source).toContain('{ href: "/backlog", label: "稍后处理" }');
     expect(source).toContain('{ href: "/archive", label: "归档" }');

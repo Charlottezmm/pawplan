@@ -2,7 +2,7 @@ import { expandRecurringBlocks } from "@/lib/planning/recurring-time-blocks";
 
 export type CapacitySegment = "morning" | "afternoon" | "evening";
 export type CapacityTaskStatus = "todo" | "done" | "skipped" | "backlog";
-export type ProtectedBlockKind = "course" | "meeting" | "unavailable" | "routine" | "recovery";
+export type ProtectedBlockKind = "course" | "exam" | "meeting" | "unavailable" | "routine" | "recovery";
 
 export type CapacityTaskInput = {
   id: string;

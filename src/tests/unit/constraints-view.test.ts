@@ -5,7 +5,7 @@ import { redactPrivateTitle } from "@/lib/display/privacy";
 function block(input: {
   id: string;
   title: string;
-  kind?: "course" | "meeting" | "unavailable" | "routine" | "recovery";
+  kind?: "course" | "exam" | "meeting" | "unavailable" | "routine" | "recovery";
   startsAt: string;
   endsAt: string;
   recurrenceWeekdayMask?: number | null;

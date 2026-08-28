@@ -6,7 +6,7 @@ type CapacityInput = {
   blocks: Array<{
     segment: Segment;
     minutes: number;
-    kind: "routine" | "recovery" | "course" | "meeting" | "unavailable";
+    kind: "routine" | "recovery" | "course" | "exam" | "meeting" | "unavailable";
   }>;
 };
 

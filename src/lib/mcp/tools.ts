@@ -198,7 +198,7 @@ const taskArchiveApplySchema = z
 const timeBlockSeriesChangesSchema = z
   .object({
     title: z.string().trim().min(1).max(180).optional(),
-    kind: z.enum(["course", "meeting", "unavailable", "routine", "recovery"]).optional(),
+    kind: z.enum(["course", "exam", "meeting", "unavailable", "routine", "recovery"]).optional(),
     start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
     end_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
     location: z.string().trim().max(240).nullable().optional(),

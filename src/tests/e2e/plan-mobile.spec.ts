@@ -144,7 +144,8 @@ test("mobile Plan month detail opens only after selection and stays in page flow
     await page.goto("/plan");
 
     const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
-    await expect(sectionNav.getByRole("link", { name: "日程", exact: true })).toHaveAttribute("href", "/plan");
+    await expect(sectionNav.getByRole("link", { name: "任务", exact: true })).toHaveAttribute("href", "/plan");
+    await expect(sectionNav.getByRole("link", { name: "日程", exact: true })).toHaveAttribute("href", "/constraints");
     await expect(sectionNav.getByRole("link", { name: "项目", exact: true })).toHaveAttribute("href", "/projects");
     await expect(sectionNav.getByRole("link", { name: "稍后处理", exact: true })).toHaveAttribute("href", "/backlog");
     await expect(sectionNav.getByRole("link", { name: "归档", exact: true })).toHaveAttribute("href", "/archive");

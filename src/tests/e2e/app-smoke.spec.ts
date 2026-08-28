@@ -56,7 +56,7 @@ test("keeps both Plan navigation levels complete and centered at 375px", async (
   const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
   const sectionLinks = sectionNav.getByRole("link");
   await expect(sectionLinks).toHaveCount(5);
-  await expect(sectionNav.getByRole("link", { name: "固定课程", exact: true })).toBeVisible();
+  await expect(sectionNav.getByRole("link", { name: "日程", exact: true })).toBeVisible();
   await expect(sectionNav.getByRole("link", { name: "稍后处理", exact: true })).toBeVisible();
 
   const sectionMetrics = await sectionLinks.evaluateAll((links) => links.map((link) => ({

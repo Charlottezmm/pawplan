@@ -197,7 +197,7 @@ Connector guides: `connect-codex.md` · `connect-claude.md` · `review-safety.md
 - 邀请链接创建 workspace，已有 workspace 密码登录。
 - Owner-only 邀请后台，用来创建链接和查看 workspace 注册情况。
 - 给 Codex bearer-token client 的 hosted MCP endpoint，以及 Claude Custom Connector OAuth adapter。
-- 中文主导航为“今天 / 计划 / 收集 / 审核”；固定课程归入“计划”，导入与设置归入账户菜单。
+- 中文主导航为“今天 / 计划 / 收集 / 审核”；确定时间的日程归入“计划”，导入与设置归入账户菜单。
 - Inbox life-admin capture 和 promotion。
 - Agent run 状态、幂等、失败可见、draft readback。
 - Review-confirmed task changes、daily/weekly rebalance drafts、timetable imports。

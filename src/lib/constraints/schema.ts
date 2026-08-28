@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const editableTimeBlockKinds = ["course", "meeting", "unavailable", "routine", "recovery"] as const;
+export const editableTimeBlockKinds = ["course", "exam", "meeting", "unavailable", "routine", "recovery"] as const;
 export const editableTimeBlockKindSchema = z.enum(editableTimeBlockKinds);
 
 const dateTimeSchema = z.string().datetime({ offset: true }).transform((value) => new Date(value));

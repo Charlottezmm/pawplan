@@ -75,6 +75,7 @@ function heroDateFromKey(key: string) {
 const timelineKindClass: Record<TimelineItemView["kind"], string> = {
   task: "task",
   course: "routine",
+  exam: "routine",
   meeting: "routine",
   unavailable: "routine",
   routine: "routine",
@@ -84,6 +85,7 @@ const timelineKindClass: Record<TimelineItemView["kind"], string> = {
 const timelineKindLabel: Record<TimelineItemView["kind"], string> = {
   task: "任务",
   course: "课程",
+  exam: "考试",
   meeting: "日程",
   unavailable: "不可用",
   routine: "固定",

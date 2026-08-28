@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const daySegmentSchema = z.enum(["morning", "afternoon", "evening"]);
 const prioritySchema = z.enum(["low", "normal", "high", "urgent"]);
-const timetableKindSchema = z.enum(["course", "meeting", "unavailable", "routine", "recovery"]);
+const timetableKindSchema = z.enum(["course", "exam", "meeting", "unavailable", "routine", "recovery"]);
 const evidenceFields = {
   capacity_impact: z.array(z.string()).optional(),
   protected_evidence: z.array(z.string()).optional(),

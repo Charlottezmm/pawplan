@@ -108,7 +108,7 @@ export type RecoveryBlockView = {
 
 export type TimelineItemView = {
   id: string;
-  kind: "task" | "course" | "meeting" | "unavailable" | "routine" | "recovery";
+  kind: "task" | "course" | "exam" | "meeting" | "unavailable" | "routine" | "recovery";
   title: string;
   startsAt: string;
   endsAt: string;

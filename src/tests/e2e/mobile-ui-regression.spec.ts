@@ -136,7 +136,7 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
     for (const width of [375, 390, 430]) {
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/constraints?date=2026-09-01");
-      await expect(page.getByRole("heading", { name: "固定安排", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "日程", exact: true })).toBeVisible();
       await expectNoPageOverflow(page, width);
 
       const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
