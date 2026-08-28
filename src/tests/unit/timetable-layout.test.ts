@@ -89,6 +89,7 @@ describe("timetable layout", () => {
     const contentRule = css.match(/\.blockContent \{[\s\S]*?\}/)?.[0] ?? "";
     const titleRule = css.match(/\.blockTitle \{[\s\S]*?\}/)?.[0] ?? "";
     const metaRule = css.match(/\.blockMeta \{[\s\S]*?\}/)?.[0] ?? "";
+    const desktopRule = css.slice(css.indexOf("@media (min-width: 761px)"), css.indexOf("@media (max-width: 760px)"));
     const mobileRule = css.slice(css.indexOf("@media (max-width: 760px)"));
 
     expect(blockRule).toContain("top: var(--block-top);");
@@ -117,6 +118,9 @@ describe("timetable layout", () => {
     expect(component).toContain('selected?.location?.trim() || "地点待确认"');
     expect(component).toContain("redactPrivateTitle(selected.courseName?.trim() || selected.title)");
     expect(component).not.toContain("candidate.height < 44");
+    expect(desktopRule).toContain("width: min(1380px, calc(100vw - 48px));");
+    expect(desktopRule).toContain("font-size: 13px;");
+    expect(desktopRule).toContain("grid-template-columns: 64px repeat(7, minmax(0, 1fr));");
     expect(mobileRule).toContain("width: calc(100% + 32px);");
     expect(mobileRule).toContain("grid-template-columns: repeat(7, minmax(44px, 1fr));");
     expect(mobileRule).toContain("min-width: 44px;");
