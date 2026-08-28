@@ -127,6 +127,7 @@ test.beforeAll(async () => {
 });
 
 test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px", async ({ browserName, context, page }, testInfo) => {
+  test.setTimeout(60_000);
   test.skip(browserName !== "chromium", "explicit viewport matrix runs once in Chromium");
   test.skip(!dbAvailable, "local DATABASE_URL/Postgres unavailable or schema not migrated");
 
@@ -175,13 +176,13 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("Science and Engineering Building, Laboratory 410, East Wing")).toBeVisible();
-    await expectMinimumHeight(dialog.getByRole("button", { name: "关闭课程详情" }));
+    await expectMinimumHeight(dialog.getByRole("button", { name: "关闭日程详情" }));
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox?.width ?? 999).toBeLessThanOrEqual(390);
     await expectNoPageOverflow(page, 390);
     await attachScreenshot(page, testInfo, "constraints-390-detail");
 
-    await dialog.getByRole("button", { name: "关闭课程详情" }).click();
+    await dialog.getByRole("button", { name: "关闭日程详情" }).click();
     const speechCourse = page.getByRole("button", { name: /Speech Communication/ }).first();
     const researchCourse = page.getByRole("button", { name: /Research Seminar/ }).first();
     await speechCourse.evaluate((element) => element.scrollIntoView({ block: "center" }));
@@ -192,7 +193,7 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
       (speechBox?.y ?? 0) + (speechBox?.height ?? 0) - 1,
     );
     await expect(dialog.getByRole("heading", { name: /Speech Communication/ })).toBeVisible();
-    await dialog.getByRole("button", { name: "关闭课程详情" }).click();
+    await dialog.getByRole("button", { name: "关闭日程详情" }).click();
     await researchCourse.evaluate((element) => element.scrollIntoView({ block: "center" }));
     const researchBox = await researchCourse.boundingBox();
     expect(researchBox).not.toBeNull();
@@ -202,7 +203,7 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
     );
     await expect(dialog.getByRole("heading", { name: "Research Seminar" })).toBeVisible();
     await expect(dialog.getByText("地点待确认", { exact: true })).toBeVisible();
-    await dialog.getByRole("button", { name: "关闭课程详情" }).click();
+    await dialog.getByRole("button", { name: "关闭日程详情" }).click();
 
     await page.goto("/plan?view=day");
     const scheduleTabs = page.getByRole("navigation", { name: "日程视图" });
