@@ -181,9 +181,14 @@ export function TimeBlockTimetable({
   const [now, setNow] = useState(shanghaiNow);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const desktopWeekRef = useRef<HTMLDivElement>(null);
   const days = useMemo(() => positionedDays(week), [week]);
   const ticks = useMemo(() => hourTicks(week.axis), [week.axis]);
   const selectedDay = days.find((day) => day.dateKey === week.selectedDateKey) ?? days[0];
+  const earliestStartMinute = useMemo(() => {
+    const starts = days.flatMap((day) => day.occurrences.map((item) => item.startMinute));
+    return starts.length > 0 ? Math.min(...starts) : 8 * 60;
+  }, [days]);
   const [, selectedMonth = "", selectedDate = ""] = week.selectedDateKey.split("-");
   const selectedMonthLabel = `${Number(selectedMonth)}月`;
   const selectedDateLabel = String(Number(selectedDate));
@@ -199,6 +204,13 @@ export function TimeBlockTimetable({
     const timer = window.setInterval(() => setNow(shanghaiNow()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 760px)").matches) return;
+    const shell = desktopWeekRef.current;
+    if (!shell) return;
+    shell.scrollTop = Math.max(0, earliestStartMinute - week.axis.startMinute - 60);
+  }, [earliestStartMinute, week.axis.startMinute, week.selectedDateKey]);
 
   useEffect(() => {
     if (!selected) return;
@@ -303,11 +315,11 @@ export function TimeBlockTimetable({
         </div>
       ) : null}
 
-      <div className={styles.desktopWeek} hidden={week.unavailable}>
+      <div ref={desktopWeekRef} className={styles.desktopWeek} hidden={week.unavailable}>
         <div className={styles.weekHeader}>
           <div aria-hidden="true" />
           {days.map((day) => (
-            <div key={day.dateKey} className={`${styles.dayHeader} ${day.isToday ? styles.todayHeader : ""}`}>
+            <div key={day.dateKey} className={`${styles.dayHeader} ${day.isToday ? styles.todayHeader : ""} ${day.dateKey === week.selectedDateKey ? styles.selectedDayHeader : ""}`}>
               <span>{day.weekdayLabel}</span>
               <strong>{day.dateLabel}</strong>
             </div>
@@ -320,7 +332,7 @@ export function TimeBlockTimetable({
             ))}
           </div>
           {days.map((day) => (
-            <div key={day.dateKey} className={`${styles.desktopDayColumn} ${day.isToday ? styles.todayColumn : ""}`}>
+            <div key={day.dateKey} className={`${styles.desktopDayColumn} ${day.isToday ? styles.todayColumn : ""} ${day.dateKey === week.selectedDateKey ? styles.selectedDayColumn : ""}`}>
               {renderGrid(day)}
             </div>
           ))}

@@ -164,10 +164,22 @@
 }
 
 .weekHeader {
+  position: sticky;
+  top: 0;
+  z-index: 8;
   display: grid;
   grid-template-columns: 58px repeat(7, minmax(0, 1fr));
   border-bottom: 1px solid var(--schedule-line);
   background: var(--schedule-card);
+}
+
+.desktopWeek {
+  height: min(720px, calc(100dvh - 220px));
+  min-height: 520px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-color: var(--schedule-line-strong) transparent;
+  scrollbar-width: thin;
 }
 
 .dayHeader {
@@ -197,6 +209,15 @@
 
 .todayHeader strong,
 .todayHeader span {
+  color: var(--schedule-accent);
+}
+
+.selectedDayHeader {
+  box-shadow: inset 0 -3px var(--schedule-accent);
+}
+
+.selectedDayHeader strong,
+.selectedDayHeader span {
   color: var(--schedule-accent);
 }
 
@@ -234,18 +255,13 @@
 
 .dayGrid {
   background-color: var(--schedule-canvas);
-  background-image:
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent 29px,
-      color-mix(in srgb, var(--schedule-line) 42%, transparent) 29px,
-      color-mix(in srgb, var(--schedule-line) 42%, transparent) 30px,
-      transparent 30px,
-      transparent 59px,
-      var(--schedule-line) 59px,
-      var(--schedule-line) 60px
-    );
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 59px,
+    var(--schedule-line) 59px,
+    var(--schedule-line) 60px
+  );
 }
 
 .interactiveGrid {
@@ -254,6 +270,10 @@
 
 .todayColumn .dayGrid {
   background-color: color-mix(in srgb, var(--schedule-accent-soft) 25%, var(--schedule-canvas));
+}
+
+.selectedDayColumn .dayGrid {
+  background-color: color-mix(in srgb, var(--schedule-accent-soft) 18%, var(--schedule-canvas));
 }
 
 .courseBlock {
@@ -268,12 +288,12 @@
   flex-direction: column;
   align-items: flex-start;
   overflow: visible;
-  border: 1px solid color-mix(in srgb, var(--course-color) 14%, var(--schedule-line));
+  border: 1px solid color-mix(in srgb, var(--course-color) 12%, var(--schedule-line));
   border-radius: 13px;
-  background: color-mix(in srgb, var(--course-color) 10%, var(--schedule-card));
+  background: color-mix(in srgb, var(--course-color) 16%, var(--schedule-card));
   box-shadow:
-    0 1px 2px rgba(62, 52, 38, 0.06),
-    0 5px 14px color-mix(in srgb, var(--course-color) 10%, transparent);
+    0 2px 5px rgba(62, 52, 38, 0.07),
+    0 8px 18px color-mix(in srgb, var(--course-color) 9%, transparent);
   color: var(--schedule-ink);
   cursor: pointer;
   padding: 6px 7px 5px 12px;
@@ -327,7 +347,7 @@
 .courseBlock:hover {
   z-index: 5;
   border-color: color-mix(in srgb, var(--course-color) 22%, var(--schedule-line-strong));
-  background: color-mix(in srgb, var(--course-color) 14%, var(--schedule-card));
+  background: color-mix(in srgb, var(--course-color) 20%, var(--schedule-card));
   box-shadow:
     0 2px 5px rgba(62, 52, 38, 0.08),
     0 8px 18px color-mix(in srgb, var(--course-color) 10%, transparent);
@@ -391,6 +411,17 @@
 .compactBlock .blockMeta {
   font-size: 9px;
   line-height: 1.1;
+}
+
+@media (min-width: 761px) {
+  .courseBlock:not(.compactBlock) .blockTitle {
+    display: -webkit-box;
+    line-height: 1.22;
+    text-overflow: clip;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
 }
 
 .conflictBlock {
