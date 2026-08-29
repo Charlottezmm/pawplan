@@ -143,6 +143,7 @@ function CourseBlock({
     ? displayCourseName
     : `${displayCourseName}，${displayTitle}`;
   const timeLabel = `${minuteLabel(item.startMinute)}–${minuteLabel(item.endMinute)}`;
+  const visibleTimeLabel = compact ? minuteLabel(item.startMinute) : timeLabel;
   const locationLabel = item.location?.trim() || "地点待确认";
   return (
     <button
@@ -158,9 +159,13 @@ function CourseBlock({
       <span className={styles.blockContent}>
         <strong className={styles.blockTitle}>{displayTitle}</strong>
         <span className={styles.blockMeta}>
-          <span className={styles.blockTime}>{timeLabel}</span>
-          <span className={styles.metaSeparator} aria-hidden="true">·</span>
-          <span className={styles.blockLocation}>{locationLabel}</span>
+          <span className={styles.blockTime}>{visibleTimeLabel}</span>
+          {compact ? null : (
+            <>
+              <span className={styles.metaSeparator} aria-hidden="true">·</span>
+              <span className={styles.blockLocation}>{locationLabel}</span>
+            </>
+          )}
         </span>
       </span>
       {item.conflict ? <AlertTriangle className={styles.blockConflictIcon} size={14} aria-hidden="true" /> : null}

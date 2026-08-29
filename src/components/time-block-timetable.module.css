@@ -400,17 +400,27 @@
 }
 
 .compactBlock .blockContent {
-  gap: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
 }
 
 .compactBlock .blockTitle {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 11px;
   line-height: 1.1;
 }
 
 .compactBlock .blockMeta {
+  width: auto;
+  flex: 0 0 auto;
   font-size: 9px;
   line-height: 1.1;
+}
+
+.compactBlock.conflictBlock .blockMeta {
+  margin-right: 15px;
 }
 
 @media (min-width: 761px) {

@@ -109,11 +109,13 @@ describe("timetable layout", () => {
     expect(titleRule).toContain("white-space: nowrap;");
     expect(metaRule).toContain("display: flex;");
     expect(metaRule).toContain("overflow: hidden;");
-    expect(css).not.toMatch(/\.compactBlock \.blockTime\s*\{[^}]*display:\s*none/);
-    expect(css).not.toMatch(/\.compactBlock \.blockLocation\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/\.compactBlock \.blockContent\s*\{[^}]*flex-direction:\s*row/);
+    expect(css).toMatch(/\.compactBlock \.blockContent\s*\{[^}]*align-items:\s*center/);
     expect(component).toContain("item.courseName?.trim() || item.title");
+    expect(component).toContain("compact ? minuteLabel(item.startMinute) : timeLabel");
     expect(component).toContain("styles.blockTime");
     expect(component).toContain("styles.blockLocation");
+    expect(component).toContain("compact ? null : (");
     expect(component).toContain('item.location?.trim() || "地点待确认"');
     expect(component).toContain('selected?.location?.trim() || "地点待确认"');
     expect(component).toContain("redactPrivateTitle(selected.courseName?.trim() || selected.title)");

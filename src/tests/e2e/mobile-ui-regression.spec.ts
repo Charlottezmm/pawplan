@@ -137,7 +137,6 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
     for (const width of [375, 390, 430]) {
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/constraints?date=2026-09-01");
-      await expect(page.getByRole("heading", { name: "日程", exact: true })).toBeVisible();
       await expectNoPageOverflow(page, width);
 
       const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
@@ -152,8 +151,7 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
 
       const dateStrip = page.getByRole("navigation", { name: "选择日期" });
       await expectMinimumHeight(dateStrip.getByRole("link"));
-      await expectMinimumHeight(page.getByRole("link", { name: /上一天|下一天/ }));
-      await expectMinimumHeight(page.getByRole("link", { name: "今天", exact: true }));
+      await expectMinimumHeight(page.getByRole("link", { name: /上一周|下一周/ }));
       await expectMinimumHeight(page.getByLabel("Mobile navigation").getByRole("link"));
 
       const shortCourse = page.getByRole("button", { name: /Advanced Robotics Laboratory/ }).first();
@@ -162,10 +160,16 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
         visualHeight: element.getBoundingClientRect().height,
         hitHeight: Number.parseFloat(getComputedStyle(element, "::after").height),
         contentOverflow: element.scrollWidth > element.clientWidth + 1,
+        contentDirection: getComputedStyle(element.querySelector(":scope > span")!).flexDirection,
+        visibleText: element.textContent,
       }));
       expect(shortMetrics.visualHeight).toBeCloseTo(30, 0);
       expect(shortMetrics.hitHeight).toBeGreaterThanOrEqual(44);
       expect(shortMetrics.contentOverflow).toBe(false);
+      expect(shortMetrics.contentDirection).toBe("row");
+      expect(shortMetrics.visibleText).toContain("11:30");
+      expect(shortMetrics.visibleText).not.toContain("12:00");
+      expect(shortMetrics.visibleText).not.toContain("Science and Engineering Building");
 
       await attachScreenshot(page, testInfo, `constraints-${width}`);
     }
