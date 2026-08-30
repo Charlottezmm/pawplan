@@ -1,7 +1,7 @@
 # PawPlan UI / UX 经验证优化清单
 
 - 日期：2026-08-30（Asia/Shanghai）
-- 状态：视觉方向已确认；第一至第三批均已完成实现与本地验证，独立 Import 幂等设计仍未纳入
+- 状态：视觉方向已确认；第一至第三批均已完成实现、生产部署与读回，独立 Import 幂等设计仍未纳入
 - 基线：`2180554cc265ad4cd4d5a89857bc7595e16efcde`
 - 范围：PawPlan v1 formal controlled beta，Web 与移动端同等重要
 - 依据：当前代码、README、已确认的 2026-08-27 产品精简方案，以及 390px 生产页面只读核对
@@ -413,6 +413,8 @@ Review 是 PawPlan 的核心安全界面，不移出主导航，也不折叠成 
 - `npm test`：86 个测试文件、500 项测试通过；3 个数据库集成测试文件共 8 项按既有条件跳过；
 - Playwright Chromium 与 Mobile Safari：69 项通过，5 项按浏览器/设备矩阵条件跳过；覆盖 375/390/430px、无横向溢出、移动 sheet、真实分钟高度和核心流程；
 - `npm run build`：通过；`/today` 生产构建首载为 109 kB；
+- 生产部署 `dpl_YYMi3fawXksoxFBqcaghgkRVFmBS` 状态为 `READY`，主域名 `https://pawplan.charlottezmm.info` 已更新；根路径与 `/today` 未登录访问均正确回到 `/login`，登录页返回 200；
+- 生产端 README 预览图与本地发布文件 SHA-256 完全一致，证明新静态产物已在主域名读回；移动端 390px 登录页也已通过真实浏览器语义快照核对；
 - 未纳入：Import 后端判重、冲突门禁与幂等保存。它会改变数据行为和保存契约，不能和本次视觉收敛混做。
 
 ## 10. 相关现行依据
