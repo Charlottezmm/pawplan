@@ -433,6 +433,8 @@ Today 只读固定时间轴仍只接收同时具有真实开始与结束时间�
 - 本地测试数据库与生产 Neon 数据库均已执行 `0021_bumpy_gwen_stacy.sql`；生产读回确认 `import_fingerprint` 字段与 workspace 级部分唯一索引各 1 个；
 - 普通 PostgreSQL 驱动在本机建立生产 SSL 连接失败后没有降低证书校验，而是改用 PawPlan 线上相同的 Neon WebSocket 驱动完成 migration 和 schema readback；
 - 静态检查确认产品代码中不再存在 `window.confirm`、650/750/800 未加载字重、设置页强制缩小点击面积的 utility 或局部 `text-amber-700`。
+- 生产部署 `dpl_GsgzEQ4jha3qjbiDEzwEQU8LS3Sd` 状态为 `READY`，主域名 `https://pawplan.charlottezmm.info` 已更新；根路径、Today、Import 与日程页未登录访问均正确回到 Login，Import API 未登录写请求返回 401；
+- 生产端 README 预览图与本地发布文件 SHA-256 完全一致；登录态真实浏览器已核对桌面日程页、Import 页，以及 390px 下 Import、日程、五项计划分类和四项移动底栏，最后恢复原始视口并停留在日程页。
 
 ## 10. 相关现行依据
 
