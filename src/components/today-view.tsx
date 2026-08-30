@@ -13,7 +13,12 @@ import { DialogSheet } from "./ui/dialog-sheet";
 import { ConfirmDialog } from "./ui/confirm-dialog";
 import { Notice } from "./ui/notice";
 import { EmptyState } from "./ui/primitives";
-import { defaultPostponeDate, moveOutOfScheduleUpdate, postponeTaskUpdate } from "@/lib/planning/task-actions";
+import {
+  defaultPostponeDate,
+  moveOutOfScheduleUpdate,
+  persistedDateMatchesDateKey,
+  postponeTaskUpdate,
+} from "@/lib/planning/task-actions";
 import type { TodayViewData } from "@/lib/planning/view-data";
 
 type Task = TodayViewData["tasks"][number];
@@ -98,7 +103,7 @@ export async function persistTodayTaskUpdate(
   const savedTask = payload.task as Record<string, unknown>;
   const statusMatches = body.status === undefined || savedTask.status === body.status;
   const blockedMatches = body.blocked === undefined || savedTask.blocked === body.blocked;
-  const dateMatches = body.date === undefined || (typeof savedTask.date === "string" && savedTask.date.startsWith(body.date));
+  const dateMatches = body.date === undefined || persistedDateMatchesDateKey(savedTask.date, body.date);
   if (savedTask.id !== id || !statusMatches || !blockedMatches || !dateMatches) {
     throw new Error("Task update response did not confirm the requested state");
   }
@@ -170,7 +175,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       await persistTodayTaskUpdate(postponeTask.id, { date: update.date, status: update.status });
     } catch {
       setSavingActionId(null);
-      setTaskActionFeedback({ tone: "error", message: "延后失败，任务仍保留在今天。" });
+      setTaskActionFeedback({ tone: "error", message: "延后结果无法确认，请刷新后核对任务日期。" });
       return;
     }
 
@@ -190,7 +195,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       await persistTodayTaskUpdate(task.id, { status: update.status });
     } catch {
       setSavingActionId(null);
-      setTaskActionFeedback({ tone: "error", message: "移出排期失败，任务仍保留在今天。" });
+      setTaskActionFeedback({ tone: "error", message: "移出排期结果无法确认，请刷新后核对任务位置。" });
       return;
     }
 

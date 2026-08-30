@@ -11,6 +11,12 @@ export function shanghaiDateKey(date = new Date()) {
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
+export function persistedDateMatchesDateKey(value: unknown, expectedDateKey: string) {
+  if (typeof value !== "string") return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && shanghaiDateKey(date) === expectedDateKey;
+}
+
 export function addDaysToDateKey(dateKey: string, days: number) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("Invalid date key");
   const [year, month, day] = dateKey.split("-").map(Number);

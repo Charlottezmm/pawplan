@@ -17,6 +17,14 @@ describe("Today task status persistence", () => {
     }));
   });
 
+  it("accepts a persisted UTC timestamp that represents the requested Shanghai date", async () => {
+    const request = vi.fn(async () => Response.json({
+      task: { id: taskId, status: "todo", blocked: false, date: "2026-09-03T16:00:00.000Z" },
+    }));
+
+    await expect(persistTodayTaskUpdate(taskId, { status: "todo", date: "2026-09-04" }, request)).resolves.toBeUndefined();
+  });
+
   it("rejects network errors and non-2xx responses", async () => {
     const networkFailure = vi.fn(async () => {
       throw new TypeError("Failed to fetch");

@@ -3,6 +3,7 @@ import {
   addDaysToDateKey,
   defaultPostponeDate,
   moveOutOfScheduleUpdate,
+  persistedDateMatchesDateKey,
   postponeTaskUpdate,
   shanghaiDateKey,
 } from "@/lib/planning/task-actions";
@@ -16,6 +17,12 @@ describe("task date actions", () => {
 
   it("moves across month boundaries without changing the date key shape", () => {
     expect(addDaysToDateKey("2026-08-31", 1)).toBe("2026-09-01");
+  });
+
+  it("matches persisted UTC timestamps against the Shanghai calendar date", () => {
+    expect(persistedDateMatchesDateKey("2026-09-03T16:00:00.000Z", "2026-09-04")).toBe(true);
+    expect(persistedDateMatchesDateKey("2026-09-04T16:00:00.000Z", "2026-09-04")).toBe(false);
+    expect(persistedDateMatchesDateKey("not-a-date", "2026-09-04")).toBe(false);
   });
 
   it("rejects impossible calendar dates", () => {

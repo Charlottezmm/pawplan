@@ -10,6 +10,7 @@ import { DialogSheet } from "./ui/dialog-sheet";
 import { Notice } from "./ui/notice";
 import type { MonthDayView, MonthViewData, PlanTaskView, TimelineItemView, TodayViewData, WeekDayView, WeekViewData } from "@/lib/planning/view-data";
 import { redactPrivateTitle } from "@/lib/display/privacy";
+import { persistedDateMatchesDateKey } from "@/lib/planning/task-actions";
 
 export type PlanTab = "day" | "week" | "month" | "reschedule";
 
@@ -400,7 +401,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
       }
       const savedTask = data.task;
       const statusMatches = body.status === undefined || savedTask?.status === body.status;
-      const dateMatches = body.date === undefined || (typeof savedTask?.date === "string" && savedTask.date.startsWith(body.date));
+      const dateMatches = body.date === undefined || persistedDateMatchesDateKey(savedTask?.date, body.date);
       if (!savedTask || savedTask.id !== task.id || !statusMatches || !dateMatches) {
         throw new Error("更新结果无法核对，已恢复原状态，请重试");
       }
