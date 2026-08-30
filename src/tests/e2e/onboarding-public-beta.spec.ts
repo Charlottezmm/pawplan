@@ -24,20 +24,31 @@ async function routeEmptyOnboarding(page: Page) {
 test("shows invite-gated login and create modes without open workspace creation copy", async ({ page }) => {
   await page.goto("/login");
 
-  const loginMode = page.getByRole("button", { name: "登录已有 workspace" });
-  const createMode = page.getByRole("button", { name: "使用邀请创建" });
+  const loginMode = page.getByRole("button", { name: "登录已有计划空间" });
+  const createMode = page.getByRole("button", { name: "邀请创建计划空间" });
 
   await expect(loginMode).toBeVisible();
   await expect(loginMode).toHaveAttribute("aria-pressed", "true");
   await expect(createMode).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByText("新名字会自动创建")).toHaveCount(0);
-  await expect(page.getByPlaceholder("Invite token")).toHaveCount(0);
+  await expect(page.getByLabel("邀请码")).toHaveCount(0);
+  await expect(page.getByLabel("计划空间名称")).toHaveAttribute("name", "workspaceName");
+  await expect(page.getByLabel("计划空间名称")).toHaveAttribute("required", "");
+  await expect(page.getByLabel("计划空间名称")).toHaveAttribute("autocomplete", "username");
+  await expect(page.getByLabel("密码", { exact: true })).toHaveAttribute("autocomplete", "current-password");
 
   await createMode.click();
 
   await expect(loginMode).toHaveAttribute("aria-pressed", "false");
   await expect(createMode).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByPlaceholder("Invite token")).toBeVisible();
+  await expect(page.getByLabel("邀请码")).toBeVisible();
+  await expect(page.getByLabel("确认密码")).toBeVisible();
+  await expect(page.getByLabel("密码", { exact: true })).toHaveAttribute("autocomplete", "new-password");
+
+  await page.getByRole("button", { name: "显示密码" }).click();
+  await expect(page.getByLabel("密码", { exact: true })).toHaveAttribute("type", "text");
+  await expect(page.getByLabel("确认密码")).toHaveAttribute("type", "text");
+  await expect(page.getByText("目前没有自助找回或重置入口")).toHaveCount(1);
 });
 
 test("creates a beta workspace through the mocked invite route and redirects to Today", async ({ page }) => {
@@ -53,10 +64,11 @@ test("creates a beta workspace through the mocked invite route and redirects to 
   });
 
   await page.goto("/login");
-  await page.getByRole("button", { name: "使用邀请创建" }).click();
-  await page.getByPlaceholder("Workspace 名称").fill("Focus Lab");
-  await page.getByPlaceholder("密码").fill("correct horse");
-  await page.getByPlaceholder("Invite token").fill("BETA-123");
+  await page.getByRole("button", { name: "邀请创建计划空间" }).click();
+  await page.getByLabel("计划空间名称").fill("Focus Lab");
+  await page.getByLabel("密码", { exact: true }).fill("correct horse");
+  await page.getByLabel("确认密码").fill("correct horse");
+  await page.getByLabel("邀请码").fill("BETA-123");
   await page.getByRole("button", { name: "创建并进入" }).click();
 
   await expect(page).toHaveURL(/\/today$/);
@@ -78,14 +90,15 @@ test("creates a workspace from a one-time invite link without exposing the invit
 
   await page.goto("/join/PAW-LINK-123");
 
-  await expect(page.getByText("你被邀请使用 PawPlan v1 formal。")).toBeVisible();
-  await expect(page.getByPlaceholder("Invite token")).toHaveCount(0);
-  await page.getByPlaceholder("Workspace 名称").fill("Invite Lab");
-  await page.getByPlaceholder("密码").fill("correct horse");
+  await expect(page.getByText(/把任务、固定日程和 Agent 建议放进同一个可审核的计划空间/)).toBeVisible();
+  await expect(page.getByLabel("邀请码")).toHaveCount(0);
+  await page.getByLabel("计划空间名称").fill("Invite Lab");
+  await page.getByLabel("密码", { exact: true }).fill("correct horse");
+  await page.getByLabel("确认密码").fill("correct horse");
   await page.getByRole("button", { name: "创建并进入" }).click();
 
   await expect(page).toHaveURL(/\/today$/);
-  expect(submittedBody).toMatchObject({
+  expect(submittedBody).toEqual({
     workspaceName: "Invite Lab",
     password: "correct horse",
     inviteCode: "PAW-LINK-123",
@@ -98,11 +111,68 @@ test("shows the login error from the existing workspace login route", async ({ p
   });
 
   await page.goto("/login");
-  await page.getByPlaceholder("Workspace 名称").fill("Missing Lab");
-  await page.getByPlaceholder("密码").fill("correct horse");
+  await page.getByLabel("计划空间名称").fill("Missing Lab");
+  await page.getByLabel("密码", { exact: true }).fill("correct horse");
   await page.getByRole("button", { name: "进入" }).click();
 
-  await expect(page.getByText("Workspace not found")).toBeVisible();
+  await expect(page.getByText("未找到这个计划空间")).toBeVisible();
+});
+
+test("shows a Chinese error when an invite can no longer be used", async ({ page }) => {
+  await page.route("**/api/beta/workspaces", async (route) => {
+    await route.fulfill({ status: 403, json: { error: "Invite code expired" } });
+  });
+
+  await page.goto("/login");
+  await page.getByRole("button", { name: "邀请创建计划空间" }).click();
+  await page.getByLabel("计划空间名称").fill("Focus Lab");
+  await page.getByLabel("密码", { exact: true }).fill("correct horse");
+  await page.getByLabel("确认密码").fill("correct horse");
+  await page.getByLabel("邀请码").fill("OLD-BETA");
+  await page.getByRole("button", { name: "创建并进入" }).click();
+
+  await expect(page.getByText("邀请码已过期，请申请新的邀请链接", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建并进入" })).toBeEnabled();
+});
+
+test("recovers from non-JSON and network login failures without leaving the form pending", async ({ page }) => {
+  await page.route("**/api/auth/login", async (route) => {
+    await route.fulfill({ status: 502, contentType: "text/html", body: "<h1>Bad gateway</h1>" });
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("计划空间名称").fill("Focus Lab");
+  await page.getByLabel("密码", { exact: true }).fill("correct horse");
+  await page.getByRole("button", { name: "进入" }).click();
+
+  await expect(page.getByText("登录失败，请稍后重试", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "进入" })).toBeEnabled();
+
+  await page.unroute("**/api/auth/login");
+  await page.route("**/api/auth/login", async (route) => route.abort("failed"));
+  await page.getByRole("button", { name: "进入" }).click();
+
+  await expect(page.getByText("网络请求失败，请检查连接后重试", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "进入" })).toBeEnabled();
+});
+
+test("blocks workspace creation when password confirmation does not match", async ({ page }) => {
+  let createRequests = 0;
+  await page.route("**/api/beta/workspaces", async (route) => {
+    createRequests += 1;
+    await route.fulfill({ status: 201, json: { created: true } });
+  });
+
+  await page.goto("/login");
+  await page.getByRole("button", { name: "邀请创建计划空间" }).click();
+  await page.getByLabel("计划空间名称").fill("Focus Lab");
+  await page.getByLabel("密码", { exact: true }).fill("correct horse");
+  await page.getByLabel("确认密码").fill("different horse");
+  await page.getByLabel("邀请码").fill("BETA-123");
+  await page.getByRole("button", { name: "创建并进入" }).click();
+
+  await expect(page.getByText("两次输入的密码不一致", { exact: true })).toBeVisible();
+  expect(createRequests).toBe(0);
 });
 
 test("honors a relative login next path after existing workspace login", async ({ page }) => {
@@ -116,8 +186,8 @@ test("honors a relative login next path after existing workspace login", async (
   });
 
   await page.goto("/login?next=%2Fapi%2Foauth%2Fauthorize%3Fresponse_type%3Dcode%26client_id%3Dclient-1");
-  await page.getByPlaceholder("Workspace 名称").fill("Focus Lab");
-  await page.getByPlaceholder("密码").fill("correct horse");
+  await page.getByLabel("计划空间名称").fill("Focus Lab");
+  await page.getByLabel("密码", { exact: true }).fill("correct horse");
   await page.getByRole("button", { name: "进入" }).click();
 
   await expect(page).toHaveURL(/\/api\/oauth\/authorize\?response_type=code&client_id=client-1$/);
@@ -134,8 +204,8 @@ test("ignores external login next targets after existing workspace login", async
   });
 
   await page.goto("/login?next=https%3A%2F%2Fevil.example%2Fcallback");
-  await page.getByPlaceholder("Workspace 名称").fill("Focus Lab");
-  await page.getByPlaceholder("密码").fill("correct horse");
+  await page.getByLabel("计划空间名称").fill("Focus Lab");
+  await page.getByLabel("密码", { exact: true }).fill("correct horse");
   await page.getByRole("button", { name: "进入" }).click();
 
   await expect(page).toHaveURL(/\/today$/);

@@ -68,7 +68,15 @@ test("import page shows preview warnings and saves with explicit confirmation", 
 
   await page.goto("/import");
 
+  await expect(page.getByLabel("Markdown 内容")).toHaveValue("");
+  await expect(page.getByLabel("CSV 内容")).toHaveValue("");
+  await page.getByRole("button", { name: "填入 plan.md 示例" }).click();
+  await expect(page.getByLabel("Markdown 内容")).toHaveValue(/Goal: ship PawPlan tomorrow/);
+
   await page.getByRole("button", { name: "预览" }).first().click();
+  await expect(page.getByText("目标：ship PawPlan tomorrow")).toBeVisible();
+  await expect(page.getByText("提醒（1）：不会阻止保存，建议先确认")).toBeVisible();
+  await expect(page.getByText("冲突（1）：可能产生重复或重叠，保存前请确认")).toBeVisible();
   await expect(page.getByText("Duplicate project name: PawPlan Import")).toBeVisible();
   await expect(page.getByText("Project PawPlan Import appears 2 times in this import")).toBeVisible();
 
@@ -76,8 +84,13 @@ test("import page shows preview warnings and saves with explicit confirmation", 
   await expect.poll(() => saveRequests).toEqual([
     expect.objectContaining({ confirmation: "CONFIRM_PLAN_IMPORT", previewToken: "plan-preview-token" }),
   ]);
+  await expect(page.getByText("已保存 plan.md：项目已创建或复用，未自动生成任务或里程碑。")).toBeVisible();
 
+  await page.getByRole("button", { name: "填入 timetable.csv 示例" }).click();
   await page.getByRole("button", { name: "预览" }).nth(1).click();
+  await expect(page.getByText(/预览行数：1 · 将生成时间块：2 · 时区：Asia\/Shanghai/)).toBeVisible();
+  await expect(page.getByText(/课程 · 星期一 · 09:00-11:00/)).toBeVisible();
   await expect(page.getByText("Times are interpreted in Asia/Shanghai")).toBeVisible();
   await expect(page.getByText("Deep Learning Lecture overlaps Existing Block")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "HTML" })).toHaveCount(0);
 });

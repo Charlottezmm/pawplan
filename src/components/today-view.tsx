@@ -15,6 +15,8 @@ import type { TodayViewData } from "@/lib/planning/view-data";
 type Task = TodayViewData["tasks"][number];
 type PersistedStatus = Task["status"];
 type DisplayStatus = PersistedStatus | "blocked";
+type TaskPatch = { status?: PersistedStatus; blocked?: boolean };
+type FetchTaskPatch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 const weekdayChars = "日一二三四五六";
 const priorityLabel: Record<"low" | "normal" | "high" | "urgent", string> = {
   low: "低",
@@ -67,6 +69,31 @@ export function buildTaskCopyText(task: Pick<Task, "title" | "context" | "track"
   return lines.join("\n");
 }
 
+export async function persistTodayTaskUpdate(
+  id: string,
+  body: TaskPatch,
+  request: FetchTaskPatch = fetch,
+) {
+  const response = await request("/api/tasks", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...body }),
+  });
+  if (!response.ok) throw new Error("Task update request failed");
+
+  const payload = await response.json().catch(() => null) as { task?: unknown } | null;
+  if (!payload || typeof payload.task !== "object" || payload.task === null) {
+    throw new Error("Task update response was invalid");
+  }
+
+  const savedTask = payload.task as Record<string, unknown>;
+  const statusMatches = body.status === undefined || savedTask.status === body.status;
+  const blockedMatches = body.blocked === undefined || savedTask.blocked === body.blocked;
+  if (savedTask.id !== id || !statusMatches || !blockedMatches) {
+    throw new Error("Task update response did not confirm the requested state");
+  }
+}
+
 export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTasks?: ReactNode }) {
   const [tasks, setTasks] = useState<Array<Task & { displayStatus: DisplayStatus }>>(
     data.tasks.map((task) => ({
@@ -79,6 +106,8 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const [postponeTask, setPostponeTask] = useState<Task | null>(null);
   const [postponeDate, setPostponeDate] = useState(() => defaultPostponeDate());
   const [savingActionId, setSavingActionId] = useState<string | null>(null);
+  const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(() => new Set());
+  const statusRequests = useRef<Set<string>>(new Set());
   const [taskActionFeedback, setTaskActionFeedback] = useState<{ tone: "ok" | "error"; message: string } | null>(null);
 
   const doneCount = tasks.filter((task) => task.displayStatus === "done").length;
@@ -101,12 +130,13 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const cardPositions = useRef<Map<string, number>>(new Map());
   useLayoutEffect(() => {
     const cards = listRef.current?.querySelectorAll<HTMLElement>("[data-task-id]") ?? [];
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     cards.forEach((el) => {
       const id = el.dataset.taskId;
       if (!id) return;
       const nextTop = el.getBoundingClientRect().top;
       const prevTop = cardPositions.current.get(id);
-      if (prevTop !== undefined && prevTop !== nextTop) {
+      if (!reduceMotion && prevTop !== undefined && prevTop !== nextTop && typeof el.animate === "function") {
         el.animate(
           [{ transform: `translateY(${prevTop - nextTop}px)` }, { transform: "none" }],
           { duration: 380, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
@@ -138,15 +168,8 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const ringCircumference = 138;
   const ringOffset = hour === null || tasks.length === 0 ? ringCircumference : ringCircumference * (1 - doneCount / tasks.length);
 
-  async function patchTask(id: string, body: { status?: PersistedStatus; blocked?: boolean }) {
-    await fetch("/api/tasks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, ...body }),
-    });
-  }
-
   function openPostpone(task: Task) {
+    if (savingActionId || statusRequests.current.has(task.id)) return;
     setPostponeTask(task);
     setPostponeDate(defaultPostponeDate());
     setTaskActionFeedback(null);
@@ -174,10 +197,11 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   }
 
   async function moveOutOfSchedule(task: Task) {
+    if (savingActionId || statusRequests.current.has(task.id)) return;
     const confirmed = window.confirm(
       `确认将“${task.title}”移出排期？\n\n它会进入 Backlog，不再出现在 Today 或参与排期；之后仍可在 Backlog 页面找到。`,
     );
-    if (!confirmed || savingActionId) return;
+    if (!confirmed) return;
 
     setSavingActionId(task.id);
     const response = await fetch("/api/tasks", {
@@ -195,38 +219,54 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     setTaskActionFeedback({ tone: "ok", message: "已移出排期，可在 Backlog 页面找到。" });
   }
 
-  function setTaskStatus(id: string, status: DisplayStatus) {
+  async function setTaskStatus(id: string, status: DisplayStatus) {
+    if (savingActionId === id || statusRequests.current.has(id)) return;
     const currentTask = tasks.find((task) => task.id === id);
     if (!currentTask) return;
+
+    statusRequests.current.add(id);
+    setStatusSavingIds((current) => new Set(current).add(id));
+    setTaskActionFeedback(null);
+
+    let patch: TaskPatch;
+    let optimisticTask: Task & { displayStatus: DisplayStatus };
 
     // 卡住：独立于 status 的持久化标记
     if (status === "blocked") {
       const nextBlocked = currentTask.displayStatus !== "blocked";
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === id ? { ...task, displayStatus: nextBlocked ? "blocked" : "todo" } : task,
-        ),
-      );
-      void patchTask(id, { blocked: nextBlocked });
-      return;
+      patch = { blocked: nextBlocked };
+      optimisticTask = {
+        ...currentTask,
+        blocked: nextBlocked,
+        displayStatus: nextBlocked ? "blocked" : "todo",
+      };
+    } else {
+      const nextStatus = currentTask.displayStatus === status ? "todo" : status;
+      const wasBlocked = currentTask.displayStatus === "blocked";
+      patch = wasBlocked ? { status: nextStatus, blocked: false } : { status: nextStatus };
+      optimisticTask = {
+        ...currentTask,
+        displayStatus: nextStatus,
+        status: nextStatus,
+        done: nextStatus === "done",
+        blocked: wasBlocked ? false : currentTask.blocked,
+      };
     }
 
-    const nextStatus = currentTask.displayStatus === status ? "todo" : status;
-    const wasBlocked = currentTask.displayStatus === "blocked";
-    setTasks((current) =>
-      current.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              displayStatus: nextStatus,
-              status: nextStatus,
-              done: nextStatus === "done",
-            }
-          : task,
-      ),
-    );
-    // 设真实状态时，若此前被标卡住，一并清掉 blocked
-    void patchTask(id, wasBlocked ? { status: nextStatus, blocked: false } : { status: nextStatus });
+    setTasks((current) => current.map((task) => task.id === id ? optimisticTask : task));
+    try {
+      await persistTodayTaskUpdate(id, patch);
+    } catch {
+      setTasks((current) => current.map((task) => task.id === id ? currentTask : task));
+      setTaskActionFeedback({ tone: "error", message: `“${currentTask.title}”状态保存失败，已恢复原状态，请重试。` });
+    } finally {
+      statusRequests.current.delete(id);
+      setStatusSavingIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   async function copyTaskDetails(task: Task) {
@@ -308,7 +348,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         </div>
 
         {taskActionFeedback ? (
-          <p className={`paw-task-action-feedback ${taskActionFeedback.tone}`} role="status">
+          <p className={`paw-task-action-feedback ${taskActionFeedback.tone}`} role={taskActionFeedback.tone === "error" ? "alert" : "status"}>
             {taskActionFeedback.message}
           </p>
         ) : null}
@@ -331,14 +371,16 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         <div className="paw-task-list" ref={listRef}>
           {sortedTasks.map((task) => {
             const expanded = expandedId === task.id;
+            const statusSaving = statusSavingIds.has(task.id);
             return (
-            <article key={task.id} data-task-id={task.id} className={`paw-task-card ${statusClass(task.displayStatus)} ${expanded ? "expanded" : ""}`}>
+            <article key={task.id} data-task-id={task.id} aria-busy={statusSaving} className={`paw-task-card ${statusClass(task.displayStatus)} ${expanded ? "expanded" : ""}`}>
               <div className="paw-task-head">
                 <button
                   type="button"
-                  onClick={() => setTaskStatus(task.id, "done")}
+                  onClick={() => void setTaskStatus(task.id, "done")}
                   className={`paw-task-check ${task.displayStatus === "done" ? "selected" : ""}`}
                   aria-label={task.displayStatus === "done" ? "标记为未完成" : "标记完成"}
+                  disabled={statusSaving || savingActionId === task.id}
                 >
                   <Check size={15} />
                 </button>
@@ -378,8 +420,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   <div className="paw-task-actions">
                     <button
                       type="button"
-                      onClick={() => setTaskStatus(task.id, "blocked")}
+                      onClick={() => void setTaskStatus(task.id, "blocked")}
                       className={`paw-act-btn stuck ${task.displayStatus === "blocked" ? "selected" : ""}`}
+                      disabled={statusSaving || savingActionId === task.id}
                     >
                       卡住
                     </button>
@@ -387,7 +430,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                       type="button"
                       onClick={() => openPostpone(task)}
                       className="paw-act-btn defer"
-                      disabled={savingActionId === task.id}
+                      disabled={savingActionId === task.id || statusSaving}
                     >
                       <CalendarClock size={13} />
                       延后
@@ -396,7 +439,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                       type="button"
                       onClick={() => void moveOutOfSchedule(task)}
                       className="paw-act-btn archive"
-                      disabled={savingActionId === task.id}
+                      disabled={savingActionId === task.id || statusSaving}
                     >
                       <Archive size={13} />
                       移出排期
