@@ -4,6 +4,7 @@ import { Eye, FileText, Save, Table } from "lucide-react";
 import { useState } from "react";
 import { BackLink } from "./back-link";
 import { CatIcon } from "./cat-icon";
+import { Notice } from "./ui/notice";
 
 type PlanPreview = {
   goal: string | null;
@@ -271,35 +272,35 @@ export function ImportView() {
               {planState === "saving" ? "正在保存" : "保存"}
             </button>
           </div>
-          {planError ? <p className="paw-error">{planError}</p> : null}
-          {planMessage ? <p className="paw-toast">{planMessage}</p> : null}
+          {planError ? <Notice tone="danger" title={planError} dismissible onDismiss={() => setPlanError(null)} /> : null}
+          {planMessage ? <Notice tone="success" title={planMessage} autoDismissMs={5000} onDismiss={() => setPlanMessage(null)} /> : null}
           {planPreview ? (
             <div className="paw-import-preview">
               <p className="paw-more-label">目标：{planPreview.goal ?? "未识别"}</p>
               <p className="paw-row-meta">项目：{planPreview.projects.length} · 时区：{planPreview.timezone}</p>
               {planPreview.warnings.length > 0 ? (
-                <div>
-                  <p className="paw-more-text">提醒（{planPreview.warnings.length}）：不会阻止保存，建议先确认</p>
-                  <ul className="paw-list">
+                <Notice tone="warning" title={`提醒（${planPreview.warnings.length}）`}>
+                  <p>不会阻止保存，建议先确认。</p>
+                  <ul className="paw-import-notice-list">
                     {planPreview.warnings.map((warning) => (
                       <li className="paw-list-row" key={warning}>
                         <span className="paw-row-meta">{warning}</span>
                       </li>
                     ))}
                   </ul>
-                </div>
+                </Notice>
               ) : null}
               {planPreview.conflicts.length > 0 ? (
-                <div>
-                  <p className="paw-more-text">冲突（{planPreview.conflicts.length}）：可能产生重复或重叠，保存前请确认</p>
-                  <ul className="paw-list">
+                <Notice tone="danger" title={`冲突（${planPreview.conflicts.length}）`}>
+                  <p>可能产生重复或重叠，保存前请确认。</p>
+                  <ul className="paw-import-notice-list">
                     {planPreview.conflicts.map((conflict) => (
                       <li className="paw-list-row" key={conflict}>
                         <span className="paw-row-meta">{conflict}</span>
                       </li>
                     ))}
                   </ul>
-                </div>
+                </Notice>
               ) : null}
               <ul className="paw-list">
                 {planPreview.projects.map((project) => (
@@ -368,36 +369,36 @@ export function ImportView() {
               {timetableState === "saving" ? "正在保存" : "保存"}
             </button>
           </div>
-          {timetableError ? <p className="paw-error">{timetableError}</p> : null}
-          {timetableMessage ? <p className="paw-toast">{timetableMessage}</p> : null}
+          {timetableError ? <Notice tone="danger" title={timetableError} dismissible onDismiss={() => setTimetableError(null)} /> : null}
+          {timetableMessage ? <Notice tone="success" title={timetableMessage} autoDismissMs={5000} onDismiss={() => setTimetableMessage(null)} /> : null}
           {timetablePreview ? (
             <div className="paw-import-preview">
               <p className="paw-row-meta">
                 预览行数：{timetablePreview.rows.length} · 将生成时间块：{timetablePreview.blocksPreviewed} · 时区：{timetablePreview.timezone}
               </p>
               {timetablePreview.warnings.length > 0 ? (
-                <div>
-                  <p className="paw-more-text">提醒（{timetablePreview.warnings.length}）：不会阻止保存，建议先确认</p>
-                  <ul className="paw-list">
+                <Notice tone="warning" title={`提醒（${timetablePreview.warnings.length}）`}>
+                  <p>不会阻止保存，建议先确认。</p>
+                  <ul className="paw-import-notice-list">
                     {timetablePreview.warnings.map((warning) => (
                       <li className="paw-list-row" key={warning}>
                         <span className="paw-row-meta">{warning}</span>
                       </li>
                     ))}
                   </ul>
-                </div>
+                </Notice>
               ) : null}
               {timetablePreview.conflicts.length > 0 ? (
-                <div>
-                  <p className="paw-more-text">冲突（{timetablePreview.conflicts.length}）：可能产生重复或重叠，保存前请确认</p>
-                  <ul className="paw-list">
+                <Notice tone="danger" title={`冲突（${timetablePreview.conflicts.length}）`}>
+                  <p>可能产生重复或重叠，保存前请确认。</p>
+                  <ul className="paw-import-notice-list">
                     {timetablePreview.conflicts.map((conflict) => (
                       <li className="paw-list-row" key={conflict}>
                         <span className="paw-row-meta">{conflict}</span>
                       </li>
                     ))}
                   </ul>
-                </div>
+                </Notice>
               ) : null}
               <ul className="paw-list">
                 {timetablePreview.rows.map((row, index) => (

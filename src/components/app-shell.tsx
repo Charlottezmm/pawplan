@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Archive, CalendarDays, CheckCircle2, Download, PawPrint, Settings, ShieldCheck, UserRound } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { CatIcon } from "./cat-icon";
 import { LogoutButton } from "./logout-button";
+import { DialogSheet } from "./ui/dialog-sheet";
 import { StatusBadge } from "./ui/primitives";
 
 const navItems = [
@@ -25,10 +26,10 @@ export function AppShell({
   showAdminInvites?: boolean;
 }) {
   const pathname = usePathname();
-  const accountMenuRef = useRef<HTMLDetailsElement>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   useEffect(() => {
-    accountMenuRef.current?.removeAttribute("open");
+    setAccountOpen(false);
   }, [pathname]);
 
   function isActive(href: string) {
@@ -47,26 +48,40 @@ export function AppShell({
   }
 
   const accountMenu = (
-    <details ref={accountMenuRef} className="app-account-menu">
-      <summary className="app-account-trigger" role="button" aria-label="账户与设置">
+    <div className="app-account-menu">
+      <button
+        type="button"
+        className="app-account-trigger"
+        aria-label="账户与设置"
+        aria-haspopup="dialog"
+        aria-expanded={accountOpen}
+        onClick={() => setAccountOpen(true)}
+      >
         <UserRound size={19} aria-hidden="true" />
-      </summary>
-      <div className="app-account-popover">
-        <p className="app-account-title">账户与设置</p>
-        <Link href="/settings" className="app-account-link">
+      </button>
+      <DialogSheet
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        title="账户与设置"
+        description="管理计划空间、导入和登录状态。"
+        variant="account"
+      >
+        <nav className="app-account-popover" aria-label="账户操作">
+        <Link href="/settings" className="app-account-link" onClick={() => setAccountOpen(false)}>
           <Settings size={17} /> 设置
         </Link>
-        <Link href="/import" className="app-account-link">
+        <Link href="/import" className="app-account-link" onClick={() => setAccountOpen(false)}>
           <Download size={17} /> 导入
         </Link>
         {showAdminInvites ? (
-          <Link href="/admin/invites" className="app-account-link">
+          <Link href="/admin/invites" className="app-account-link" onClick={() => setAccountOpen(false)}>
             <ShieldCheck size={17} /> 邀请管理
           </Link>
         ) : null}
         <LogoutButton compact />
-      </div>
-    </details>
+        </nav>
+      </DialogSheet>
+    </div>
   );
 
   return (
@@ -77,7 +92,7 @@ export function AppShell({
             <CatIcon size={32} />
             <span>PawPlan</span>
           </Link>
-          <nav className="app-nav" aria-label="Primary navigation">
+          <nav className="app-nav" aria-label="主导航">
             {navItems.map((item) => (
               <Link key={item.href} href={item.href} className="app-nav-link" aria-current={isActive(item.href) ? "page" : undefined}>
                 {item.label}
@@ -90,7 +105,7 @@ export function AppShell({
       </header>
       <div className="app-workspace">
         <main className="app-content">{children}</main>
-        <nav className="mobile-tabbar" aria-label="Mobile navigation">
+        <nav className="mobile-tabbar" aria-label="移动导航">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (

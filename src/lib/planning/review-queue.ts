@@ -35,10 +35,10 @@ export function parseRejectReviewPatchesResponse(value: unknown): RejectReviewPa
 
 export function getRejectReviewPatchesNotice(result: RejectReviewPatchesResponse) {
   if (result.remainingDraftCount > 0) {
-    return `已拒绝 ${result.rejectedPatchCount} 份草稿、${result.rejectedOperationCount} 项建议；仍有 ${result.remainingDraftCount} 份待审核草稿。`;
+    return `已拒绝 ${result.rejectedPatchCount} 份调整建议、${result.rejectedOperationCount} 项变更；仍有 ${result.remainingDraftCount} 份待审核建议。`;
   }
   if (result.status === "no_change") {
-    return "这些草稿已不在待审核队列，已重新读取最新状态。";
+    return "这些调整建议已不在待审核队列，已重新读取最新状态。";
   }
-  return `已清空 ${result.rejectedPatchCount} 份草稿、${result.rejectedOperationCount} 项建议；已生效日程未更改。`;
+  return `已清空 ${result.rejectedPatchCount} 份调整建议、${result.rejectedOperationCount} 项变更；已生效日程未更改。`;
 }

@@ -27,15 +27,17 @@ test("review route frames suggestions as user-reviewed drafts, not applied chang
 
   await page.goto("/review");
 
-  await expect(page.getByRole("heading", { name: "审核" })).toBeVisible();
-  await expect(page.getByText("这些是 Agent 提的调整建议，你点头才会生效。")).toBeVisible();
-  await expect(page.getByText("Routine 和 Recovery 受保护；Agent 可以提任务调整或日程导入草稿，但只有你确认后才会写入。")).toBeVisible();
-  await expect(page.getByText("Review queue")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "审核", exact: true })).toBeVisible();
+  await expect(page.getByText("这些是待确认的调整建议，只有你确认后才会生效。")).toBeVisible();
+  await expect(page.getByText("日常与恢复时间受保护，不会自动修改；所有调整建议只有在你确认并通过最终核对后才会写入。")).toBeVisible();
+  await expect(page.getByText("待审核建议")).toBeVisible();
   await expect(page.getByText("任务调整 0")).toBeVisible();
   await expect(page.getByText("日程导入 0")).toBeVisible();
-  await expect(page.getByText("冲突/阻止 0")).toBeVisible();
-  await expect(page.getByText("0 份草稿 · 0 项建议")).toBeVisible();
-  await expect(page.getByRole("button", { name: "清空全部待审核草稿" })).toHaveCount(0);
+  await expect(page.getByText("受保护 0")).toBeVisible();
+  await expect(page.getByText("已跳过 0")).toBeVisible();
+  await expect(page.getByText("冲突 0")).toBeVisible();
+  await expect(page.getByText("0 份建议 · 0 项调整")).toBeVisible();
+  await expect(page.getByRole("button", { name: "清空全部待审核建议" })).toHaveCount(0);
   await expect(page.getByText("提交前会重查任务状态和固定日程冲突。")).toBeVisible();
   await expect(page.getByText("已应用")).toHaveCount(0);
   await expect.poll(() => onboardingEvents).toEqual([{ eventKey: "review_opened" }]);
@@ -58,6 +60,6 @@ test("review onboarding recorder failure does not block the Review page", async 
 
   await page.goto("/review");
 
-  await expect(page.getByRole("heading", { name: "审核" })).toBeVisible();
-  await expect(page.getByText("这些是 Agent 提的调整建议，你点头才会生效。")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "审核", exact: true })).toBeVisible();
+  await expect(page.getByText("这些是待确认的调整建议，只有你确认后才会生效。")).toBeVisible();
 });

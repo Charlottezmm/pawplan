@@ -1,9 +1,15 @@
 "use client";
 
 import { Check, Lock, RotateCcw, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CatIcon } from "./cat-icon";
+import {
+  getReviewSubmitPresentation,
+  ReviewItemState,
+  ReviewNotice,
+  ReviewTechnicalDetails,
+} from "./review-feedback";
 import {
   type ExpiredOperationApproval,
   OperationApprovalList,
@@ -49,6 +55,7 @@ export function ReviewPreview({
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyNotice, setApplyNotice] = useState<string | null>(null);
+  const [applyProgress, setApplyProgress] = useState<{ current: number; total: number } | null>(null);
   const isApplying = pendingAction !== null;
   const visiblePatchItems = data.patchItems
     .filter((item) => !closedPatchIds.includes(item.patchId))
@@ -59,7 +66,9 @@ export function ReviewPreview({
   const pending = actionable.length - accepted - rejected;
   const taskChangeCount = visiblePatchItems.filter((item) => item.operationType !== "import_timetable").length;
   const timetableImportCount = visiblePatchItems.filter((item) => item.operationType === "import_timetable").length;
-  const blockedCount = visiblePatchItems.filter((item) => item.protected || item.skipped || item.conflict).length;
+  const protectedCount = visiblePatchItems.filter((item) => item.protected).length;
+  const skippedCount = visiblePatchItems.filter((item) => item.skipped).length;
+  const conflictCount = visiblePatchItems.filter((item) => item.conflict).length;
   const visibleDraftPatchIds = data.draftPatchIds.filter((patchId) => !closedPatchIds.includes(patchId));
   const { patchIds: visiblePatchIds, draftCount, operationCount } = getReviewQueueSummary(
     visiblePatchItems,
@@ -85,7 +94,7 @@ export function ReviewPreview({
   async function dismissAllDrafts() {
     if (draftCount === 0) return;
     const confirmed = window.confirm(
-      `确认清空 Review 中的 ${draftCount} 份草稿（共 ${operationCount} 项建议）？\n\n草稿会标记为已拒绝并离开 Review；已生效日程不会改动。`,
+      `确认清空审核中的 ${draftCount} 份调整建议（共 ${operationCount} 项变更）？\n\n这些建议会标记为已拒绝并离开审核页；已生效日程不会改动。`,
     );
     if (!confirmed) return;
 
@@ -103,12 +112,12 @@ export function ReviewPreview({
         throw new Error(
           body && typeof body === "object" && "error" in body && typeof body.error === "string"
             ? body.error
-            : "清空待审核草稿失败",
+            : "清空待审核建议失败",
         );
       }
 
       const result = parseRejectReviewPatchesResponse(body);
-      if (!result) throw new Error("清空结果无法验证，请刷新页面确认 Review 状态");
+      if (!result) throw new Error("清空结果无法验证，请刷新页面确认审核状态");
       const rejectedPatchIds = result.rejectedPatchIds;
       setClosedPatchIds((current) => [...new Set([...current, ...rejectedPatchIds])]);
       setDecisions((current) =>
@@ -119,7 +128,7 @@ export function ReviewPreview({
       setApplyNotice(getRejectReviewPatchesNotice(result));
       router.refresh();
     } catch (error) {
-      setApplyError(error instanceof Error ? error.message : "清空待审核草稿失败");
+      setApplyError(error instanceof Error ? error.message : "清空待审核建议失败");
     } finally {
       setPendingAction(null);
     }
@@ -168,11 +177,15 @@ export function ReviewPreview({
     if (patchIds.size === 0 || pending > 0) return;
 
     setPendingAction("apply-selected");
+    setApplyProgress({ current: 1, total: patchIds.size });
     setApplyError(null);
     setApplyNotice(null);
     let closedAnyPatch = false;
     try {
+      let patchNumber = 0;
       for (const patchId of patchIds) {
+        patchNumber += 1;
+        setApplyProgress({ current: patchNumber, total: patchIds.size });
         const acceptedOperationIndexes = acceptedByPatch.get(patchId) ?? [];
         const rejectedOperationIndexes = rejectedByPatch.get(patchId) ?? [];
         const response = await fetch("/api/patches/apply", {
@@ -261,6 +274,7 @@ export function ReviewPreview({
       setApplyError(error instanceof Error ? error.message : "应用建议失败");
     } finally {
       setPendingAction(null);
+      setApplyProgress(null);
       if (closedAnyPatch) router.refresh();
     }
   }
@@ -270,44 +284,52 @@ export function ReviewPreview({
     return Object.entries(value).map(([key, entry]) => `${key}: ${String(entry ?? "无")}`).join("；");
   }
 
+  const submitPresentation = getReviewSubmitPresentation({
+    actionableCount: actionable.length,
+    pendingCount: pending,
+    acceptedCount: accepted,
+    isApplying,
+    progress: applyProgress,
+  });
+
   return (
     <div className="paw-page">
       <section className="paw-page-header">
         <h1 className="paw-page-date">审核</h1>
         <div className="paw-agent-row">
           <CatIcon size={40} mood="think" />
-          <p className="paw-agent-msg">这些是 Agent 提的调整建议，你点头才会生效。</p>
+          <p className="paw-agent-msg">这些是待确认的调整建议，只有你确认后才会生效。</p>
         </div>
       </section>
 
       {data.dataUnavailable ? (
-        <section className="paw-status-pill warn" role="status">
-          当前没有 DATABASE_URL，无法读取 agent patch；配置数据库后会显示待审核建议。
-        </section>
+        <ReviewNotice tone="danger" title="暂时无法读取调整建议">
+          请稍后刷新页面。当前页面不会把未确认的建议写入计划。
+        </ReviewNotice>
       ) : null}
 
-      <div className="paw-trust-banner">Routine 和 Recovery 受保护；Agent 可以提任务调整或日程导入草稿，但只有你确认后才会写入。</div>
+      <div className="paw-trust-banner">日常与恢复时间受保护，不会自动修改；所有调整建议只有在你确认并通过最终核对后才会写入。</div>
 
       <OperationApprovalList approvals={approvals} expiredApprovals={expiredApprovals} />
 
       <section className="paw-list-card mb-4">
         <div className="paw-list-header">
           <div>
-            <h2 className="paw-list-title">Review queue</h2>
+            <h2 className="paw-list-title">待审核建议</h2>
             <p className="paw-list-subtitle">提交前会重查任务状态和固定日程冲突。</p>
           </div>
           <div className="paw-review-queue-actions">
-            <span className="paw-status-pill">{draftCount} 份草稿 · {operationCount} 项建议</span>
+            <span className="paw-status-pill">{draftCount} 份建议 · {operationCount} 项调整</span>
             {draftCount > 0 ? (
               <button
                 type="button"
                 onClick={dismissAllDrafts}
                 disabled={isApplying}
                 className="paw-review-clear-btn"
-                aria-label="清空全部待审核草稿"
+                aria-label="清空全部待审核建议"
               >
                 <Trash2 size={14} />
-                {pendingAction === "bulk-reject" ? "清空中…" : "清空草稿"}
+                {pendingAction === "bulk-reject" ? "清空中…" : "清空建议"}
               </button>
             ) : null}
           </div>
@@ -315,33 +337,42 @@ export function ReviewPreview({
         <div className="paw-status-pills mt-4">
           <span className="paw-status-pill">任务调整 {taskChangeCount}</span>
           <span className="paw-status-pill">日程导入 {timetableImportCount}</span>
-          <span className={blockedCount > 0 ? "paw-status-pill warn" : "paw-status-pill"}>冲突/阻止 {blockedCount}</span>
+          <span className="paw-status-pill">受保护 {protectedCount}</span>
+          <span className="paw-status-pill">已跳过 {skippedCount}</span>
+          <span className={conflictCount > 0 ? "paw-status-pill warn" : "paw-status-pill"}>冲突 {conflictCount}</span>
           <span className="paw-status-pill">用户确认后才写入</span>
         </div>
       </section>
 
       {applyError ? (
-        <section className="paw-status-pill warn" role="status">
+        <ReviewNotice tone="danger" title="未能完成审核">
           {applyError}
-        </section>
+        </ReviewNotice>
       ) : null}
 
       {applyNotice ? (
-        <section className="paw-status-pill" role="status">
+        <ReviewNotice tone="success" title="最终状态已核对">
           {applyNotice}
-        </section>
+        </ReviewNotice>
+      ) : null}
+
+      {pendingAction === "apply-selected" && applyProgress ? (
+        <ReviewNotice tone="info" title={`正在逐份提交 ${applyProgress.current}/${applyProgress.total}`}>
+          每份调整建议都会分别写入并核对最终状态。
+        </ReviewNotice>
       ) : null}
 
       <section className="paw-suggestion-list">
         {visiblePatchItems.length === 0 ? (
           <div className="paw-empty">
             <h2>暂时没有新建议</h2>
-            <p>Agent 提出调整后会出现在这里，逐条确认就行。</p>
+            <p>新的调整建议生成后会出现在这里，你可以逐条确认。</p>
           </div>
         ) : null}
 
         {visiblePatchItems.map((item: PatchItem) => {
           const decision = decisions[item.id];
+          const userImpact = item.impact.filter((impact) => !/^patch\s/i.test(impact));
           return (
             <article
               key={item.id}
@@ -352,38 +383,32 @@ export function ReviewPreview({
                 {item.protected ? (
                   <span className="paw-status-pill">
                     <Lock size={12} />
-                    已阻止
+                    受保护
                   </span>
                 ) : null}
-                {item.skipped ? <span className="paw-status-pill warn">未应用</span> : null}
+                {item.skipped ? <span className="paw-status-pill">已跳过</span> : null}
                 {item.conflict ? <span className="paw-status-pill warn">冲突</span> : null}
                 {decision ? <span className="paw-status-pill link">{decision === "accepted" ? "已接受" : "已拒绝"}</span> : null}
               </div>
               <h2 className="paw-suggestion-what mt-3">{item.title}</h2>
-              <p className="paw-suggestion-why">类型：{item.operationType}</p>
               <p className="paw-suggestion-why paw-wrap-anywhere">{item.reason}</p>
-              <p className="paw-suggestion-why">
-                来源：patch {item.provenance.patchId.slice(0, 8)} · op {item.provenance.operationIndex} · {item.provenance.createdBy} · {new Date(item.provenance.createdAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}
-              </p>
-              {item.agentRun ? (
-                <p className="paw-suggestion-why">
-                  Agent run：{item.agentRunLabel} · {item.agentRun.status} · run {item.agentRun.id.slice(0, 8)}
-                </p>
-              ) : null}
-              {item.skippedReason ? <p className="paw-suggestion-why paw-wrap-anywhere">未应用原因：{item.skippedReason}</p> : null}
-              {item.conflict ? (
-                <div className="paw-status-pill warn paw-wrap-anywhere" role="status">
-                  冲突：{item.conflict.reason}；期望 {formatConflictSide(item.conflict.expected)}；当前 {formatConflictSide(item.conflict.actual)}
-                </div>
-              ) : null}
+              <ReviewItemState
+                isProtected={Boolean(item.protected)}
+                skippedReason={item.skipped ? item.skippedReason ?? "" : undefined}
+                conflict={item.conflict ? {
+                  reason: item.conflict.reason,
+                  expected: formatConflictSide(item.conflict.expected),
+                  actual: formatConflictSide(item.conflict.actual),
+                } : undefined}
+              />
               <div className="paw-suggestion-row">
                 <div className="paw-suggestion-diff">
                   <div className="paw-diff-box paw-diff-before">
-                    <div className="paw-diff-label">Before</div>
+                    <div className="paw-diff-label">原计划</div>
                     {item.from ?? "无"}
                   </div>
                   <div className="paw-diff-box paw-diff-after">
-                    <div className="paw-diff-label">After</div>
+                    <div className="paw-diff-label">新计划</div>
                     {item.to ?? "无"}
                   </div>
                 </div>
@@ -391,7 +416,7 @@ export function ReviewPreview({
                 <div className="paw-suggestion-actions">
                   {item.protected || item.skipped || item.conflict ? (
                     <>
-                      <span className="paw-status-pill">需要手动处理</span>
+                      <span className="paw-status-pill">保留现状或丢弃建议</span>
                       <button
                         type="button"
                         onClick={() => dismissPatch(item.patchId)}
@@ -399,7 +424,7 @@ export function ReviewPreview({
                         className="paw-sg-btn reject"
                       >
                         <X size={15} />
-                        丢弃整条
+                        丢弃整份建议
                       </button>
                     </>
                   ) : (
@@ -427,7 +452,7 @@ export function ReviewPreview({
                 </div>
               </div>
               <div className="paw-status-pills">
-                {item.impact.map((impact) => (
+                {userImpact.map((impact) => (
                   <span key={impact} className="paw-status-pill">{impact}</span>
                 ))}
                 <span className="paw-status-pill">{item.capacity}</span>
@@ -438,6 +463,18 @@ export function ReviewPreview({
                   </span>
                 ))}
               </div>
+              <ReviewTechnicalDetails
+                operationType={item.operationType}
+                patchId={item.provenance.patchId}
+                operationIndex={item.provenance.operationIndex}
+                createdBy={item.provenance.createdBy}
+                createdAt={new Date(item.provenance.createdAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}
+                agentRun={item.agentRun ? {
+                  label: item.agentRunLabel,
+                  status: item.agentRun.status,
+                  id: item.agentRun.id,
+                } : undefined}
+              />
             </article>
           );
         })}
@@ -451,12 +488,21 @@ export function ReviewPreview({
         <button type="button" onClick={acceptAll} disabled={isApplying} className="paw-secondary-btn">
           全部接受
         </button>
-        <button type="button" onClick={applySelected} disabled={actionable.length === 0 || pending > 0 || isApplying} className="paw-primary-btn">
-          {pendingAction === "apply-selected" ? "提交中" : accepted > 0 ? `提交审核：应用 ${accepted} 项` : "提交审核：全部拒绝"}
+        <button
+          type="button"
+          onClick={applySelected}
+          disabled={submitPresentation.disabled}
+          className="paw-primary-btn"
+          aria-describedby="paw-review-submit-reason"
+        >
+          {submitPresentation.label}
         </button>
-        <span className="paw-status-pill">
+        <span className="paw-status-pill" aria-label="审核选择统计">
           {accepted} 接受 · {rejected} 拒绝 · {pending} 待定
         </span>
+        <p id="paw-review-submit-reason" className="paw-review-submit-reason" aria-live="polite">
+          {submitPresentation.reason}
+        </p>
       </section>
       ) : null}
     </div>

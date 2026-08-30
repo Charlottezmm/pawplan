@@ -136,7 +136,7 @@ export function RescheduleList() {
 
   return (
     <div>
-      <div className="paw-section-label">未来任务 · 直接改日期/时段，无需经 Review</div>
+      <div className="paw-section-label">未来任务 · 直接改日期/时段，无需审核</div>
 
       {groups.length === 0 ? (
         <div className="paw-empty">

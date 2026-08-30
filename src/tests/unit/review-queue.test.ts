@@ -40,7 +40,7 @@ describe("review queue summary", () => {
 
     expect(result).not.toBeNull();
     expect(getRejectReviewPatchesNotice(result!)).toBe(
-      "已清空 2 份草稿、3 项建议；已生效日程未更改。",
+      "已清空 2 份调整建议、3 项变更；已生效日程未更改。",
     );
     expect(parseRejectReviewPatchesResponse({})).toBeNull();
     expect(parseRejectReviewPatchesResponse({
@@ -64,7 +64,7 @@ describe("review queue summary", () => {
     });
 
     expect(getRejectReviewPatchesNotice(result!)).toBe(
-      "已拒绝 1 份草稿、2 项建议；仍有 1 份待审核草稿。",
+      "已拒绝 1 份调整建议、2 项变更；仍有 1 份待审核建议。",
     );
   });
 });

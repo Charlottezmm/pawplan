@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { CatIcon } from "./cat-icon";
+import { Notice } from "./ui/notice";
 import { safeRelativeNextPath } from "@/lib/auth/next-url";
 
 type LoginResponse = {
@@ -91,7 +92,7 @@ export function LoginForm({
           </h1>
           <p className="paw-login-copy">
             {inviteCodeLocked
-              ? "你被邀请使用 PawPlan。把任务、固定日程和 Agent 建议放进同一个可审核的计划空间，创建后即可开始。"
+              ? "你被邀请使用 PawPlan。把任务、固定日程和调整建议放进同一个可审核的计划空间，创建后即可开始。"
               : "登录已有计划空间，继续查看今天的任务与待审核建议；创建新计划空间需要邀请链接。"}
           </p>
         </div>
@@ -201,13 +202,13 @@ export function LoginForm({
               />
             </div>
           ) : null}
-          <p className="text-xs font-semibold leading-relaxed text-[var(--app-ink-soft)]">
+          <p className="paw-login-recovery-note">
             请保存好计划空间名称和密码；目前没有自助找回或重置入口。
           </p>
           <button disabled={pending} className="paw-primary-btn">
             {pending ? "处理中…" : mode === "login" ? "进入" : "创建并进入"}
           </button>
-          {message ? <p className="paw-error" role="alert">{message}</p> : null}
+          {message ? <Notice tone="danger" title={message} dismissible onDismiss={() => setMessage(null)} /> : null}
         </div>
       </div>
     </form>

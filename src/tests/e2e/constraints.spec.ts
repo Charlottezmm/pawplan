@@ -107,18 +107,18 @@ test("opens schedules from Plan with a compact manual-create flow and no workspa
   });
 
   await page.goto("/today");
-  const primaryNav = page.getByLabel(isMobile ? "Mobile navigation" : "Primary navigation");
+  const primaryNav = page.getByLabel(isMobile ? "移动导航" : "主导航");
   await primaryNav.getByRole("link", { name: "计划", exact: true }).click();
   await page.getByRole("link", { name: "日程", exact: true }).click();
   await expect(page).toHaveURL(/\/constraints$/);
-  await expect(page.getByRole("heading", { name: "日程", exact: true })).toBeVisible();
+  await expect(page.locator('section[aria-labelledby="timetable-heading"]')).toBeVisible();
   await expect(page.getByRole("link", { name: "导入日程" })).toHaveAttribute("href", "/import");
-  await expect(page.getByText("冲突: 1")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "时间冲突" })).toBeVisible();
   await expect(page.getByText("Linear Algebra 与 Studio unavailable 时间冲突")).toBeVisible();
   await expect(page.getByText("地点：C 201 / 待确认")).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "周循环摘要" })).toHaveCount(0);
-  await page.getByRole("button", { name: "新建日程" }).first().click();
+  await page.getByRole("button", { name: "新建", exact: true }).first().click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("button", { name: "保存日程" })).toBeVisible();
   await page.getByRole("button", { name: "考试", exact: true }).click();

@@ -72,7 +72,7 @@ test("renders owner invite admin with invite and workspace tables", async ({ con
 
   await expect(page.getByRole("heading", { name: "邀请管理" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "邀请链接", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "已创建 workspace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "已创建计划空间" })).toBeVisible();
   await expect(page.getByText("Alice Plan")).toBeVisible();
   await page.getByPlaceholder("邀请备注").fill("Bob");
   await page.getByRole("button", { name: "创建邀请链接" }).click();

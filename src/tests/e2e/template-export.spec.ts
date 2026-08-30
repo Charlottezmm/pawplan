@@ -91,20 +91,20 @@ test("exports and imports a safe workspace template from Settings", async ({ con
 
   await page.goto("/settings");
 
-  await expect(page.getByRole("heading", { name: "Workspace template" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "计划空间模板" })).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export workspace template" }).click();
+  await page.getByRole("button", { name: "导出计划空间模板" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/pawplan-template-.*\.json/);
-  await expect(page.getByText("Template exported.")).toBeVisible();
+  await expect(page.getByText("计划空间模板已导出。")).toBeVisible();
 
-  await page.getByLabel("Import template").setInputFiles({
+  await page.getByLabel("导入模板").setInputFiles({
     name: "pawplan-template.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(template)),
   });
 
-  await expect(page.getByText("Template imported: 1 tasks, 0 routines, 0 time blocks.")).toBeVisible();
+  await expect(page.getByText("模板已导入：1 个任务、0 项日常安排、0 个固定日程。")).toBeVisible();
   expect(importedBody).toEqual({ template, mode: "new_plan" });
 });

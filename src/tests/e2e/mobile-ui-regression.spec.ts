@@ -139,7 +139,7 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
       await page.goto("/constraints?date=2026-09-01");
       await expectNoPageOverflow(page, width);
 
-      const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
+      const sectionNav = page.getByRole("navigation", { name: "计划分类" });
       await expect(sectionNav).toBeVisible();
       await expect(sectionNav.getByRole("link")).toHaveCount(5);
       await expectMinimumHeight(sectionNav.getByRole("link"));
@@ -152,7 +152,7 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
       const dateStrip = page.getByRole("navigation", { name: "选择日期" });
       await expectMinimumHeight(dateStrip.getByRole("link"));
       await expectMinimumHeight(page.getByRole("link", { name: /上一周|下一周/ }));
-      await expectMinimumHeight(page.getByLabel("Mobile navigation").getByRole("link"));
+      await expectMinimumHeight(page.getByLabel("移动导航").getByRole("link"));
 
       const shortCourse = page.getByRole("button", { name: /Advanced Robotics Laboratory/ }).first();
       await expect(shortCourse).toBeVisible();
@@ -210,7 +210,7 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
     await dialog.getByRole("button", { name: "关闭日程详情" }).click();
 
     await page.goto("/plan?view=day");
-    const scheduleTabs = page.getByRole("navigation", { name: "日程视图" });
+    const scheduleTabs = page.getByRole("navigation", { name: "计划视图" });
     await expect(scheduleTabs).toBeVisible();
     await expectMinimumHeight(scheduleTabs.getByRole("link"));
     const tabCenters = await scheduleTabs.getByRole("link").evaluateAll((links) => links.map((link) => {

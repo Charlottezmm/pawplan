@@ -57,11 +57,11 @@ test("requires typed workspace confirmation before enabling delete", async ({ co
 
   await page.goto("/settings");
 
-  await expect(page.getByRole("heading", { name: "Danger zone" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "删除 workspace" })).toBeDisabled();
+  await expect(page.getByRole("heading", { name: "危险操作" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "删除计划空间" })).toBeDisabled();
 
   await page.getByLabel("删除确认").fill("DELETE Wrong Name");
-  await expect(page.getByRole("button", { name: "删除 workspace" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "删除计划空间" })).toBeDisabled();
   expect(deleteCalls).toBe(0);
 });
 
@@ -81,9 +81,9 @@ test("deletes workspace from Settings after exact typed confirmation", async ({ 
   });
 
   await page.goto("/settings");
-  await page.getByLabel("Workspace 名称").fill("Focus Lab");
+  await page.getByLabel("计划空间名称").fill("Focus Lab");
   await page.getByLabel("删除确认").fill("DELETE Focus Lab");
-  const deleteButton = page.getByRole("button", { name: "删除 workspace" });
+  const deleteButton = page.getByRole("button", { name: "删除计划空间" });
   await expect(deleteButton).toBeEnabled();
   await deleteButton.click();
 

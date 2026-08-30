@@ -23,8 +23,8 @@ describe("OperationApprovalList expired task-notes history", () => {
       }],
     }));
 
-    expect(html).toContain("最近过期的任务详情 Review");
-    expect(html).toContain("这些 Preview 已失效，不能再批准");
+    expect(html).toContain("最近过期的任务详情审核");
+    expect(html).toContain("这些预览已失效，不能再批准");
     expect(html).toContain("已批准，尚未应用");
     expect(html).not.toContain("<button");
   });

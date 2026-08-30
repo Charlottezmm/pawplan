@@ -26,7 +26,7 @@ export function BacklogView({ data, legacySkipped }: { data: BacklogViewData; le
           <h1 className="paw-page-date">稍后处理</h1>
           <p className="paw-project-intro">这里只保存你明确决定暂不排期的任务。为任务选择新日期后，它会重新成为“计划中”。</p>
         </div>
-        <a href="/projects" className="paw-secondary-btn"><FolderKanban size={15} /> 查看 Projects</a>
+        <a href="/projects" className="paw-secondary-btn"><FolderKanban size={15} /> 查看项目</a>
       </section>
 
       {data.dataUnavailable ? <p className="paw-status-pill warn">当前没有可用的数据源。</p> : null}

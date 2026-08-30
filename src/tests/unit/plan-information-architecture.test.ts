@@ -45,15 +45,26 @@ describe("Plan information architecture", () => {
     expect(applyBlock).toContain("if (closedAnyPatch) router.refresh();");
   });
 
-  it("keeps the four schedule views and standard month navigation", () => {
+  it("keeps three view tabs, a separate manual reschedule action, and standard month navigation", () => {
     const source = readFileSync("src/components/plan-view.tsx", "utf8");
 
     expect(source).toContain('["day", "日", "/plan?view=day"]');
     expect(source).toContain('["week", "周", "/plan?view=week"]');
-    expect(source).toContain('["reschedule", "改期", "/plan?view=reschedule"]');
+    expect(source).not.toContain('["reschedule", "改期", "/plan?view=reschedule"]');
+    expect(source).toContain('className={`paw-plan-reschedule-link');
+    expect(source).toContain('手动改期');
     expect(source).toContain('type="month" name="month"');
     expect(source).toContain("month.previousMonthKey");
     expect(source).toContain("month.nextMonthKey");
+  });
+
+  it("keeps collapsed task cards compact and fixed occupancy visible", () => {
+    const source = readFileSync("src/components/plan-view.tsx", "utf8");
+    const cardSource = source.slice(source.indexOf("function TaskCard"), source.indexOf("function FixedItems"));
+
+    expect(cardSource).toContain('{segmentLabel[task.segment]} · {minutesLabel(task.minutes)}');
+    expect(cardSource).not.toContain('{task.context} · {task.track}');
+    expect(source).toContain('<details className="paw-plan-fixed" open>');
   });
 
   it("does not repeat raw notes when structured task details are available", () => {

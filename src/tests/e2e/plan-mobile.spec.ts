@@ -106,7 +106,7 @@ test.beforeAll(async () => {
   }
 });
 
-test("renders the shared structured task detail and quick link on desktop and mobile", async ({ context, page }) => {
+test("renders the shared structured task detail and quick link on desktop and mobile", async ({ context, page, isMobile }) => {
   test.skip(!dbAvailable, "local DATABASE_URL/Postgres unavailable or schema not migrated");
 
   const workspaceId = await seedPlanWorkspace();
@@ -115,7 +115,7 @@ test("renders the shared structured task detail and quick link on desktop and mo
     await page.goto("/plan");
     await page.getByRole("button", { name: /Mobile plan task/ }).click();
 
-    const detail = page.locator("#paw-plan-detail");
+    const detail = isMobile ? page.getByRole("dialog") : page.locator("#paw-plan-detail");
     await expect(detail.getByRole("heading", { name: "目标", exact: true })).toBeVisible();
     await expect(detail.getByRole("heading", { name: "执行", exact: true })).toBeVisible();
     await expect(detail.getByRole("heading", { name: "完成标准", exact: true })).toBeVisible();
@@ -134,7 +134,7 @@ test("renders the shared structured task detail and quick link on desktop and mo
   }
 });
 
-test("mobile Plan month detail opens only after selection and stays in page flow", async ({ context, page, isMobile }) => {
+test("mobile Plan month detail opens only after selection in an accessible sheet", async ({ context, page, isMobile }) => {
   test.skip(!isMobile, "mobile-only regression");
   test.skip(!dbAvailable, "local DATABASE_URL/Postgres unavailable or schema not migrated");
 
@@ -143,7 +143,7 @@ test("mobile Plan month detail opens only after selection and stays in page flow
     await addWorkspaceSession(context, workspaceId);
     await page.goto("/plan");
 
-    const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
+    const sectionNav = page.getByRole("navigation", { name: "计划分类" });
     await expect(sectionNav.getByRole("link", { name: "任务", exact: true })).toHaveAttribute("href", "/plan");
     await expect(sectionNav.getByRole("link", { name: "日程", exact: true })).toHaveAttribute("href", "/constraints");
     await expect(sectionNav.getByRole("link", { name: "项目", exact: true })).toHaveAttribute("href", "/projects");
@@ -156,10 +156,11 @@ test("mobile Plan month detail opens only after selection and stays in page flow
     await expect(page.locator(".paw-month-sheet-backdrop")).toHaveCount(0);
 
     await page.locator(".paw-month-day.today").click();
-    await expect(page.locator(".paw-month-selected")).toBeVisible();
-    await expect(page.locator(".paw-month-sheet-backdrop")).toHaveCount(1);
-    await expect(page.locator(".paw-month-sheet-backdrop")).toBeHidden();
-    await expect(page.locator(".paw-month-selected")).not.toHaveCSS("position", "fixed");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
+    await dialog.getByRole("button", { name: /关闭/ }).click();
+    await expect(dialog).toHaveCount(0);
   } finally {
     await cleanupWorkspace(workspaceId);
   }

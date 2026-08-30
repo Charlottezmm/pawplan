@@ -15,7 +15,7 @@ export function PlanSectionNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="paw-plan-section-nav" aria-label="Plan sections">
+    <nav className="paw-plan-section-nav" aria-label="计划分类">
       {sections.map((section) => {
         const active = section.href === "/plan"
           ? pathname === "/plan" || pathname === "/week" || pathname === "/month" || pathname === "/reschedule"

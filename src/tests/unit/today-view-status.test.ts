@@ -37,13 +37,14 @@ describe("Today task status persistence", () => {
     await expect(persistTodayTaskUpdate(taskId, { status: "done" }, wrongState)).rejects.toThrow("did not confirm");
   });
 
-  it("keeps rollback, duplicate-request, and reduced-motion guards in the Today interaction", () => {
+  it("keeps rollback and duplicate-request guards without moving completed tasks", () => {
     const source = readFileSync("src/components/today-view.tsx", "utf8");
 
     expect(source).toContain("statusRequests.current.has(id)");
     expect(source).toContain("task.id === id ? currentTask : task");
     expect(source).toContain("已恢复原状态，请重试");
-    expect(source).toContain('matchMedia?.("(prefers-reduced-motion: reduce)").matches');
-    expect(source).toContain('typeof el.animate === "function"');
+    expect(source).not.toContain('typeof el.animate === "function"');
+    expect(source).not.toContain("setTasks((current) => [...current].sort");
+    expect(source).toContain("task.id === id ? optimisticTask : task");
   });
 });

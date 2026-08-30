@@ -62,7 +62,7 @@ export function AdminInvitesView() {
     const response = await fetch("/api/admin/invites");
     if (!response.ok) {
       setData(null);
-      setMessage(response.status === 403 ? "当前 workspace 没有邀请管理权限。" : "邀请管理数据读取失败。");
+      setMessage(response.status === 403 ? "当前计划空间没有邀请管理权限。" : "邀请管理数据读取失败。");
       return;
     }
     setData((await response.json()) as AdminInvitesResponse);
@@ -121,7 +121,7 @@ export function AdminInvitesView() {
         <h1 className="paw-page-date">邀请管理</h1>
         <div className="paw-agent-row">
           <ShieldCheck size={38} />
-          <p className="paw-agent-msg">Owner-only 后台：创建一次性邀请链接，并查看已注册 workspace。</p>
+          <p className="paw-agent-msg">仅所有者可用：创建一次性邀请链接，并查看已注册计划空间。</p>
         </div>
       </section>
 
@@ -129,7 +129,7 @@ export function AdminInvitesView() {
         <div className="paw-list-header">
           <div>
             <h2 className="paw-list-title">创建邀请链接</h2>
-            <p className="paw-list-subtitle">默认一人一链，只能创建一个 workspace。</p>
+            <p className="paw-list-subtitle">默认一人一链，只能创建一个计划空间。</p>
           </div>
         </div>
         <form className="paw-admin-form" onSubmit={(event) => void createInvite(event)}>
@@ -217,16 +217,16 @@ export function AdminInvitesView() {
       <section className="paw-list-card">
         <div className="paw-list-header">
           <div>
-            <h2 className="paw-list-title">已创建 workspace</h2>
-            <p className="paw-list-subtitle">用户信息表格：workspace 名称、创建时间和来源邀请。</p>
+            <h2 className="paw-list-title">已创建计划空间</h2>
+            <p className="paw-list-subtitle">用户信息表格：计划空间名称、创建时间和来源邀请。</p>
           </div>
         </div>
         <div className="paw-admin-table-wrap">
           <table className="paw-admin-table">
             <thead>
               <tr>
-                <th>Workspace</th>
-                <th>Workspace ID</th>
+                <th>计划空间</th>
+                <th>计划空间 ID</th>
                 <th>来源邀请</th>
                 <th>创建时间</th>
                 <th>邀请状态</th>

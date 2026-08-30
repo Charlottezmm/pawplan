@@ -73,7 +73,7 @@ function ProjectCard({ project }: { project: ProjectPortfolioItemView }) {
       </div>
 
       {project.needsDefinition ? (
-        <p className="paw-project-warning"><Sparkles size={14} /> 等待 AI 补充类别、目标和完成标准；修改会先进入 Review。</p>
+        <p className="paw-project-warning"><Sparkles size={14} /> 等待助手补充类别、目标和完成标准；修改会先进入审核。</p>
       ) : null}
 
       {nextMilestone || nextTasks.length > 0 ? (
@@ -151,9 +151,9 @@ export function ProjectPortfolio({ data }: { data: ProjectPortfolioViewData }) {
       <PlanSectionNav />
       <section className="paw-page-header paw-project-header">
         <div>
-          <p className="paw-project-kicker">进行中的 Projects · {visibleProjects.length}</p>
+          <p className="paw-project-kicker">进行中的项目 · {visibleProjects.length}</p>
           <h1 className="paw-page-date">项目</h1>
-          <p className="paw-project-intro">Project 定义由 AI 维护；这里默认只展示目标、进度、下一里程碑和近期任务。</p>
+          <p className="paw-project-intro">项目定义由助手维护；这里默认只展示目标、进度、下一里程碑和近期任务。</p>
         </div>
         <Link href="/review" className="paw-primary-btn"><Sparkles size={15} /> 查看 AI 建议</Link>
       </section>
@@ -163,8 +163,8 @@ export function ProjectPortfolio({ data }: { data: ProjectPortfolioViewData }) {
       {visibleProjects.length === 0 ? (
         <section className="paw-empty">
           <Sparkles size={28} />
-          <h2>还没有整理好的进行中 Project</h2>
-          <p>AI 补充项目定义或关联待办后，会先进入 Review；批准后显示在这里。</p>
+          <h2>还没有整理好的进行中项目</h2>
+          <p>助手补充项目定义或关联待办后，会先进入审核；批准后显示在这里。</p>
         </section>
       ) : (
         <div className="paw-project-grid">
@@ -174,7 +174,7 @@ export function ProjectPortfolio({ data }: { data: ProjectPortfolioViewData }) {
 
       {legacyProjects.length > 0 ? (
         <details className="paw-project-legacy">
-          <summary>查看待整理或历史 Projects · {legacyProjects.length}</summary>
+          <summary>查看待整理或历史项目 · {legacyProjects.length}</summary>
           <div className="paw-project-grid">
             {legacyProjects.map((project) => <ProjectCard key={project.id} project={project} />)}
           </div>

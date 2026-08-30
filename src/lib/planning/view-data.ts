@@ -133,6 +133,7 @@ export type TodayViewData = {
   warnings: WarningView[];
   timelineItems: TimelineItemView[];
   fixedItems: TimelineItemView[];
+  exactFixedItems: TimelineItemView[];
   patchCount: number;
   checkin: CheckinView | null;
   streakDays: number;
@@ -320,6 +321,7 @@ function emptyTodayData(dataUnavailable = false): TodayViewData {
       : [],
     timelineItems: [],
     fixedItems: [],
+    exactFixedItems: [],
     patchCount: 0,
     checkin: null,
     streakDays: 0,
@@ -687,6 +689,23 @@ export function buildDayTimelineItems(input: {
   }
 
   return items.sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.title.localeCompare(b.title));
+}
+
+export function buildExactFixedTimelineItems(input: {
+  date: Date;
+  blockRows: CapacityTimeBlockInput[];
+  routineRows: CapacityRoutineInput[];
+}): TimelineItemView[] {
+  return buildDayTimelineItems({
+    date: input.date,
+    taskRows: [],
+    blockRows: input.blockRows,
+    routineRows: input.routineRows.filter((routine) => (
+      routine.defaultTimeSegment === "specific_window"
+      && Boolean(routine.defaultStartTime)
+      && Boolean(routine.defaultEndTime)
+    )),
+  });
 }
 
 function timeLabel(date: Date) {
@@ -1114,6 +1133,7 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
       })),
       timelineItems,
       fixedItems: timelineItems.filter((item) => item.kind !== "task"),
+      exactFixedItems: buildExactFixedTimelineItems({ date: start, blockRows: todayBlocks, routineRows }),
       patchCount: patchRows.length,
       checkin: todayCheckin
         ? {

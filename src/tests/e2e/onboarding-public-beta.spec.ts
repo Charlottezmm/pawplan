@@ -90,7 +90,7 @@ test("creates a workspace from a one-time invite link without exposing the invit
 
   await page.goto("/join/PAW-LINK-123");
 
-  await expect(page.getByText(/把任务、固定日程和 Agent 建议放进同一个可审核的计划空间/)).toBeVisible();
+  await expect(page.getByText(/把任务、固定日程和调整建议放进同一个可审核的计划空间/)).toBeVisible();
   await expect(page.getByLabel("邀请码")).toHaveCount(0);
   await page.getByLabel("计划空间名称").fill("Invite Lab");
   await page.getByLabel("密码", { exact: true }).fill("correct horse");

@@ -41,7 +41,7 @@ export function OperationApprovalList({
   async function decide(approval: PendingOperationApproval, decision: "approved" | "rejected") {
     if (
       decision === "approved" &&
-      !window.confirm(`确认批准“${approval.summary.title ?? "这项操作"}”？\n\n批准后，Agent 只能执行这一份精确 Preview。`)
+      !window.confirm(`确认批准“${approval.summary.title ?? "这项操作"}”？\n\n批准后，助手只能执行这一份精确预览。`)
     ) return;
     setPendingId(approval.id);
     setError(null);
@@ -69,7 +69,7 @@ export function OperationApprovalList({
           <div className="paw-list-header">
             <div>
               <h2 className="paw-list-title">高风险操作待确认</h2>
-              <p className="paw-list-subtitle">只有你在这里批准后，Agent 才能执行对应的精确 Preview。</p>
+              <p className="paw-list-subtitle">只有你在这里批准后，助手才能执行对应的精确预览。</p>
             </div>
             <span className="paw-status-pill"><ShieldCheck size={13} /> {approvals.length} 项</span>
           </div>
@@ -138,8 +138,8 @@ export function OperationApprovalList({
         <section className="paw-list-card mb-4">
           <div className="paw-list-header">
             <div>
-              <h2 className="paw-list-title">最近过期的任务详情 Review</h2>
-              <p className="paw-list-subtitle">这些 Preview 已失效，不能再批准；如仍需执行，请让 Agent 重新提交。</p>
+              <h2 className="paw-list-title">最近过期的任务详情审核</h2>
+              <p className="paw-list-subtitle">这些预览已失效，不能再批准；如仍需执行，请让助手重新提交。</p>
             </div>
             <span className="paw-status-pill warn">{expiredApprovals.length} 项已过期</span>
           </div>

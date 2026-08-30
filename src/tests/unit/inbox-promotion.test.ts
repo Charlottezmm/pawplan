@@ -323,6 +323,18 @@ describe("inbox UI promotion payloads", () => {
     expect(source).not.toContain("quickDate");
     expect(source).not.toMatch(/action:\s*"quick_chore_task"[\s\S]{0,160}date:/);
   });
+
+  it("uses destination-first forms and friendly recurrence controls", () => {
+    const source = readFileSync("src/components/inbox-view.tsx", "utf8");
+
+    expect(source).toContain('type PromotionDestination = "task" | "routine"');
+    expect(source).toContain('role="group" aria-label="选择条目去向"');
+    expect(source).toContain("weekdayOptions.map");
+    expect(source).not.toContain('placeholder="daily / mon,wed,fri"');
+    expect(source).toContain('aria-invalid={Boolean(itemErrors.taskDate)}');
+    expect(source).toContain("刚刚捕获");
+    expect(source).toContain("删除后无法恢复");
+  });
 });
 
 const inboxId = "11111111-1111-4111-8111-111111111111";

@@ -1,12 +1,13 @@
 "use client";
 
-import { X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CatIcon } from "./cat-icon";
 import { PlanSectionNav } from "./plan-section-nav";
 import { RescheduleList } from "./reschedule-list";
 import { TaskDetailContent } from "./task-detail-content";
+import { DialogSheet } from "./ui/dialog-sheet";
+import { Notice } from "./ui/notice";
 import type { MonthDayView, MonthViewData, PlanTaskView, TimelineItemView, TodayViewData, WeekDayView, WeekViewData } from "@/lib/planning/view-data";
 import { redactPrivateTitle } from "@/lib/display/privacy";
 
@@ -109,13 +110,6 @@ const priorityLabel: Record<PlanTaskView["priority"], string> = {
   urgent: "紧急",
 };
 
-const taskStatusLabel: Record<PlanTaskView["status"], string> = {
-  todo: "待办",
-  done: "已完成",
-  backlog: "稍后处理",
-  skipped: "旧任务",
-};
-
 function TaskCard({
   task,
   onOpen,
@@ -138,7 +132,7 @@ function TaskCard({
     >
       <span className="paw-plan-task-title">{redactPrivateTitle(task.title)}</span>
       <span className="paw-plan-task-meta">
-        {taskStatusLabel[task.status]} · {segmentLabel[task.segment]} · {minutesLabel(task.minutes)} · {task.context} · {task.track}
+        {segmentLabel[task.segment]} · {minutesLabel(task.minutes)}
       </span>
     </button>
   );
@@ -147,7 +141,7 @@ function TaskCard({
 function FixedItems({ items }: { items: TimelineItemView[] }) {
   if (items.length === 0) return null;
   return (
-    <details className="paw-plan-fixed">
+    <details className="paw-plan-fixed" open>
       <summary>固定占用 · {items.length} 项</summary>
       <div className="paw-timeline compact">
         {sortByStart(items).map((item) => (
@@ -211,6 +205,7 @@ function TaskDetail({
   message,
   sheetOpen = false,
   onClose,
+  mobile = false,
 }: {
   task: PlanTaskView | null;
   actions?: {
@@ -220,12 +215,13 @@ function TaskDetail({
     backlog: (task: PlanTaskView) => void;
   };
   savingId?: string | null;
-  message?: string | null;
+  message?: { tone: "success" | "danger"; text: string } | null;
   sheetOpen?: boolean;
   onClose?: () => void;
+  mobile?: boolean;
 }) {
   if (!task) {
-    return (
+    return mobile ? null : (
       <aside className="paw-plan-detail">
         <p className="paw-section-label">任务详情</p>
         <p className="paw-goal-meta">点击日、周或月里的任务查看说明、完成标准和资源。</p>
@@ -237,15 +233,8 @@ function TaskDetail({
   const canAct = taskActions && (task.status === "todo" || task.status === "backlog");
   const isSaving = savingId === task.id;
 
-  return (
+  const content = (
     <>
-    <div className={`paw-plan-sheet-backdrop ${sheetOpen ? "open" : ""}`} onClick={onClose} aria-hidden="true" />
-    <aside id="paw-plan-detail" className={`paw-plan-detail ${sheetOpen ? "open" : ""}`}>
-      <button type="button" className="paw-plan-sheet-close" onClick={onClose} aria-label="关闭详情">
-        <X size={18} />
-      </button>
-      <p className="paw-section-label">任务详情</p>
-      <h2 className="paw-goal-title">{redactPrivateTitle(task.title)}</h2>
       <div className="paw-plan-detail-meta">
         <span>{task.dateLabel}</span>
         <span>{segmentLabel[task.segment]}</span>
@@ -255,25 +244,39 @@ function TaskDetail({
       </div>
       <p className="paw-goal-meta">{task.context} · {task.track}</p>
       <TaskDetailContent detail={task.detail} notes={task.notes} />
-      {message ? <p className="paw-toast" role="status">{message}</p> : null}
+      {message ? <Notice tone={message.tone} title={message.text} /> : null}
       {canAct ? (
         <div className="paw-plan-detail-actions" aria-label="任务操作">
-          <button type="button" className="paw-act-btn" disabled={isSaving} onClick={() => taskActions!.moveToday(task)}>
-            挪到今天
-          </button>
-          <button type="button" className="paw-act-btn" disabled={isSaving} onClick={() => taskActions!.moveTomorrow(task)}>
-            明天
-          </button>
-          <button type="button" className="paw-act-btn done" disabled={isSaving} onClick={() => taskActions!.complete(task)}>
-            完成
-          </button>
-          <button type="button" className="paw-act-btn defer" disabled={isSaving} onClick={() => taskActions!.backlog(task)}>
-            移到稍后处理
-          </button>
+          <button type="button" className="paw-act-btn" disabled={isSaving} onClick={() => taskActions!.moveToday(task)}>挪到今天</button>
+          <button type="button" className="paw-act-btn" disabled={isSaving} onClick={() => taskActions!.moveTomorrow(task)}>明天</button>
+          <button type="button" className="paw-act-btn done" disabled={isSaving} onClick={() => taskActions!.complete(task)}>完成</button>
+          <button type="button" className="paw-act-btn defer" disabled={isSaving} onClick={() => taskActions!.backlog(task)}>移到稍后处理</button>
         </div>
       ) : null}
-    </aside>
     </>
+  );
+
+  if (mobile) {
+    return (
+      <DialogSheet
+        open={sheetOpen}
+        onClose={onClose ?? (() => {})}
+        title={redactPrivateTitle(task.title)}
+        description="任务详情"
+        variant="detail"
+        closeDisabled={isSaving}
+      >
+        {content}
+      </DialogSheet>
+    );
+  }
+
+  return (
+    <aside id="paw-plan-detail" className="paw-plan-detail">
+      <p className="paw-section-label">任务详情</p>
+      <h2 className="paw-goal-title">{redactPrivateTitle(task.title)}</h2>
+      {content}
+    </aside>
   );
 }
 
@@ -347,10 +350,12 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
   const [selectedTask, setSelectedTask] = useState<PlanTaskView | null>(null);
   const [selectedMonthDay, setSelectedMonthDay] = useState<MonthDayView | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
   // 手机端把详情做成底部 sheet：点任务才打开，避免加载时自动弹出
   const [detailOpen, setDetailOpen] = useState(false);
+  const [mobile, setMobile] = useState(false);
   const openTask = (task: PlanTaskView) => {
+    setSelectedMonthDay(null);
     setSelectedTask(task);
     setDetailOpen(true);
   };
@@ -366,14 +371,13 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
     setDetailOpen(false);
   }, [month.monthKey]);
 
-  // 手机上详情就地展开在列表下方，自动滚动过去，省得手动找
   useEffect(() => {
-    if (!detailOpen || !selectedTask) return;
-    if (typeof window === "undefined" || !window.matchMedia("(max-width: 760px)").matches) return;
-    requestAnimationFrame(() => {
-      document.getElementById("paw-plan-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, [detailOpen, selectedTask]);
+    const query = window.matchMedia("(max-width: 760px)");
+    const sync = () => setMobile(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
   const currentDateKey = todayKey();
 
   function nextSelectedTask(taskId: string, nextOverdue: PlanTaskView[], nextToday: PlanTaskView[]) {
@@ -390,14 +394,20 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: task.id, ...body }),
       });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; task?: Record<string, unknown> };
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "更新失败");
       }
-      setMessage(successMessage);
+      const savedTask = data.task;
+      const statusMatches = body.status === undefined || savedTask?.status === body.status;
+      const dateMatches = body.date === undefined || (typeof savedTask?.date === "string" && savedTask.date.startsWith(body.date));
+      if (!savedTask || savedTask.id !== task.id || !statusMatches || !dateMatches) {
+        throw new Error("更新结果无法核对，已恢复原状态，请重试");
+      }
+      setMessage({ tone: "success", text: successMessage });
       window.setTimeout(() => setMessage(null), 1800);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "更新失败");
+      setMessage({ tone: "danger", text: err instanceof Error ? err.message : "更新失败" });
       throw err;
     } finally {
       setSavingId(null);
@@ -467,14 +477,14 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
         <h1 className="paw-page-date">计划</h1>
         <div className="paw-agent-row">
           <CatIcon size={40} mood="think" />
-          <p className="paw-agent-msg">日、周、月都以任务为主。固定占用只做参考；想改任务日期，去「改期」自己调；Agent 的建议在 Review 里确认。</p>
+          <p className="paw-agent-msg">日、周、月都以任务为主。固定占用只做参考；手动修改日期立即生效，调整建议则要在审核页确认。</p>
         </div>
-        <nav className="paw-sub-tabs" aria-label="日程视图">
+        <div className="paw-plan-view-controls">
+        <nav className="paw-sub-tabs" aria-label="计划视图">
           {([
             ["day", "日", "/plan?view=day"],
             ["week", "周", "/plan?view=week"],
             ["month", "月", `/plan?view=month&month=${month.monthKey}`],
-            ["reschedule", "改期", "/plan?view=reschedule"],
           ] as const).map(([value, label, href]) => (
             <Link
               key={value}
@@ -490,6 +500,18 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
             </Link>
           ))}
         </nav>
+        <Link
+          href="/plan?view=reschedule"
+          onClick={() => {
+            setTab("reschedule");
+            setDetailOpen(false);
+          }}
+          className={`paw-plan-reschedule-link ${tab === "reschedule" ? "active" : ""}`}
+          aria-current={tab === "reschedule" ? "page" : undefined}
+        >
+          手动改期
+        </Link>
+        </div>
       </section>
 
       {today.dataUnavailable || week.dataUnavailable || month.dataUnavailable ? (
@@ -529,7 +551,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
             />
             <FixedItems items={today.fixedItems} />
           </div>
-          <TaskDetail task={selectedTask} actions={taskActions} savingId={savingId} message={message} sheetOpen={detailOpen} onClose={closeDetail} />
+          <TaskDetail task={selectedTask} actions={taskActions} savingId={savingId} message={message} sheetOpen={detailOpen} onClose={closeDetail} mobile={mobile} />
         </section>
       ) : null}
 
@@ -560,13 +582,13 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
             </div>
 
             <div className="paw-goal-card bg-[var(--app-positive-soft)]">
-              <h2 className="paw-goal-title">Recovery</h2>
+              <h2 className="paw-goal-title">恢复时间</h2>
               <p className="mt-3 text-3xl font-bold text-[var(--app-ink)]">{week.recovery.scheduledHours}</p>
               <p className="paw-goal-meta">目标 {week.recovery.targetHours}。{week.recovery.note}</p>
             </div>
           </div>
           </div>
-          <TaskDetail task={selectedTask} sheetOpen={detailOpen} onClose={closeDetail} />
+          <TaskDetail task={selectedTask} sheetOpen={detailOpen} onClose={closeDetail} mobile={mobile} />
         </section>
       ) : null}
 
@@ -611,7 +633,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
             <article className="paw-goal-card mt-3">
               <h2 className="paw-goal-title">这个月还没有计划数据</h2>
               <p className="paw-goal-meta">{month.emptyText}</p>
-              <span className="paw-deadline-tag">No data</span>
+              <span className="paw-deadline-tag">暂无数据</span>
             </article>
           ) : (
             <>
@@ -634,7 +656,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
                       />
                     ))}
                   </div>
-                  {selectedMonthDay ? (
+                  {selectedMonthDay && !mobile ? (
                     <>
                       <div
                         className="paw-month-sheet-backdrop"
@@ -675,7 +697,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
 
               {month.projectSummaries.length > 0 ? (
                 <article className="paw-goal-card mt-3">
-                  <h2 className="paw-goal-title">按 Project 汇总</h2>
+                  <h2 className="paw-goal-title">按项目汇总</h2>
                   <div className="paw-month-projects">
                     {month.projectSummaries.map((project) => (
                       <div key={project.projectId ?? "unassigned"} className="paw-month-project-row">
@@ -753,8 +775,25 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
             </>
           )}
           </div>
-          <TaskDetail task={selectedTask} sheetOpen={detailOpen} onClose={closeDetail} />
+          <TaskDetail task={selectedTask} sheetOpen={detailOpen} onClose={closeDetail} mobile={mobile} />
         </section>
+      ) : null}
+
+      {mobile && selectedMonthDay ? (
+        <DialogSheet
+          open
+          onClose={() => setSelectedMonthDay(null)}
+          title={selectedMonthDay.dateLabel}
+          description={`计划中 ${selectedMonthDay.statusCounts.todo} · 完成 ${selectedMonthDay.statusCounts.done}`}
+          variant="detail"
+        >
+          <div className="paw-plan-task-list compact">
+            {selectedMonthDay.tasks.length === 0 ? <p className="paw-goal-meta">这一天没有任务。</p> : null}
+            {selectedMonthDay.tasks.map((task) => (
+              <TaskCard key={task.id} task={task} onOpen={openTask} compact active={selectedTask?.id === task.id} />
+            ))}
+          </div>
+        </DialogSheet>
       ) : null}
 
       {tab === "reschedule" ? (

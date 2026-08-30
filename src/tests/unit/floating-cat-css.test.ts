@@ -42,8 +42,8 @@ describe("agent run and review long text wrapping", () => {
     expect(settingsView).toContain('className="paw-row-meta paw-wrap-anywhere"');
     expect(settingsView).toContain('className="paw-row-meta paw-wrap-anywhere text-[var(--app-danger)]"');
     expect(reviewPreview).toContain('className="paw-suggestion-why paw-wrap-anywhere">{item.reason}</p>');
-    expect(reviewPreview).toContain('className="paw-suggestion-why paw-wrap-anywhere">未应用原因');
-    expect(reviewPreview).toContain('className="paw-status-pill warn paw-wrap-anywhere"');
+    expect(reviewPreview).toContain("<ReviewItemState");
+    expect(reviewPreview).toContain("formatConflictSide(item.conflict.expected)");
   });
 });
 
@@ -58,8 +58,8 @@ describe("Review queue bulk action styling", () => {
     expect(rule).toContain("background: transparent;");
     expect(rule).toContain("font-size: 13px;");
     expect(rule).toContain("white-space: nowrap;");
-    expect(reviewPreview).toContain('aria-label="清空全部待审核草稿"');
-    expect(reviewPreview).toContain('pendingAction === "bulk-reject" ? "清空中…" : "清空草稿"');
+    expect(reviewPreview).toContain('aria-label="清空全部待审核建议"');
+    expect(reviewPreview).toContain('pendingAction === "bulk-reject" ? "清空中…" : "清空建议"');
   });
 });
 
@@ -76,18 +76,16 @@ describe("Today task detail copyability", () => {
 });
 
 describe("mobile Plan layout", () => {
-  it("keeps Plan task detail and month detail in normal document flow", () => {
+  it("uses the shared fixed dialog sheet for mobile Plan and month detail", () => {
     const css = readFileSync("src/app/globals.css", "utf8");
+    const source = readFileSync("src/components/plan-view.tsx", "utf8");
     const mobileStart = css.indexOf("@media (max-width: 760px)");
     const mobileEnd = css.indexOf("@media (max-width: 640px)", mobileStart);
     const mobileBlock = css.slice(mobileStart, mobileEnd);
-    const planDetailRule = mobileBlock.match(/\.paw-plan-detail \{[\s\S]*?\}/)?.[0] ?? "";
-    const monthSelectedRule = mobileBlock.match(/\.paw-month-selected \{[\s\S]*?\}/)?.[0] ?? "";
-    const monthBackdropRule = mobileBlock.match(/\.paw-month-sheet-backdrop \{[\s\S]*?\}/)?.[0] ?? "";
 
-    expect(planDetailRule).toContain("position: relative;");
-    expect(planDetailRule).not.toContain("position: fixed;");
-    expect(monthSelectedRule).not.toContain("position: fixed;");
-    expect(monthBackdropRule).not.toContain("display: block;");
+    expect(source.match(/<DialogSheet/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(source).toContain('variant="detail"');
+    expect(mobileBlock).toContain(".paw-dialog-backdrop");
+    expect(css).toContain("position: fixed;");
   });
 });

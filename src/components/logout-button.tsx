@@ -46,7 +46,7 @@ export function LogoutButton({ compact = false }: { compact?: boolean }) {
       </span>
       <div>
         <h3 className="paw-more-label">{pending ? "退出中…" : "退出登录"}</h3>
-        <p className="paw-more-text">登出当前 workspace，回到登录页（换工作区也从这里走）。</p>
+        <p className="paw-more-text">退出当前计划空间，回到登录页（切换计划空间也从这里进入）。</p>
       </div>
     </button>
   );

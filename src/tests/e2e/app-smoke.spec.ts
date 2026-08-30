@@ -9,7 +9,7 @@ function signedWorkspaceSession(workspaceId: string) {
 test("redirects unauthenticated visitors to login", async ({ page }) => {
   await page.goto("/today");
   await expect(page.getByRole("heading", { name: "PawPlan" })).toBeVisible();
-  await expect(page.getByPlaceholder("Workspace 名称")).toBeVisible();
+  await expect(page.getByLabel("计划空间名称")).toBeVisible();
 });
 
 test("renders Today on desktop and mobile with a workspace session", async ({ context, page, isMobile }) => {
@@ -29,7 +29,7 @@ test("renders Today on desktop and mobile with a workspace session", async ({ co
   await expect(page.getByText("今天还没有安排任务", { exact: true })).toBeVisible();
   await expect(page.getByText("今日任务")).toBeVisible();
   await expect(page.getByRole("heading", { name: "收工反馈" })).toBeVisible();
-  const nav = page.getByLabel(isMobile ? "Mobile navigation" : "Primary navigation");
+  const nav = page.getByLabel(isMobile ? "移动导航" : "主导航");
   await expect(nav.getByRole("link", { name: "今天", exact: true })).toBeVisible();
   await expect(nav.getByRole("link", { name: "计划", exact: true })).toBeVisible();
   await expect(nav.getByRole("link", { name: "收集", exact: true })).toBeVisible();
@@ -53,7 +53,7 @@ test("keeps both Plan navigation levels complete and centered at 375px", async (
   ]);
 
   await page.goto("/plan");
-  const sectionNav = page.getByRole("navigation", { name: "Plan sections" });
+  const sectionNav = page.getByRole("navigation", { name: "计划分类" });
   const sectionLinks = sectionNav.getByRole("link");
   await expect(sectionLinks).toHaveCount(5);
   await expect(sectionNav.getByRole("link", { name: "日程", exact: true })).toBeVisible();
@@ -66,9 +66,10 @@ test("keeps both Plan navigation levels complete and centered at 375px", async (
   expect(new Set(sectionMetrics.map((item) => item.height))).toEqual(new Set([44]));
   expect(sectionMetrics.every((item) => !item.clipped)).toBe(true);
 
-  const viewNav = page.getByRole("navigation", { name: "日程视图" });
+  const viewNav = page.getByRole("navigation", { name: "计划视图" });
   const viewLinks = viewNav.getByRole("link");
-  await expect(viewLinks).toHaveCount(4);
+  await expect(viewLinks).toHaveCount(3);
+  await expect(page.getByRole("link", { name: "手动改期", exact: true })).toBeVisible();
   const viewMetrics = await viewLinks.evaluateAll((links) => links.map((link) => {
     const style = getComputedStyle(link);
     return {

@@ -498,7 +498,7 @@ export function SettingsView() {
     setPending(null);
 
     if (!response.ok) {
-      setTemplateMessage("Template export failed.");
+      setTemplateMessage("模板导出失败。");
       return;
     }
 
@@ -512,7 +512,7 @@ export function SettingsView() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setTemplateMessage("Template exported.");
+    setTemplateMessage("计划空间模板已导出。");
   }
 
   async function importTemplate(event: React.ChangeEvent<HTMLInputElement>) {
@@ -531,14 +531,14 @@ export function SettingsView() {
       });
       const data = (await response.json()) as TemplateImportResult & { error?: string };
       if (!response.ok) {
-        setTemplateMessage(data.error ?? "Template import failed.");
+        setTemplateMessage(data.error ?? "模板导入失败。");
         return;
       }
       setTemplateMessage(
-        `Template imported: ${data.tasksCreated} tasks, ${data.routinesCreated} routines, ${data.timeBlocksCreated} time blocks.`,
+        `模板已导入：${data.tasksCreated} 个任务、${data.routinesCreated} 项日常安排、${data.timeBlocksCreated} 个固定日程。`,
       );
     } catch {
-      setTemplateMessage("Template import failed.");
+      setTemplateMessage("模板导入失败。");
     } finally {
       setPending(null);
     }
@@ -561,7 +561,7 @@ export function SettingsView() {
     setPending(null);
 
     if (!response.ok || !data.deleted) {
-      setWorkspaceDeleteMessage(data.error ?? "Workspace 删除失败。");
+      setWorkspaceDeleteMessage(data.error ?? "计划空间删除失败。");
       return;
     }
 
@@ -578,7 +578,7 @@ export function SettingsView() {
           <p className="paw-agent-msg">不常改的规则放这里，Today 保持干净。</p>
         </div>
         <div className="paw-status-pills">
-          <span className="paw-status-pill">Recovery: 系统默认 {formatHours(activeRecoveryTarget.minutes)}</span>
+          <span className="paw-status-pill">恢复时间：系统默认 {formatHours(activeRecoveryTarget.minutes)}</span>
           {dataUnavailable ? <span className="paw-status-pill warn">数据源未配置</span> : null}
           {message ? <span className="paw-status-pill link">{message}</span> : null}
         </div>
@@ -587,17 +587,17 @@ export function SettingsView() {
       <section className="paw-list-card mb-4">
         <div className="paw-list-header">
           <div>
-            <h2 className="paw-list-title">Agent runs</h2>
-            <p className="paw-list-subtitle">最近无人值守运行历史；不代表 Claude/Codex connector 在线状态。</p>
+            <h2 className="paw-list-title">助手运行记录</h2>
+            <p className="paw-list-subtitle">最近无人值守运行历史；不代表外部连接当前在线。</p>
           </div>
-          <span className="paw-status-pill">{agentRuns.length} latest</span>
+          <span className="paw-status-pill">最近 {agentRuns.length} 条</span>
         </div>
 
         <div className="paw-list mt-4">
           {agentRuns.length === 0 ? (
             <div className="paw-empty">
-              <h3>还没有 agent run</h3>
-              <p>Morning rebalance、evening review 或 weekly rebalance 运行后会显示在这里。</p>
+              <h3>还没有助手运行记录</h3>
+              <p>早间调整、晚间审核或每周调整运行后会显示在这里。</p>
             </div>
           ) : (
             agentRuns.map((run) => (
@@ -607,7 +607,7 @@ export function SettingsView() {
                     {agentRunStatusLabels[run.status]} · {agentRunKindLabels[run.kind]}
                   </p>
                   <p className="paw-row-meta paw-wrap-anywhere">
-                    {formatDateTime(run.createdAt)} · {run.reason} · warnings {run.warningCount}
+                    {formatDateTime(run.createdAt)} · {run.reason} · 提醒 {run.warningCount}
                   </p>
                   {run.status === "failed" && run.errorMessage ? (
                     <p className="paw-row-meta paw-wrap-anywhere text-[var(--app-danger)]">{run.errorMessage}</p>
@@ -617,7 +617,7 @@ export function SettingsView() {
                   <span className={run.status === "failed" ? "paw-status-pill warn" : "paw-status-pill link"}>{run.status}</span>
                   {run.patchId ? (
                     <a href="/review" className="paw-secondary-btn !px-3 !py-2 !text-xs">
-                      Review
+                      审核
                     </a>
                   ) : null}
                 </div>
@@ -630,8 +630,8 @@ export function SettingsView() {
       <section className="paw-list-card mb-4">
         <div className="paw-list-header">
           <div>
-            <h2 className="paw-list-title">Workspace template</h2>
-            <p className="paw-list-subtitle">Export reusable planning structure without tokens, check-ins, or progress history.</p>
+            <h2 className="paw-list-title">计划空间模板</h2>
+            <p className="paw-list-subtitle">导出可复用的计划结构，不包含令牌、收工反馈或进度历史。</p>
           </div>
           <span className="paw-more-icon">
             <Download size={18} />
@@ -646,11 +646,11 @@ export function SettingsView() {
             className="paw-primary-btn !px-4 !py-2 !text-sm"
           >
             <Download size={15} />
-            {pending === "template-export" ? "Exporting" : "Export workspace template"}
+            {pending === "template-export" ? "正在导出" : "导出计划空间模板"}
           </button>
           <label className="paw-secondary-btn !px-4 !py-2 !text-sm">
             <Upload size={15} />
-            Import template
+            导入模板
             <input
               type="file"
               accept="application/json,.json"
@@ -667,7 +667,7 @@ export function SettingsView() {
         <div className="paw-list-header">
           <div>
             <h2 className="paw-list-title">Codex bearer token 连接配置</h2>
-            <p className="paw-list-subtitle">生成 revocable workspace token，用 hosted MCP 连接 PawPlan。</p>
+            <p className="paw-list-subtitle">生成可撤销的计划空间令牌，用托管 MCP 连接 PawPlan。</p>
           </div>
           <span className="paw-more-icon">
             <KeyRound size={18} />
@@ -676,11 +676,11 @@ export function SettingsView() {
 
         <div className="paw-mcp-grid mt-4">
           <div className="paw-mcp-info">
-            <p className="paw-field-label">Workspace id</p>
+            <p className="paw-field-label">计划空间 ID</p>
             <p className="paw-mcp-value">{mcpWorkspaceId ?? "读取中"}</p>
           </div>
           <div className="paw-mcp-info">
-            <p className="paw-field-label">Hosted MCP URL</p>
+            <p className="paw-field-label">托管 MCP 地址</p>
             <p className="paw-mcp-value">{mcpConnection?.url ?? "读取中"}</p>
           </div>
         </div>
@@ -890,7 +890,7 @@ export function SettingsView() {
         <div className="paw-list-row">
           <div>
             <p className="paw-row-title">系统默认 {formatHours(activeRecoveryTarget.minutes)}</p>
-            <p className="paw-row-meta">source: {activeRecoveryTarget.source} · Agent 不应把 recovery 压到目标以下。</p>
+            <p className="paw-row-meta">来源：{activeRecoveryTarget.source} · 助手不应把恢复时间压到目标以下。</p>
           </div>
           <button type="button" disabled className="paw-secondary-btn !px-3 !py-2 !text-xs">
             暂不可配置
@@ -1016,7 +1016,7 @@ export function SettingsView() {
         {routines.length === 0 ? (
           <div className="paw-empty mt-4">
             <h3>还没有日常事项</h3>
-            <p>新增后会保存到当前 workspace 的 routines。</p>
+            <p>新增后会保存到当前计划空间的日常安排。</p>
           </div>
         ) : (
           <div className="paw-list">
@@ -1057,7 +1057,7 @@ export function SettingsView() {
         <div className="paw-list-header">
           <div>
             <h2 className="paw-list-title">能量规则</h2>
-            <p className="paw-list-subtitle">保存到 segment_energy_settings，告诉 Agent 每个时段适合什么强度。</p>
+            <p className="paw-list-subtitle">保存每个时段适合的任务强度，供助手排期时参考。</p>
           </div>
           <span className="paw-more-icon">
             <Zap size={18} />
@@ -1099,8 +1099,8 @@ export function SettingsView() {
       <section className="paw-list-card">
         <div className="paw-list-header">
           <div>
-            <h2 className="paw-list-title">Danger zone</h2>
-            <p className="paw-list-subtitle">删除当前 workspace 会同时删除它下面的计划、任务、设置、token 和记录。</p>
+            <h2 className="paw-list-title">危险操作</h2>
+            <p className="paw-list-subtitle">删除当前计划空间会同时删除它下面的计划、任务、设置、令牌和记录。</p>
           </div>
           <span className="paw-more-icon text-[var(--app-danger)]">
             <AlertTriangle size={18} />
@@ -1110,12 +1110,12 @@ export function SettingsView() {
         <form onSubmit={deleteWorkspace} className="grid gap-3 border-t border-[var(--app-line)] pt-4">
           <div className="grid gap-3 md:grid-cols-2">
             <label>
-              <span className="paw-field-label">Workspace 名称</span>
+              <span className="paw-field-label">计划空间名称</span>
               <input
                 value={workspaceName}
                 onChange={(event) => setWorkspaceName(event.target.value)}
                 className="paw-input"
-                placeholder="当前 workspace 名称"
+                placeholder="当前计划空间名称"
               />
             </label>
             <label>
@@ -1124,7 +1124,7 @@ export function SettingsView() {
                 value={workspaceDeleteConfirmation}
                 onChange={(event) => setWorkspaceDeleteConfirmation(event.target.value)}
                 className="paw-input"
-                placeholder={expectedWorkspaceDeleteConfirmation || "DELETE <workspace name>"}
+                placeholder={expectedWorkspaceDeleteConfirmation || "DELETE <计划空间名称>"}
               />
             </label>
           </div>
@@ -1135,7 +1135,7 @@ export function SettingsView() {
               className="paw-secondary-btn !px-4 !py-2 !text-sm text-[var(--app-danger)]"
             >
               <Trash2 size={15} />
-              {pending === "workspace-delete" ? "删除中" : "删除 workspace"}
+              {pending === "workspace-delete" ? "删除中" : "删除计划空间"}
             </button>
             {workspaceDeleteMessage ? <span className="paw-status-pill warn">{workspaceDeleteMessage}</span> : null}
           </div>

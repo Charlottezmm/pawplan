@@ -75,8 +75,10 @@ test("import page shows preview warnings and saves with explicit confirmation", 
 
   await page.getByRole("button", { name: "预览" }).first().click();
   await expect(page.getByText("目标：ship PawPlan tomorrow")).toBeVisible();
-  await expect(page.getByText("提醒（1）：不会阻止保存，建议先确认")).toBeVisible();
-  await expect(page.getByText("冲突（1）：可能产生重复或重叠，保存前请确认")).toBeVisible();
+  await expect(page.getByText("提醒（1）", { exact: true })).toBeVisible();
+  await expect(page.getByText("不会阻止保存，建议先确认。")).toBeVisible();
+  await expect(page.getByText("冲突（1）", { exact: true })).toBeVisible();
+  await expect(page.getByText("可能产生重复或重叠，保存前请确认。")).toBeVisible();
   await expect(page.getByText("Duplicate project name: PawPlan Import")).toBeVisible();
   await expect(page.getByText("Project PawPlan Import appears 2 times in this import")).toBeVisible();
 

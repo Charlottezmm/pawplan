@@ -50,16 +50,21 @@ test("captures a chore in Inbox and promotes it with visible scheduling metadata
   });
 
   await page.goto("/inbox");
-  await expect(page.getByText("捕获缓冲区")).toBeVisible();
+  await expect(page.getByText(/暂存区/).first()).toBeVisible();
   await page.getByPlaceholder("记一条想法…").fill("倒垃圾");
   await page.getByRole("button", { name: "添加" }).click();
   await expect(page.getByText("倒垃圾", { exact: true })).toBeVisible();
+  await expect(page.getByText("刚刚捕获")).toBeVisible();
 
   const row = page.locator(".paw-inbox-item", { hasText: "倒垃圾" });
   await row.getByRole("button", { name: /提升/ }).click();
+  await expect(row.getByLabel("任务日期")).not.toBeVisible();
+  await expect(row.getByRole("button", { name: "每天" })).not.toBeVisible();
+  await row.getByRole("button", { name: "任务", exact: true }).click();
   await row.getByLabel("任务日期").fill("2026-06-20");
   await row.getByRole("combobox", { name: /^时段$/ }).selectOption("evening");
-  await row.getByLabel("分钟").first().fill("15");
+  await row.getByLabel("估时（分钟）").fill("15");
+  await expect(row.getByRole("button", { name: "今天 · 晚上 · 15 分" })).toBeVisible();
   await row.getByRole("button", { name: "提升任务" }).click();
 
   await expect(row).toHaveCount(0);
@@ -71,6 +76,122 @@ test("captures a chore in Inbox and promotes it with visible scheduling metadata
       daySegment: "evening",
       estimatedMinutes: 15,
       priority: "normal",
+    },
+  ]);
+});
+
+test("chooses a routine destination with weekday controls instead of raw recurrence syntax", async ({ context, page }) => {
+  await addWorkspaceSession(context);
+  const inboxPatchBodies: unknown[] = [];
+
+  await page.route("**/api/inbox", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      await route.fulfill({
+        json: {
+          item: {
+            id: "33333333-3333-4333-8333-333333333333",
+            title: "整理桌面",
+            age: "刚刚",
+          },
+        },
+      });
+      return;
+    }
+
+    if (request.method() === "PATCH") {
+      const body = request.postDataJSON();
+      inboxPatchBodies.push(body);
+      await route.fulfill({ json: { ok: true, action: (body as { action: string }).action } });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/inbox");
+  await page.getByPlaceholder("记一条想法…").fill("整理桌面");
+  await page.getByRole("button", { name: "添加" }).click();
+
+  const row = page.locator(".paw-inbox-item", { hasText: "整理桌面" });
+  await row.getByRole("button", { name: /提升/ }).click();
+  await row.getByRole("button", { name: "日常", exact: true }).click();
+  await expect(row.getByRole("button", { name: "每天" })).toHaveAttribute("aria-pressed", "true");
+  await expect(row.getByLabel("任务日期")).not.toBeVisible();
+
+  await row.getByRole("button", { name: "星期一" }).click();
+  await row.getByRole("button", { name: "星期三" }).click();
+  await row.getByRole("combobox", { name: "默认时段" }).selectOption("morning");
+  await row.getByLabel("估时（分钟）").fill("20");
+  await row.getByRole("button", { name: "转日常" }).click();
+
+  expect(inboxPatchBodies).toEqual([
+    {
+      id: "33333333-3333-4333-8333-333333333333",
+      action: "routine",
+      weekdayPattern: "mon,wed",
+      defaultTimeSegment: "morning",
+      estimatedMinutes: 20,
+    },
+  ]);
+});
+
+test("shows field errors beside invalid promotion values and confirms permanent deletion", async ({ context, page }) => {
+  await addWorkspaceSession(context);
+  const inboxPatchBodies: unknown[] = [];
+
+  await page.route("**/api/inbox", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      await route.fulfill({
+        json: {
+          item: {
+            id: "44444444-4444-4444-8444-444444444444",
+            title: "重复记录",
+            age: "刚刚",
+          },
+        },
+      });
+      return;
+    }
+
+    if (request.method() === "PATCH") {
+      const body = request.postDataJSON();
+      inboxPatchBodies.push(body);
+      await route.fulfill({ json: { ok: true, action: (body as { action: string }).action } });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/inbox");
+  await page.getByPlaceholder("记一条想法…").fill("重复记录");
+  await page.getByRole("button", { name: "添加" }).click();
+
+  const row = page.locator(".paw-inbox-item", { hasText: "重复记录" });
+  await row.getByRole("button", { name: /提升/ }).click();
+  await row.getByRole("button", { name: "任务", exact: true }).click();
+  await row.getByLabel("任务日期").fill("");
+  await row.getByLabel("估时（分钟）").fill("4");
+  await row.getByRole("button", { name: "提升任务" }).click();
+
+  await expect(row.getByLabel("任务日期")).toHaveAttribute("aria-invalid", "true");
+  await expect(row.getByLabel("估时（分钟）")).toHaveAttribute("aria-invalid", "true");
+  await expect(row.getByText("请选择任务日期。")).toBeVisible();
+  await expect(row.getByText("请输入 5–480 之间的整数分钟。")).toBeVisible();
+  expect(inboxPatchBodies).toEqual([]);
+
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("删除后无法恢复");
+    await dialog.accept();
+  });
+  await row.getByRole("button", { name: "删除" }).click();
+  await expect(row).toHaveCount(0);
+  expect(inboxPatchBodies).toEqual([
+    {
+      id: "44444444-4444-4444-8444-444444444444",
+      action: "delete",
     },
   ]);
 });

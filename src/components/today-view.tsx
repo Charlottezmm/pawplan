@@ -3,11 +3,14 @@
 import { AlertTriangle, Archive, CalendarClock, Check, ChevronDown, Clock3, Copy, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CatIcon } from "./cat-icon";
 import { DailyCheckin } from "./daily-checkin";
 import { TaskDetailContent } from "./task-detail-content";
+import { TodayFixedTimeline } from "./today-fixed-timeline";
+import { DialogSheet } from "./ui/dialog-sheet";
+import { Notice } from "./ui/notice";
 import { EmptyState } from "./ui/primitives";
 import { defaultPostponeDate, moveOutOfScheduleUpdate, postponeTaskUpdate } from "@/lib/planning/task-actions";
 import type { TodayViewData } from "@/lib/planning/view-data";
@@ -15,7 +18,7 @@ import type { TodayViewData } from "@/lib/planning/view-data";
 type Task = TodayViewData["tasks"][number];
 type PersistedStatus = Task["status"];
 type DisplayStatus = PersistedStatus | "blocked";
-type TaskPatch = { status?: PersistedStatus; blocked?: boolean };
+type TaskPatch = { status?: PersistedStatus; blocked?: boolean; date?: string };
 type FetchTaskPatch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 const weekdayChars = "日一二三四五六";
 const priorityLabel: Record<"low" | "normal" | "high" | "urgent", string> = {
@@ -23,6 +26,11 @@ const priorityLabel: Record<"low" | "normal" | "high" | "urgent", string> = {
   normal: "普通",
   high: "高",
   urgent: "紧急",
+};
+const segmentLabel: Record<Task["segment"], string> = {
+  morning: "上午",
+  afternoon: "下午",
+  evening: "晚上",
 };
 
 export function formatTodayGreeting(date = new Date()) {
@@ -89,17 +97,20 @@ export async function persistTodayTaskUpdate(
   const savedTask = payload.task as Record<string, unknown>;
   const statusMatches = body.status === undefined || savedTask.status === body.status;
   const blockedMatches = body.blocked === undefined || savedTask.blocked === body.blocked;
-  if (savedTask.id !== id || !statusMatches || !blockedMatches) {
+  const dateMatches = body.date === undefined || (typeof savedTask.date === "string" && savedTask.date.startsWith(body.date));
+  if (savedTask.id !== id || !statusMatches || !blockedMatches || !dateMatches) {
     throw new Error("Task update response did not confirm the requested state");
   }
 }
 
 export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTasks?: ReactNode }) {
   const [tasks, setTasks] = useState<Array<Task & { displayStatus: DisplayStatus }>>(
-    data.tasks.map((task) => ({
-      ...task,
-      displayStatus: task.blocked && task.status === "todo" ? "blocked" : task.status,
-    })),
+    () => data.tasks
+      .map((task) => ({
+        ...task,
+        displayStatus: task.blocked && task.status === "todo" ? "blocked" as const : task.status,
+      }))
+      .sort((a, b) => Number(a.displayStatus === "done" || a.displayStatus === "backlog") - Number(b.displayStatus === "done" || b.displayStatus === "backlog")),
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
@@ -108,43 +119,15 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const [savingActionId, setSavingActionId] = useState<string | null>(null);
   const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(() => new Set());
   const statusRequests = useRef<Set<string>>(new Set());
+  const postponeDateRef = useRef<HTMLInputElement>(null);
   const [taskActionFeedback, setTaskActionFeedback] = useState<{ tone: "ok" | "error"; message: string } | null>(null);
 
   const doneCount = tasks.filter((task) => task.displayStatus === "done").length;
   const unresolvedTasks = tasks.filter((task) => task.displayStatus !== "done");
   const unresolvedMinutes = unresolvedTasks.reduce((sum, task) => sum + task.minutes, 0);
   const fixedMinutes = useMemo(() => {
-    return data.routines.reduce((sum, routine) => sum + routine.minutes, 0);
-  }, [data.routines]);
-
-  // 完成或移出排期的任务沉到列表底部，未处理的永远在最上面。
-  const sortedTasks = useMemo(() => {
-    const sunk = new Set<DisplayStatus>(["done", "backlog"]);
-    return [...tasks].sort(
-      (a, b) => Number(sunk.has(a.displayStatus)) - Number(sunk.has(b.displayStatus)),
-    );
-  }, [tasks]);
-
-  // FLIP：卡片重新排序时做位置过渡动画
-  const listRef = useRef<HTMLDivElement>(null);
-  const cardPositions = useRef<Map<string, number>>(new Map());
-  useLayoutEffect(() => {
-    const cards = listRef.current?.querySelectorAll<HTMLElement>("[data-task-id]") ?? [];
-    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    cards.forEach((el) => {
-      const id = el.dataset.taskId;
-      if (!id) return;
-      const nextTop = el.getBoundingClientRect().top;
-      const prevTop = cardPositions.current.get(id);
-      if (!reduceMotion && prevTop !== undefined && prevTop !== nextTop && typeof el.animate === "function") {
-        el.animate(
-          [{ transform: `translateY(${prevTop - nextTop}px)` }, { transform: "none" }],
-          { duration: 380, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
-        );
-      }
-      cardPositions.current.set(id, nextTop);
-    });
-  });
+    return data.exactFixedItems.reduce((sum, item) => sum + item.minutes, 0);
+  }, [data.exactFixedItems]);
 
   // 猫的表情和台词跟随状态（小时数挂载后再取，避免 SSR 时区差异）
   const [hour, setHour] = useState<number | null>(null);
@@ -180,17 +163,16 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     if (!postponeTask || savingActionId) return;
 
     setSavingActionId(postponeTask.id);
-    const response = await fetch("/api/tasks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(postponeTaskUpdate(postponeTask.id, postponeDate)),
-    });
-    setSavingActionId(null);
-    if (!response.ok) {
+    const update = postponeTaskUpdate(postponeTask.id, postponeDate);
+    try {
+      await persistTodayTaskUpdate(postponeTask.id, { date: update.date, status: update.status });
+    } catch {
+      setSavingActionId(null);
       setTaskActionFeedback({ tone: "error", message: "延后失败，任务仍保留在今天。" });
       return;
     }
 
+    setSavingActionId(null);
     setTasks((current) => current.filter((task) => task.id !== postponeTask.id));
     setPostponeTask(null);
     setTaskActionFeedback({ tone: "ok", message: `已延后到 ${postponeDate}，任务仍保持待办。` });
@@ -199,24 +181,23 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   async function moveOutOfSchedule(task: Task) {
     if (savingActionId || statusRequests.current.has(task.id)) return;
     const confirmed = window.confirm(
-      `确认将“${task.title}”移出排期？\n\n它会进入 Backlog，不再出现在 Today 或参与排期；之后仍可在 Backlog 页面找到。`,
+      `确认将“${task.title}”移出排期？\n\n它会进入稍后处理，不再出现在今天或参与排期；之后仍可在稍后处理页面找到。`,
     );
     if (!confirmed) return;
 
     setSavingActionId(task.id);
-    const response = await fetch("/api/tasks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(moveOutOfScheduleUpdate(task.id)),
-    });
-    setSavingActionId(null);
-    if (!response.ok) {
+    const update = moveOutOfScheduleUpdate(task.id);
+    try {
+      await persistTodayTaskUpdate(task.id, { status: update.status });
+    } catch {
+      setSavingActionId(null);
       setTaskActionFeedback({ tone: "error", message: "移出排期失败，任务仍保留在今天。" });
       return;
     }
 
+    setSavingActionId(null);
     setTasks((current) => current.filter((item) => item.id !== task.id));
-    setTaskActionFeedback({ tone: "ok", message: "已移出排期，可在 Backlog 页面找到。" });
+    setTaskActionFeedback({ tone: "ok", message: "已移出排期，可在稍后处理页面找到。" });
   }
 
   async function setTaskStatus(id: string, status: DisplayStatus) {
@@ -279,12 +260,13 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   }
 
   return (
-    <div className="paw-page">
+    <div className="paw-page paw-today-page">
+      <div className="paw-today-main">
       <section className="paw-today-header">
         <div className="paw-today-hero">
           <div className="paw-today-hero-text">
-            <p className="paw-greeting">{formatTodayGreeting()}</p>
-            <h1 className="paw-today-headline">{greeting}</h1>
+            <p className="paw-today-greeting">{greeting}</p>
+            <h1 className="paw-today-headline">{formatTodayGreeting()}</h1>
           </div>
           <span className="paw-today-cat">
             <CatIcon size={40} mood={catMood} />
@@ -307,23 +289,36 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   strokeDasharray={ringCircumference}
                   strokeDashoffset={ringOffset}
                   transform="rotate(-90 26 26)"
-                  style={{ transition: "stroke-dashoffset 800ms cubic-bezier(0.22, 1, 0.36, 1)" }}
+                  style={{ transition: "stroke-dashoffset 350ms ease" }}
                 />
               </svg>
               <span className="paw-ring-label">{doneCount}/{tasks.length}</span>
             </span>
-            <p className="paw-today-progress-line">
-              今天 {tasks.length} 件
-              {fixedMinutes > 0 ? ` · 固定 ${minutesLabel(fixedMinutes)}` : ""}
-              {` · 剩余 ${minutesLabel(unresolvedMinutes)}`}
-              {data.patchCount > 0 ? (
-                <>
-                  {" · "}
-                  <a href="/review" className="paw-today-progress-link">{data.patchCount} 条建议待确认</a>
-                </>
-              ) : null}
-            </p>
+            <dl className="paw-today-metrics">
+              <div>
+                <dt>待办</dt>
+                <dd>{unresolvedTasks.length}</dd>
+              </div>
+              <div>
+                <dt>剩余任务量</dt>
+                <dd>{minutesLabel(unresolvedMinutes)}</dd>
+              </div>
+              <div>
+                <dt>固定占用</dt>
+                <dd>{fixedMinutes > 0 ? minutesLabel(fixedMinutes) : "0m"}</dd>
+              </div>
+            </dl>
           </div>
+        ) : null}
+
+        {data.patchCount > 0 ? (
+          <Link href="/review" className="paw-today-review-entry">
+            <span>
+              <strong>查看 {data.patchCount} 条调整建议</strong>
+              <small>审核后才会修改计划</small>
+            </span>
+            <span aria-hidden="true">→</span>
+          </Link>
         ) : null}
 
         {data.warnings.slice(0, 1).map((warning) => (
@@ -348,9 +343,12 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         </div>
 
         {taskActionFeedback ? (
-          <p className={`paw-task-action-feedback ${taskActionFeedback.tone}`} role={taskActionFeedback.tone === "error" ? "alert" : "status"}>
-            {taskActionFeedback.message}
-          </p>
+          <Notice
+            tone={taskActionFeedback.tone === "error" ? "danger" : "success"}
+            title={taskActionFeedback.message}
+            dismissible
+            onDismiss={() => setTaskActionFeedback(null)}
+          />
         ) : null}
 
         {tasks.length > 0 && doneCount === tasks.length ? (
@@ -368,8 +366,8 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
           />
         ) : null}
 
-        <div className="paw-task-list" ref={listRef}>
-          {sortedTasks.map((task) => {
+        <div className="paw-task-list">
+          {tasks.map((task) => {
             const expanded = expandedId === task.id;
             const statusSaving = statusSavingIds.has(task.id);
             return (
@@ -395,8 +393,8 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     <span className="paw-task-title">{task.title}</span>
                   </span>
                   <span className="paw-task-headmeta">
-                    <Clock3 size={12} />
-                    {minutesLabel(task.minutes)}
+                    <Clock3 size={12} aria-hidden="true" />
+                    {segmentLabel[task.segment]} · {minutesLabel(task.minutes)}
                     <ChevronDown size={16} className="paw-task-chevron" />
                   </span>
                 </button>
@@ -411,7 +409,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   </div>
                   <TaskDetailContent detail={task.detail} notes={task.notes} />
                   <div className="paw-task-copy-row">
-                    <button type="button" onClick={() => void copyTaskDetails(task)} className="paw-secondary-btn !px-3 !py-1.5 !text-xs">
+                    <button type="button" onClick={() => void copyTaskDetails(task)} className="paw-secondary-btn paw-task-copy-button">
                       <Copy size={14} />
                       复制资料
                     </button>
@@ -429,7 +427,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     <button
                       type="button"
                       onClick={() => openPostpone(task)}
-                      className="paw-act-btn defer"
+                      className="paw-act-btn defer primary-secondary"
                       disabled={savingActionId === task.id || statusSaving}
                     >
                       <CalendarClock size={13} />
@@ -446,9 +444,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     </button>
                   </div>
                   {task.displayStatus === "blocked" ? (
-                    <p className="mt-2 flex items-center gap-1 text-xs text-amber-700">
+                    <p className="paw-task-blocked-note">
                       <AlertTriangle size={12} />
-                      标了卡住没关系，Agent 会帮你想办法重排。
+                      已标记为卡住；需要调整时，请到审核页查看建议。
                     </p>
                   ) : null}
                 </div>
@@ -459,12 +457,15 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         </div>
       </section>
 
-      {tasks.length > 0 ? (
-        <a href="/review" className="paw-today-rebalance">
+      {unresolvedTasks.length > 0 || data.warnings.length > 0 ? (
+        <Link href="/review" className="paw-today-rebalance">
           <RotateCcw size={15} />
-          没做完的交给我重排
-          <span className="paw-today-rebalance-arrow">→</span>
-        </a>
+          <span>
+            <strong>查看审核与调整</strong>
+            <small>PawPlan 不会自动修改日程</small>
+          </span>
+          <span className="paw-today-rebalance-arrow" aria-hidden="true">→</span>
+        </Link>
       ) : null}
 
       <DailyCheckin
@@ -474,41 +475,44 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         initialStreakDays={data.streakDays}
         dataUnavailable={data.dataUnavailable}
       />
+      </div>
 
-      {postponeTask ? (
-        <div className="paw-modal-backdrop" onMouseDown={() => !savingActionId && setPostponeTask(null)}>
-          <section
-            className="paw-modal-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="postpone-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <h2 id="postpone-title">选择新日期</h2>
-            <p>“{postponeTask.title}”会保持待办，只修改计划日期。</p>
-            <form onSubmit={postponeSelectedTask}>
-              <label className="paw-field-label" htmlFor="postpone-date">新日期</label>
-              <input
-                id="postpone-date"
-                type="date"
-                className="paw-input"
-                min={defaultPostponeDate()}
-                value={postponeDate}
-                onChange={(event) => setPostponeDate(event.target.value)}
-                required
-              />
-              <div className="paw-modal-actions">
-                <button type="button" className="paw-secondary-btn" onClick={() => setPostponeTask(null)} disabled={Boolean(savingActionId)}>
-                  取消
-                </button>
-                <button type="submit" className="paw-primary-btn" disabled={Boolean(savingActionId)}>
-                  {savingActionId ? "保存中…" : "确认延后"}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
+      <aside className="paw-today-desktop-timeline">
+        <TodayFixedTimeline items={data.exactFixedItems} />
+      </aside>
+
+      <DialogSheet
+        open={Boolean(postponeTask)}
+        onClose={() => {
+          if (!savingActionId) setPostponeTask(null);
+        }}
+        title="选择新日期"
+        description={postponeTask ? `“${postponeTask.title}”会保持待办，只修改计划日期。` : undefined}
+        initialFocusRef={postponeDateRef}
+        closeDisabled={Boolean(savingActionId)}
+      >
+        <form onSubmit={postponeSelectedTask}>
+          <label className="paw-field-label" htmlFor="postpone-date">新日期</label>
+          <input
+            id="postpone-date"
+            ref={postponeDateRef}
+            type="date"
+            className="paw-input"
+            min={defaultPostponeDate()}
+            value={postponeDate}
+            onChange={(event) => setPostponeDate(event.target.value)}
+            required
+          />
+          <div className="paw-modal-actions">
+            <button type="button" className="paw-secondary-btn" onClick={() => setPostponeTask(null)} disabled={Boolean(savingActionId)}>
+              取消
+            </button>
+            <button type="submit" className="paw-primary-btn" disabled={Boolean(savingActionId)}>
+              {savingActionId ? "保存中…" : "确认延后"}
+            </button>
+          </div>
+        </form>
+      </DialogSheet>
     </div>
   );
 }

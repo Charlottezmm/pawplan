@@ -23,11 +23,11 @@ test("exposes 收集 as a primary navigation destination", async ({ context, pag
   await addWorkspaceSession(context);
 
   await page.goto("/today");
-  const nav = page.getByLabel(isMobile ? "Mobile navigation" : "Primary navigation");
+  const nav = page.getByLabel(isMobile ? "移动导航" : "主导航");
   const inboxLink = nav.getByRole("link", { name: "收集", exact: true });
   await expect(inboxLink).toBeVisible();
 
   await inboxLink.click();
   await expect(page).toHaveURL(/\/inbox$/);
-  await expect(page.getByRole("heading", { name: "暂存池", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "收集", exact: true })).toBeVisible();
 });

@@ -31,7 +31,7 @@ export function QuickCapture() {
   }
 
   return (
-    <form onSubmit={submit} className="quick-capture" aria-label="Quick capture">
+    <form onSubmit={submit} className="quick-capture" aria-label="快速收集">
       <span className="quick-capture-icon" aria-hidden="true">
         +
       </span>

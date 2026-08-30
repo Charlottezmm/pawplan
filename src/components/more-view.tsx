@@ -31,7 +31,7 @@ const sections: Array<{ title: string; tools: Tool[] }> = [
       {
         href: "/settings",
         title: "设置",
-        text: "Workspace、日常事项、MCP 连接和规则默认值。",
+        text: "计划空间、日常事项、MCP 连接和规则默认值。",
         icon: Settings,
         active: true,
       },
@@ -49,7 +49,7 @@ export function MoreView({ showAdminInvites = false }: { showAdminInvites?: bool
         {
           href: "/admin/invites",
           title: "邀请管理",
-          text: "Owner-only：创建邀请链接并查看 workspace。",
+          text: "仅所有者可用：创建邀请链接并查看计划空间。",
           icon: ShieldCheck,
           active: true,
         },
