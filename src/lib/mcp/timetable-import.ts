@@ -5,6 +5,8 @@ import { parseTimetableCsv, type TimetableImportPreviewRow } from "@/lib/imports
 import {
   buildTimetableRowsPreview,
   materializeTimetableRows,
+  storedTimeBlockFingerprint,
+  timetableBlockFingerprint,
   type MaterializedTimetableBlock,
 } from "@/lib/imports/timetable-save";
 import { getActivePlanId } from "@/lib/planning/active-plan";
@@ -90,11 +92,11 @@ function blockOverlaps(a: { startsAt: Date; endsAt: Date }, b: { startsAt: Date;
 }
 
 function conflictLabel(block: MaterializedTimetableBlock, existing: Record<string, unknown>) {
-  const existingTitle = typeof existing.title === "string" ? existing.title : "existing block";
-  return `${block.row.title} overlaps ${existingTitle}`;
+  const existingTitle = typeof existing.title === "string" ? existing.title : "现有日程";
+  return `${block.row.title} 与 ${existingTitle} 时间重叠`;
 }
 
-export async function findTimetableImportConflicts(
+export async function inspectTimetableImportConflicts(
   db: PlanningDb,
   input: {
     workspaceId: string;
@@ -114,22 +116,49 @@ export async function findTimetableImportConflicts(
       ),
     );
 
+  const incomingWithFingerprints = input.blocks.map((block, index) => ({
+    id: `incoming-${index}`,
+    importFingerprint: timetableBlockFingerprint(block),
+    ...block,
+  }));
+  const existingWithFingerprints = (existingRows as Array<any>).map((block) => ({
+    ...block,
+    importFingerprint: block.importFingerprint ?? storedTimeBlockFingerprint(block),
+  }));
+  const existingFingerprints = new Set(existingWithFingerprints.map((block) => block.importFingerprint));
   const incomingBlocks = expandRecurringBlocks(
-    input.blocks.map((block, index) => ({ id: `incoming-${index}`, ...block })),
+    incomingWithFingerprints,
     start,
     end,
   );
-  const existingBlocks = expandRecurringBlocks(existingRows as Array<any>, start, end);
+  const existingBlocks = expandRecurringBlocks(existingWithFingerprints, start, end);
   const conflicts: string[] = [];
+  const conflictFingerprints = new Set<string>();
   for (const block of incomingBlocks) {
     for (const existing of existingBlocks as Array<Record<string, unknown>>) {
+      if (block.importFingerprint === existing.importFingerprint) continue;
       if (!(existing.startsAt instanceof Date) || !(existing.endsAt instanceof Date)) continue;
       if (blockOverlaps(block, { startsAt: existing.startsAt, endsAt: existing.endsAt })) {
         conflicts.push(conflictLabel(block, existing));
+        conflictFingerprints.add(block.importFingerprint);
       }
     }
   }
-  return conflicts;
+  return {
+    conflicts: [...new Set(conflicts)],
+    existingFingerprints,
+    conflictFingerprints,
+  };
+}
+
+export async function findTimetableImportConflicts(
+  db: PlanningDb,
+  input: {
+    workspaceId: string;
+    blocks: MaterializedTimetableBlock[];
+  },
+) {
+  return (await inspectTimetableImportConflicts(db, input)).conflicts;
 }
 
 export async function proposeTimetableImport(

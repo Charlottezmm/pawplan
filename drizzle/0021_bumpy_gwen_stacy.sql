@@ -1,0 +1,2 @@
+ALTER TABLE "time_blocks" ADD COLUMN "import_fingerprint" varchar(64);--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "time_blocks_workspace_import_fingerprint_unique" ON "time_blocks" USING btree ("workspace_id","import_fingerprint") WHERE "time_blocks"."import_fingerprint" IS NOT NULL;

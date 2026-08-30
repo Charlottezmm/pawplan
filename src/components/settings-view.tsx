@@ -610,13 +610,13 @@ export function SettingsView() {
                     {formatDateTime(run.createdAt)} · {run.reason} · 提醒 {run.warningCount}
                   </p>
                   {run.status === "failed" && run.errorMessage ? (
-                    <p className="paw-row-meta paw-wrap-anywhere text-[var(--app-danger)]">{run.errorMessage}</p>
+                    <p className="paw-row-meta paw-wrap-anywhere paw-danger-text">{run.errorMessage}</p>
                   ) : null}
                 </div>
                 <div className="paw-row-actions">
                   <span className={run.status === "failed" ? "paw-status-pill warn" : "paw-status-pill link"}>{run.status}</span>
                   {run.patchId ? (
-                    <a href="/review" className="paw-secondary-btn !px-3 !py-2 !text-xs">
+                    <a href="/review" className="paw-secondary-btn">
                       审核
                     </a>
                   ) : null}
@@ -643,12 +643,12 @@ export function SettingsView() {
             type="button"
             disabled={pending === "template-export"}
             onClick={() => void exportTemplate()}
-            className="paw-primary-btn !px-4 !py-2 !text-sm"
+            className="paw-primary-btn"
           >
             <Download size={15} />
             {pending === "template-export" ? "正在导出" : "导出计划空间模板"}
           </button>
-          <label className="paw-secondary-btn !px-4 !py-2 !text-sm">
+          <label className="paw-secondary-btn paw-file-upload">
             <Upload size={15} />
             导入模板
             <input
@@ -729,7 +729,7 @@ export function SettingsView() {
             </label>
           </div>
           <div className="paw-save-row !mt-0">
-            <button type="submit" disabled={pending === "mcp-token"} className="paw-primary-btn !px-4 !py-2 !text-sm">
+            <button type="submit" disabled={pending === "mcp-token"} className="paw-primary-btn">
               <KeyRound size={15} />
               {pending === "mcp-token" ? "创建中" : "创建 token"}
             </button>
@@ -785,7 +785,7 @@ export function SettingsView() {
                     disabled={Boolean(token.revokedAt) || pending === token.id}
                     onClick={() => void revokeToken(token)}
                     aria-label={`撤销 ${token.name}`}
-                    className="paw-secondary-btn !px-3 !py-2 !text-xs text-[var(--app-danger)]"
+                    className="paw-secondary-btn paw-danger-text"
                   >
                     <Trash2 size={13} />
                     撤销
@@ -865,7 +865,7 @@ export function SettingsView() {
                     disabled={pending === authorization.id}
                     onClick={() => void revokeClaudeAuthorization(authorization)}
                     aria-label={`撤销 ${authorization.clientName}`}
-                    className="paw-secondary-btn !px-3 !py-2 !text-xs text-[var(--app-danger)]"
+                    className="paw-secondary-btn paw-danger-text"
                   >
                     <Trash2 size={13} />
                     撤销
@@ -892,7 +892,7 @@ export function SettingsView() {
             <p className="paw-row-title">系统默认 {formatHours(activeRecoveryTarget.minutes)}</p>
             <p className="paw-row-meta">来源：{activeRecoveryTarget.source} · 助手不应把恢复时间压到目标以下。</p>
           </div>
-          <button type="button" disabled className="paw-secondary-btn !px-3 !py-2 !text-xs">
+          <button type="button" disabled className="paw-secondary-btn">
             暂不可配置
           </button>
         </div>
@@ -997,7 +997,7 @@ export function SettingsView() {
             </label>
           </div>
           <div className="paw-save-row !mt-1">
-            <button type="submit" disabled={pending === "routine"} className="paw-primary-btn !px-4 !py-2 !text-sm">
+            <button type="submit" disabled={pending === "routine"} className="paw-primary-btn">
               {isEditing ? <Save size={15} /> : <Plus size={15} />}
               {pending === "routine" ? "保存中" : isEditing ? "保存修改" : "新增日常"}
             </button>
@@ -1005,7 +1005,7 @@ export function SettingsView() {
               <button
                 type="button"
                 onClick={() => setRoutineForm(emptyRoutineForm)}
-                className="paw-secondary-btn !px-4 !py-2 !text-sm"
+                className="paw-secondary-btn"
               >
                 取消编辑
               </button>
@@ -1033,7 +1033,7 @@ export function SettingsView() {
                   <button
                     type="button"
                     onClick={() => setRoutineForm(routine)}
-                    className="paw-secondary-btn !px-3 !py-2 !text-xs"
+                    className="paw-secondary-btn"
                   >
                     编辑
                   </button>
@@ -1041,7 +1041,7 @@ export function SettingsView() {
                     type="button"
                     disabled={pending === routine.id}
                     onClick={() => void deleteExistingRoutine(routine.id)}
-                    className="paw-secondary-btn !px-3 !py-2 !text-xs text-[var(--app-danger)]"
+                    className="paw-secondary-btn paw-danger-text"
                   >
                     <Trash2 size={13} />
                     删除
@@ -1088,7 +1088,7 @@ export function SettingsView() {
             type="button"
             disabled={pending === "energy"}
             onClick={() => void saveEnergy()}
-            className="paw-primary-btn !px-4 !py-2 !text-sm"
+            className="paw-primary-btn"
           >
             <Save size={15} />
             {pending === "energy" ? "保存中" : "保存能量规则"}
@@ -1102,7 +1102,7 @@ export function SettingsView() {
             <h2 className="paw-list-title">危险操作</h2>
             <p className="paw-list-subtitle">删除当前计划空间会同时删除它下面的计划、任务、设置、令牌和记录。</p>
           </div>
-          <span className="paw-more-icon text-[var(--app-danger)]">
+          <span className="paw-more-icon paw-danger-text">
             <AlertTriangle size={18} />
           </span>
         </div>
@@ -1132,7 +1132,7 @@ export function SettingsView() {
             <button
               type="submit"
               disabled={!canDeleteWorkspace || pending === "workspace-delete"}
-              className="paw-secondary-btn !px-4 !py-2 !text-sm text-[var(--app-danger)]"
+              className="paw-secondary-btn paw-danger-text"
             >
               <Trash2 size={15} />
               {pending === "workspace-delete" ? "删除中" : "删除计划空间"}

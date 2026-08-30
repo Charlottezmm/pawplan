@@ -57,7 +57,7 @@ export function DailyCheckin({
       <div>
         <h2 className="paw-feedback-title">收工反馈</h2>
         <p className="paw-feedback-subtitle">花 5 秒记三件事：做完了什么、卡在哪、明天从哪继续。</p>
-        {dataUnavailable ? <p className="paw-feedback-subtitle text-amber-700">当前没有配置数据库，保存会在真实环境启用。</p> : null}
+        {dataUnavailable ? <p className="paw-feedback-subtitle paw-warning-text">当前没有配置数据库，保存会在真实环境启用。</p> : null}
       </div>
       <div className="paw-feedback-fields">
         <label>

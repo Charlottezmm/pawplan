@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, FileText, Save, Table } from "lucide-react";
+import { Eye, FileText, Save, Table, Upload } from "lucide-react";
 import { useState } from "react";
 import { BackLink } from "./back-link";
 import { CatIcon } from "./cat-icon";
@@ -35,6 +35,23 @@ type TimetablePreview = {
   blocksPreviewed: number;
   warnings: string[];
   conflicts: string[];
+  rowStatuses: Array<{
+    index: number;
+    status: "new" | "existing" | "duplicate" | "conflict";
+    reason: string;
+  }>;
+  newCount: number;
+  existingCount: number;
+  conflictCount: number;
+};
+
+type TimetableSaveResult = {
+  status: "succeeded" | "no_change";
+  blocksCreated: number;
+  blocksExisting: number;
+  coursesCreated: number;
+  coursesReused: number;
+  readback: Array<{ id: string; title: string; fingerprint: string }>;
 };
 
 type RequestState = "idle" | "previewing" | "saving";
@@ -71,7 +88,7 @@ const weekdayLabels: Record<string, string> = {
   Sunday: "星期日",
 };
 
-async function postJson<T>(url: string, body: Record<string, string>, fallbackMessage: string): Promise<T> {
+async function postJson<T>(url: string, body: Record<string, unknown>, fallbackMessage: string): Promise<T> {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -110,6 +127,7 @@ export function ImportView() {
   const [timetableState, setTimetableState] = useState<RequestState>("idle");
   const [timetableMessage, setTimetableMessage] = useState<string | null>(null);
   const [timetableError, setTimetableError] = useState<string | null>(null);
+  const [allowTimetableConflicts, setAllowTimetableConflicts] = useState(false);
 
   async function previewPlan() {
     setPlanState("previewing");
@@ -170,6 +188,7 @@ export function ImportView() {
       );
       setTimetablePreview(payload.preview);
       setTimetablePreviewToken(payload.previewToken);
+      setAllowTimetableConflicts(false);
     } catch (error) {
       setTimetablePreview(null);
       setTimetablePreviewToken(null);
@@ -188,20 +207,44 @@ export function ImportView() {
     setTimetableError(null);
     setTimetableMessage(null);
     try {
-      await postJson<{ message: string }>(
+      const payload = await postJson<{ result: TimetableSaveResult; message: string }>(
         "/api/imports/timetable/save",
         {
           csv: timetableCsv,
           confirmation: "CONFIRM_TIMETABLE_IMPORT",
           previewToken: timetablePreviewToken,
+          allowConflicts: allowTimetableConflicts,
         },
         "无法保存 timetable.csv，请稍后重试",
       );
-      setTimetableMessage("已保存 timetable.csv：已新增时间块；重复导入目前仍可能重复添加。");
+      setTimetableMessage(
+        payload.result.status === "no_change"
+          ? `没有新增日程：${payload.result.blocksExisting} 个时间块已经存在。`
+          : `已新增 ${payload.result.blocksCreated} 个时间块，跳过 ${payload.result.blocksExisting} 个重复项，并完成回读。`,
+      );
     } catch (error) {
       setTimetableError(error instanceof Error ? error.message : "无法保存 timetable.csv，请稍后重试");
     } finally {
       setTimetableState("idle");
+    }
+  }
+
+  async function loadTimetableFile(file: File | undefined) {
+    if (!file) return;
+    setTimetableError(null);
+    if (file.size > 200_000) {
+      setTimetableError("CSV 文件不能超过 200 KB。");
+      return;
+    }
+    try {
+      const content = await file.text();
+      setTimetableCsv(content);
+      setTimetablePreview(null);
+      setTimetablePreviewToken(null);
+      setTimetableMessage(null);
+      setAllowTimetableConflicts(false);
+    } catch {
+      setTimetableError("无法读取 CSV 文件，请重新选择。");
     }
   }
 
@@ -321,7 +364,7 @@ export function ImportView() {
             </span>
             <div>
               <h2 className="paw-more-label">timetable.csv</h2>
-              <p className="paw-more-text">保存后会按日期生成对应的时间块；注意重复保存会重复添加。</p>
+              <p className="paw-more-text">先预览再保存；已存在的日程会自动跳过，时间重叠需要额外确认。</p>
             </div>
           </div>
           <label className="paw-field-label" htmlFor="timetable-csv">
@@ -336,9 +379,22 @@ export function ImportView() {
               setTimetablePreview(null);
               setTimetablePreviewToken(null);
               setTimetableMessage(null);
+              setAllowTimetableConflicts(false);
             }}
           />
           <div className="paw-save-row">
+            <label className="paw-secondary-btn paw-file-upload" htmlFor="timetable-file">
+              <Upload size={16} />
+              选择 CSV 文件
+            </label>
+            <input
+              id="timetable-file"
+              className="sr-only"
+              type="file"
+              accept=".csv,text/csv,text/plain"
+              onChange={(event) => void loadTimetableFile(event.target.files?.[0])}
+              disabled={timetableState !== "idle"}
+            />
             <button
               className="paw-secondary-btn"
               type="button"
@@ -348,6 +404,7 @@ export function ImportView() {
                 setTimetablePreviewToken(null);
                 setTimetableMessage(null);
                 setTimetableError(null);
+                setAllowTimetableConflicts(false);
               }}
               disabled={timetableState !== "idle"}
             >
@@ -363,7 +420,12 @@ export function ImportView() {
               className="paw-primary-btn"
               type="button"
               onClick={saveTimetable}
-              disabled={timetableState !== "idle" || !timetablePreview || !timetablePreviewToken}
+              disabled={
+                timetableState !== "idle" ||
+                !timetablePreview ||
+                !timetablePreviewToken ||
+                (timetablePreview.conflictCount > 0 && !allowTimetableConflicts)
+              }
             >
               <Save size={16} />
               {timetableState === "saving" ? "正在保存" : "保存"}
@@ -374,7 +436,7 @@ export function ImportView() {
           {timetablePreview ? (
             <div className="paw-import-preview">
               <p className="paw-row-meta">
-                预览行数：{timetablePreview.rows.length} · 将生成时间块：{timetablePreview.blocksPreviewed} · 时区：{timetablePreview.timezone}
+                预览 {timetablePreview.rows.length} 行 · 将新增 {timetablePreview.newCount} · 已存在/重复 {timetablePreview.existingCount} · 时区：{timetablePreview.timezone}
               </p>
               {timetablePreview.warnings.length > 0 ? (
                 <Notice tone="warning" title={`提醒（${timetablePreview.warnings.length}）`}>
@@ -390,7 +452,7 @@ export function ImportView() {
               ) : null}
               {timetablePreview.conflicts.length > 0 ? (
                 <Notice tone="danger" title={`冲突（${timetablePreview.conflicts.length}）`}>
-                  <p>可能产生重复或重叠，保存前请确认。</p>
+                  <p>以下日程与现有安排重叠。只有明确接受重叠后才能保存。</p>
                   <ul className="paw-import-notice-list">
                     {timetablePreview.conflicts.map((conflict) => (
                       <li className="paw-list-row" key={conflict}>
@@ -398,18 +460,33 @@ export function ImportView() {
                       </li>
                     ))}
                   </ul>
+                  <label className="paw-import-conflict-confirm">
+                    <input
+                      type="checkbox"
+                      checked={allowTimetableConflicts}
+                      onChange={(event) => setAllowTimetableConflicts(event.target.checked)}
+                    />
+                    我确认仍要保存这些重叠日程
+                  </label>
                 </Notice>
               ) : null}
               <ul className="paw-list">
                 {timetablePreview.rows.map((row, index) => (
                   <li className="paw-list-row" key={`${row.title}-${index}`}>
-                    <span className="paw-row-title">{row.title}</span>
-                    <span className="paw-row-meta">
-                      {timetableKindLabels[row.kind]} ·{" "}
-                      {row.dayOfWeek ? (weekdayLabels[row.dayOfWeek] ?? row.dayOfWeek) : row.startsOn} · {row.startTime}-
-                      {row.endTime}
-                      {row.location ? ` · ${row.location}` : " · 地点待确认"}
+                    <span>
+                      <span className="paw-row-title">{row.title}</span>
+                      <span className="paw-row-meta">
+                        {timetableKindLabels[row.kind]} ·{" "}
+                        {row.dayOfWeek ? (weekdayLabels[row.dayOfWeek] ?? row.dayOfWeek) : row.startsOn} · {row.startTime}-
+                        {row.endTime}
+                        {row.location ? ` · ${row.location}` : " · 地点待确认"}
+                      </span>
                     </span>
+                    {timetablePreview.rowStatuses[index] ? (
+                      <span className={`paw-import-status ${timetablePreview.rowStatuses[index].status}`}>
+                        {timetablePreview.rowStatuses[index].reason}
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>

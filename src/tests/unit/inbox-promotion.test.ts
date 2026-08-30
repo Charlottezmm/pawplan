@@ -333,7 +333,8 @@ describe("inbox UI promotion payloads", () => {
     expect(source).not.toContain('placeholder="daily / mon,wed,fri"');
     expect(source).toContain('aria-invalid={Boolean(itemErrors.taskDate)}');
     expect(source).toContain("刚刚捕获");
-    expect(source).toContain("删除后无法恢复");
+    expect(source).toContain('title="删除收集条目？"');
+    expect(source).toContain("将从收集区永久删除");
   });
 });
 

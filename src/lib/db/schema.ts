@@ -264,12 +264,17 @@ export const timeBlocks = pgTable("time_blocks", {
   trackId: uuid("track_id").references(() => tracks.id, { onDelete: "set null" }),
   movable: boolean("movable").notNull().default(false),
   protected: boolean("protected").notNull().default(true),
+  importFingerprint: varchar("import_fingerprint", { length: 64 }),
   estimatedMinutes: integer("estimated_minutes"),
   energyLevel: energyLevel("energy_level"),
   revision: integer("revision").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  uniqueWorkspaceImportFingerprint: uniqueIndex("time_blocks_workspace_import_fingerprint_unique")
+    .on(table.workspaceId, table.importFingerprint)
+    .where(sql`${table.importFingerprint} IS NOT NULL`),
+}));
 
 export const timeBlockExceptions = pgTable("time_block_exceptions", {
   id: uuid("id").primaryKey().defaultRandom(),

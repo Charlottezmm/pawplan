@@ -148,6 +148,13 @@
       "when": 1787883430100,
       "tag": "0020_concerned_ink",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788060580829,
+      "tag": "0021_bumpy_gwen_stacy",
+      "breakpoints": true
     }
   ]
 }

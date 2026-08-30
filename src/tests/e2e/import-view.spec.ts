@@ -59,7 +59,11 @@ test("import page shows preview warnings and saves with explicit confirmation", 
           timezone: "Asia/Shanghai",
           blocksPreviewed: 2,
           warnings: ["Times are interpreted in Asia/Shanghai"],
-          conflicts: ["Deep Learning Lecture overlaps Existing Block"],
+          conflicts: ["Deep Learning Lecture 与 Existing Block 时间重叠"],
+          rowStatuses: [{ index: 0, status: "conflict", reason: "与现有日程时间重叠" }],
+          newCount: 1,
+          existingCount: 0,
+          conflictCount: 1,
         },
         previewToken: "timetable-preview-token",
       },
@@ -70,6 +74,12 @@ test("import page shows preview warnings and saves with explicit confirmation", 
 
   await expect(page.getByLabel("Markdown 内容")).toHaveValue("");
   await expect(page.getByLabel("CSV 内容")).toHaveValue("");
+  await page.getByLabel("选择 CSV 文件").setInputFiles({
+    name: "timetable.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("title,kind\nUploaded schedule,meeting\n"),
+  });
+  await expect(page.getByLabel("CSV 内容")).toHaveValue(/Uploaded schedule/);
   await page.getByRole("button", { name: "填入 plan.md 示例" }).click();
   await expect(page.getByLabel("Markdown 内容")).toHaveValue(/Goal: ship PawPlan tomorrow/);
 
@@ -90,9 +100,13 @@ test("import page shows preview warnings and saves with explicit confirmation", 
 
   await page.getByRole("button", { name: "填入 timetable.csv 示例" }).click();
   await page.getByRole("button", { name: "预览" }).nth(1).click();
-  await expect(page.getByText(/预览行数：1 · 将生成时间块：2 · 时区：Asia\/Shanghai/)).toBeVisible();
+  await expect(page.getByText(/预览 1 行 · 将新增 1 · 已存在\/重复 0 · 时区：Asia\/Shanghai/)).toBeVisible();
   await expect(page.getByText(/课程 · 星期一 · 09:00-11:00/)).toBeVisible();
   await expect(page.getByText("Times are interpreted in Asia/Shanghai")).toBeVisible();
-  await expect(page.getByText("Deep Learning Lecture overlaps Existing Block")).toBeVisible();
+  await expect(page.getByText("Deep Learning Lecture 与 Existing Block 时间重叠")).toBeVisible();
+  await expect(page.getByText("与现有日程时间重叠", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存" }).nth(1)).toBeDisabled();
+  await page.getByLabel("我确认仍要保存这些重叠日程").check();
+  await expect(page.getByRole("button", { name: "保存" }).nth(1)).toBeEnabled();
   await expect(page.getByRole("heading", { name: "HTML" })).toHaveCount(0);
 });

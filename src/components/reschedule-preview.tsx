@@ -4,6 +4,7 @@ import { Check, Lock, RotateCcw, Trash2, X } from "lucide-react";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CatIcon } from "./cat-icon";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 import {
   getReviewSubmitPresentation,
   ReviewItemState,
@@ -56,6 +57,7 @@ export function ReviewPreview({
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyNotice, setApplyNotice] = useState<string | null>(null);
   const [applyProgress, setApplyProgress] = useState<{ current: number; total: number } | null>(null);
+  const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false);
   const isApplying = pendingAction !== null;
   const visiblePatchItems = data.patchItems
     .filter((item) => !closedPatchIds.includes(item.patchId))
@@ -93,10 +95,6 @@ export function ReviewPreview({
 
   async function dismissAllDrafts() {
     if (draftCount === 0) return;
-    const confirmed = window.confirm(
-      `确认清空审核中的 ${draftCount} 份调整建议（共 ${operationCount} 项变更）？\n\n这些建议会标记为已拒绝并离开审核页；已生效日程不会改动。`,
-    );
-    if (!confirmed) return;
 
     setPendingAction("bulk-reject");
     setApplyError(null);
@@ -126,6 +124,7 @@ export function ReviewPreview({
         ),
       );
       setApplyNotice(getRejectReviewPatchesNotice(result));
+      setClearConfirmationOpen(false);
       router.refresh();
     } catch (error) {
       setApplyError(error instanceof Error ? error.message : "清空待审核建议失败");
@@ -323,7 +322,7 @@ export function ReviewPreview({
             {draftCount > 0 ? (
               <button
                 type="button"
-                onClick={dismissAllDrafts}
+                onClick={() => setClearConfirmationOpen(true)}
                 disabled={isApplying}
                 className="paw-review-clear-btn"
                 aria-label="清空全部待审核建议"
@@ -505,6 +504,21 @@ export function ReviewPreview({
         </p>
       </section>
       ) : null}
+
+      <ConfirmDialog
+        open={clearConfirmationOpen}
+        onClose={() => {
+          if (!isApplying) setClearConfirmationOpen(false);
+        }}
+        onConfirm={() => void dismissAllDrafts()}
+        title="清空待审核建议？"
+        description={`将拒绝 ${draftCount} 份建议，共 ${operationCount} 项变更。`}
+        confirmLabel="确认清空"
+        pending={pendingAction === "bulk-reject"}
+        destructive
+      >
+        这些建议会离开审核页；已经生效的任务和日程不会改变。
+      </ConfirmDialog>
     </div>
   );
 }

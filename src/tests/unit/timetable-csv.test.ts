@@ -67,12 +67,21 @@ Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learn
         timezone: "Asia/Shanghai",
         rows: expect.any(Array),
         blocksPreviewed: 2,
-        warnings: ["Duplicate timetable row: Deep Learning Lecture Monday 09:00-11:00"],
-        conflicts: expect.arrayContaining([
-          "Duplicate imported time block: Deep Learning Lecture on 2026-09-01 09:00-11:00",
-        ]),
+        warnings: ["CSV 中存在重复行：Deep Learning Lecture Monday 09:00-11:00"],
+        conflicts: [],
+        conflictRowIndexes: [],
       }),
     );
+  });
+
+  it("marks different rows that overlap within the same import as conflicts", () => {
+    const result = buildTimetableImportPreview(`title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,location,recurrence,notes
+Lecture,course,Monday,09:00,11:00,2026-09-07,2026-09-14,Math,Room 1,weekly,
+Office Hours,meeting,Monday,10:30,11:30,2026-09-07,2026-09-14,,Room 2,weekly,
+`);
+
+    expect(result.conflictRowIndexes).toEqual([0, 1]);
+    expect(result.conflicts).toEqual(["Lecture 与本次导入中的 Office Hours 时间重叠"]);
   });
 
   it("rejects invalid dates, invalid times, end-before-start blocks, and too-long fields", () => {

@@ -248,6 +248,7 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
   const [message, setMessage] = useState<string | null>(null);
   const [editorMessage, setEditorMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<"save" | "delete" | null>(null);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const [dataUnavailable, setDataUnavailable] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -289,6 +290,7 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
   function openCreate(date = timetable.selectedDateKey, startMinute = 9 * 60) {
     setForm(emptyForm(date, startMinute));
     setEditorMessage(null);
+    setDeleteArmed(false);
     setEditorOpen(true);
   }
 
@@ -316,6 +318,7 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
       recurrenceRule: block.recurrenceRule ?? "",
     });
     setEditorMessage(null);
+    setDeleteArmed(false);
     setEditorOpen(true);
     return true;
   }
@@ -371,7 +374,7 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
   }
 
   async function deleteTimeBlock() {
-    if (!form.id || !window.confirm(`删除“${redactPrivateTitle(form.title)}”？`)) return;
+    if (!form.id || !deleteArmed) return;
     setPending("delete");
     setEditorMessage(null);
     try {
@@ -386,6 +389,7 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
         return;
       }
       setEditorOpen(false);
+      setDeleteArmed(false);
       setMessage("日程已删除。");
       await loadConstraints();
       router.refresh();
@@ -509,10 +513,22 @@ export function ConstraintsView({ timetable }: { timetable: TimetableWeekView })
 
               {editorMessage ? <p className={editorStyles.error} role="alert">{editorMessage}</p> : null}
 
+              {deleteArmed ? (
+                <p className={editorStyles.deleteConfirmation} role="status">
+                  将永久删除“{redactPrivateTitle(form.title)}”。再次点击红色按钮确认；其他日程不会改变。
+                </p>
+              ) : null}
+
               <footer className={editorStyles.footer}>
                 {form.id ? (
-                  <button type="button" className={editorStyles.deleteButton} onClick={() => void deleteTimeBlock()} disabled={Boolean(pending)}>
-                    <Trash2 size={16} />{pending === "delete" ? "删除中" : "删除"}
+                  <button
+                    type="button"
+                    className={deleteArmed ? editorStyles.deleteButtonConfirm : editorStyles.deleteButton}
+                    onClick={() => deleteArmed ? void deleteTimeBlock() : setDeleteArmed(true)}
+                    disabled={Boolean(pending)}
+                  >
+                    <Trash2 size={16} />
+                    {pending === "delete" ? "删除中" : deleteArmed ? "确认永久删除" : "删除"}
                   </button>
                 ) : <span />}
                 <div>

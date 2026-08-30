@@ -29,7 +29,7 @@
   margin: 0;
   color: var(--app-accent-dark);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
 }
 
@@ -38,7 +38,7 @@
   color: var(--app-ink);
   font-family: var(--app-font-display);
   font-size: 24px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.25;
 }
 
@@ -76,7 +76,7 @@
   margin-bottom: 8px;
   color: var(--app-ink-soft);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .kindGrid {
@@ -140,7 +140,7 @@
   color: var(--app-ink-soft);
   cursor: pointer;
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
   line-height: 44px;
 }
 
@@ -162,7 +162,19 @@
   background: color-mix(in srgb, var(--app-danger) 6%, var(--app-surface));
   color: var(--app-danger);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
+  padding: 11px 12px;
+}
+
+.deleteConfirmation {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--app-danger) 32%, var(--app-line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--app-danger) 6%, var(--app-surface));
+  color: var(--app-danger);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
   padding: 11px 12px;
 }
 
@@ -183,7 +195,8 @@
 
 .cancelButton,
 .saveButton,
-.deleteButton {
+.deleteButton,
+.deleteButtonConfirm {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
@@ -192,7 +205,7 @@
   border-radius: 12px;
   cursor: pointer;
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
   padding: 0 16px;
 }
 
@@ -207,6 +220,12 @@
   color: var(--app-danger);
 }
 
+.deleteButtonConfirm {
+  border: 1px solid var(--app-danger);
+  background: var(--app-danger);
+  color: white;
+}
+
 .saveButton {
   border: 1px solid var(--app-accent);
   background: var(--app-accent);
@@ -219,7 +238,8 @@
 .field input:focus-visible,
 .cancelButton:focus-visible,
 .saveButton:focus-visible,
-.deleteButton:focus-visible {
+.deleteButton:focus-visible,
+.deleteButtonConfirm:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--app-accent) 42%, transparent);
   outline-offset: 2px;
 }
@@ -227,7 +247,8 @@
 .close:disabled,
 .cancelButton:disabled,
 .saveButton:disabled,
-.deleteButton:disabled {
+.deleteButton:disabled,
+.deleteButtonConfirm:disabled {
   cursor: wait;
   opacity: 0.58;
 }

@@ -1,8 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, eq, gt, lt } from "drizzle-orm";
 import { changeLogs, courses, plans, timeBlocks } from "@/lib/db/schema";
 import { weekdayMaskFromRecurrence } from "@/lib/constraints/recurrence";
 import { parseTimetableCsv, type TimetableImportPreviewRow } from "@/lib/imports/timetable-csv";
 import { ImportSaveError } from "@/lib/imports/plan-save";
+import { expandRecurringBlocks } from "@/lib/planning/recurring-time-blocks";
 
 type ImportDb = {
   transaction<T>(callback: (tx: any) => Promise<T>): Promise<T>;
@@ -85,12 +87,25 @@ export type MaterializedTimetableBlock = {
   recurrenceWeekdayMask: number | null;
 };
 
+type ExistingTimeBlock = {
+  id: string;
+  title: string;
+  kind: TimetableImportPreviewRow["kind"];
+  startsAt: Date;
+  endsAt: Date;
+  recurrenceRule: string | null;
+  recurrenceWeekdayMask: number | null;
+  location: string | null;
+  importFingerprint: string | null;
+};
+
 export type TimetableImportPublicBetaPreview = {
   rows: TimetableImportPreviewRow[];
   timezone: "Asia/Shanghai";
   blocksPreviewed: number;
   warnings: string[];
   conflicts: string[];
+  conflictRowIndexes: number[];
 };
 
 export function materializeTimetableRows(rows: TimetableImportPreviewRow[]) {
@@ -160,18 +175,76 @@ export function materializeTimetableRows(rows: TimetableImportPreviewRow[]) {
   return blocks;
 }
 
-function shanghaiDateTimeLabel(date: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "00";
-  return `${value("year")}-${value("month")}-${value("day")} ${value("hour")}:${value("minute")}`;
+function normalizedFingerprintValue(value: string | null | undefined) {
+  return value?.trim().toLocaleLowerCase("en-US") ?? "";
+}
+
+export function timetableBlockFingerprint(block: {
+  row: Pick<TimetableImportPreviewRow, "title" | "kind" | "location" | "recurrence">;
+  startsAt: Date;
+  endsAt: Date;
+  recurrenceWeekdayMask: number | null;
+}) {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      title: normalizedFingerprintValue(block.row.title),
+      kind: block.row.kind,
+      startsAt: block.startsAt.toISOString(),
+      endsAt: block.endsAt.toISOString(),
+      recurrenceRule: normalizedFingerprintValue(block.row.recurrence),
+      recurrenceWeekdayMask: block.recurrenceWeekdayMask,
+      location: normalizedFingerprintValue(block.row.location),
+    }))
+    .digest("hex");
+}
+
+export function storedTimeBlockFingerprint(block: Omit<ExistingTimeBlock, "id" | "importFingerprint">) {
+  return timetableBlockFingerprint({
+    row: {
+      title: block.title,
+      kind: block.kind,
+      location: block.location,
+      recurrence: block.recurrenceRule,
+    },
+    startsAt: block.startsAt,
+    endsAt: block.endsAt,
+    recurrenceWeekdayMask: block.recurrenceWeekdayMask,
+  });
+}
+
+function importRange(blocks: MaterializedTimetableBlock[]) {
+  return {
+    start: new Date(Math.min(...blocks.map((block) => block.startsAt.getTime()))),
+    end: new Date(Math.max(...blocks.map((block) => block.endsAt.getTime()))),
+  };
+}
+
+async function readExistingTimeBlocks(
+  tx: TimetableWriteDb,
+  workspaceId: string,
+  blocks: MaterializedTimetableBlock[],
+) {
+  const range = importRange(blocks);
+  return await tx
+    .select({
+      id: timeBlocks.id,
+      title: timeBlocks.title,
+      kind: timeBlocks.kind,
+      startsAt: timeBlocks.startsAt,
+      endsAt: timeBlocks.endsAt,
+      recurrenceRule: timeBlocks.recurrenceRule,
+      recurrenceWeekdayMask: timeBlocks.recurrenceWeekdayMask,
+      location: timeBlocks.location,
+      importFingerprint: timeBlocks.importFingerprint,
+    })
+    .from(timeBlocks)
+    .where(
+      and(
+        eq(timeBlocks.workspaceId, workspaceId),
+        lt(timeBlocks.startsAt, range.end),
+        gt(timeBlocks.endsAt, range.start),
+      ),
+    );
 }
 
 function duplicateEntries(values: Array<{ key: string; label: string }>) {
@@ -198,19 +271,38 @@ export function buildTimetableRowsPreview(rows: TimetableImportPreviewRow[]): Ti
       label: `${row.title} ${row.dayOfWeek ?? row.startsOn} ${row.startTime}-${row.endTime}`,
     })),
   );
-  const duplicateBlocks = duplicateEntries(
-    blocks.map((block) => ({
-      key: `${block.row.title.trim().toLowerCase()}|${block.startsAt.toISOString()}|${block.endsAt.toISOString()}`,
-      label: `${block.row.title} on ${shanghaiDateTimeLabel(block.startsAt).slice(0, 10)} ${block.row.startTime}-${block.row.endTime}`,
+  const range = importRange(blocks);
+  const expanded = expandRecurringBlocks(
+    blocks.map((block, index) => ({
+      id: `incoming-${index}`,
+      sourceIndex: index,
+      fingerprint: timetableBlockFingerprint(block),
+      ...block,
     })),
+    range.start,
+    range.end,
   );
-
+  const conflictRowIndexes = new Set<number>();
+  const conflicts = new Set<string>();
+  for (let leftIndex = 0; leftIndex < expanded.length; leftIndex += 1) {
+    const left = expanded[leftIndex];
+    for (let rightIndex = leftIndex + 1; rightIndex < expanded.length; rightIndex += 1) {
+      const right = expanded[rightIndex];
+      if (left.sourceIndex === right.sourceIndex || left.fingerprint === right.fingerprint) continue;
+      if (left.startsAt < right.endsAt && left.endsAt > right.startsAt) {
+        conflictRowIndexes.add(left.sourceIndex);
+        conflictRowIndexes.add(right.sourceIndex);
+        conflicts.add(`${left.row.title} 与本次导入中的 ${right.row.title} 时间重叠`);
+      }
+    }
+  }
   return {
     rows,
     timezone: "Asia/Shanghai",
     blocksPreviewed: blocks.length,
-    warnings: duplicateRows.map((entry) => `Duplicate timetable row: ${entry.label}`),
-    conflicts: duplicateBlocks.map((entry) => `Duplicate imported time block: ${entry.label}`),
+    warnings: duplicateRows.map((entry) => `CSV 中存在重复行：${entry.label}`),
+    conflicts: [...conflicts],
+    conflictRowIndexes: [...conflictRowIndexes].sort((a, b) => a - b),
   };
 }
 
@@ -282,11 +374,21 @@ export async function saveTimetableRowsInTransaction(
 ) {
   const blocks = materializeTimetableRows(input.rows);
   const planId = input.planId ?? (await getActivePlanId(tx, input.workspaceId));
+  const uniqueBlocks = new Map<string, MaterializedTimetableBlock>();
+  for (const block of blocks) {
+    const fingerprint = timetableBlockFingerprint(block);
+    if (!uniqueBlocks.has(fingerprint)) uniqueBlocks.set(fingerprint, block);
+  }
+  const existingBefore = await readExistingTimeBlocks(tx, input.workspaceId, blocks);
+  const existingFingerprints = new Set(
+    (existingBefore as ExistingTimeBlock[]).map((block) => block.importFingerprint ?? storedTimeBlockFingerprint(block)),
+  );
+  const blocksToCreate = Array.from(uniqueBlocks).filter(([fingerprint]) => !existingFingerprints.has(fingerprint));
   const courseIds = new Map<string, string>();
   let coursesCreated = 0;
   let coursesReused = 0;
 
-  for (const block of blocks) {
+  for (const [, block] of blocksToCreate) {
     const courseName = courseNameFor(block.row);
     if (!courseName || courseIds.has(courseName)) continue;
 
@@ -310,7 +412,7 @@ export async function saveTimetableRowsInTransaction(
     coursesCreated += 1;
   }
 
-  const blockValues = blocks.map((block) => {
+  const blockValues = blocksToCreate.map(([importFingerprint, block]) => {
     const courseName = courseNameFor(block.row);
     return {
       workspaceId: input.workspaceId,
@@ -323,10 +425,30 @@ export async function saveTimetableRowsInTransaction(
       courseId: courseName ? courseIds.get(courseName) ?? null : null,
       location: block.row.location ?? null,
       movable: false,
+      importFingerprint,
     };
   });
 
-  await tx.insert(timeBlocks).values(blockValues);
+  const insertedBlocks = blockValues.length > 0
+    ? await tx.insert(timeBlocks).values(blockValues).onConflictDoNothing().returning({
+        id: timeBlocks.id,
+        title: timeBlocks.title,
+        importFingerprint: timeBlocks.importFingerprint,
+      })
+    : [];
+
+  const readbackRows = await readExistingTimeBlocks(tx, input.workspaceId, blocks) as ExistingTimeBlock[];
+  const readbackByFingerprint = new Map(
+    readbackRows.map((block) => [block.importFingerprint ?? storedTimeBlockFingerprint(block), block]),
+  );
+  const readback = Array.from(uniqueBlocks.keys()).map((fingerprint) => {
+    const block = readbackByFingerprint.get(fingerprint);
+    if (!block) throw new ImportSaveError("Timetable import readback did not confirm every time block", 500);
+    return { id: block.id, title: block.title, fingerprint };
+  });
+  const blocksCreated = insertedBlocks.length;
+  const blocksExisting = blocks.length - blocksCreated;
+  const status = blocksCreated === 0 ? "no_change" as const : "succeeded" as const;
 
   if (input.writeChangeLog !== false) {
     await tx.insert(changeLogs).values({
@@ -342,17 +464,23 @@ export async function saveTimetableRowsInTransaction(
         conflicts: input.importPreview?.conflicts ?? [],
         confirmedBy: input.importPreview ? "user" : undefined,
         confirmation: input.importPreview ? "CONFIRM_TIMETABLE_IMPORT" : undefined,
-        blocksCreated: blockValues.length,
+        status,
+        blocksCreated,
+        blocksExisting,
         coursesCreated,
         coursesReused,
-        note: "Save adds new time_blocks; duplicate imports are not deduplicated.",
+        readback,
+        note: "Imported time blocks use a workspace-scoped semantic fingerprint; exact duplicates are skipped.",
       },
     });
   }
 
   return {
-    blocksCreated: blockValues.length,
+    status,
+    blocksCreated,
+    blocksExisting,
     coursesCreated,
     coursesReused,
+    readback,
   };
 }

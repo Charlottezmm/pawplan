@@ -99,7 +99,7 @@ Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learn
     expect(vi.mocked(getDb)).not.toHaveBeenCalled();
   });
 
-  it("returns timetable preview when existing conflict lookup is unavailable", async () => {
+  it("blocks timetable preview when existing conflict lookup is unavailable", async () => {
     const { getWorkspaceIdFromSession } = await import("@/lib/auth/session");
     const { getDb } = await import("@/lib/db/client");
     vi.mocked(getWorkspaceIdFromSession).mockResolvedValue("workspace-1");
@@ -115,15 +115,7 @@ Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learn
     }));
     const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body.preview).toEqual(
-      expect.objectContaining({
-        timezone: "Asia/Shanghai",
-        blocksPreviewed: 1,
-        warnings: ["Existing timetable conflict check is unavailable."],
-        conflicts: [],
-      }),
-    );
-    expect(body.previewToken).toEqual(expect.any(String));
+    expect(response.status).toBe(503);
+    expect(body).toEqual({ error: "暂时无法检查现有日程冲突，请稍后重试" });
   });
 });

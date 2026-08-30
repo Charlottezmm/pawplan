@@ -182,11 +182,11 @@ test("shows field errors beside invalid promotion values and confirms permanent 
   await expect(row.getByText("请输入 5–480 之间的整数分钟。")).toBeVisible();
   expect(inboxPatchBodies).toEqual([]);
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("删除后无法恢复");
-    await dialog.accept();
-  });
   await row.getByRole("button", { name: "删除" }).click();
+  const confirmDialog = page.getByRole("dialog", { name: "删除收集条目？" });
+  await expect(confirmDialog).toBeVisible();
+  await expect(confirmDialog.getByText(/永久删除/)).toBeVisible();
+  await confirmDialog.getByRole("button", { name: "确认删除" }).click();
   await expect(row).toHaveCount(0);
   expect(inboxPatchBodies).toEqual([
     {

@@ -3,6 +3,7 @@
 import { Check, ShieldCheck, X } from "lucide-react";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 
 export type PendingOperationApproval = {
   id: string;
@@ -37,12 +38,9 @@ export function OperationApprovalList({
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [approvalToConfirm, setApprovalToConfirm] = useState<PendingOperationApproval | null>(null);
 
   async function decide(approval: PendingOperationApproval, decision: "approved" | "rejected") {
-    if (
-      decision === "approved" &&
-      !window.confirm(`确认批准“${approval.summary.title ?? "这项操作"}”？\n\n批准后，助手只能执行这一份精确预览。`)
-    ) return;
     setPendingId(approval.id);
     setError(null);
     try {
@@ -53,6 +51,7 @@ export function OperationApprovalList({
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error ?? "审核失败");
+      if (decision === "approved") setApprovalToConfirm(null);
       router.refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "审核失败");
@@ -115,7 +114,7 @@ export function OperationApprovalList({
                     type="button"
                     className="paw-primary-btn"
                     disabled={pendingId !== null}
-                    onClick={() => decide(approval, "approved")}
+                    onClick={() => setApprovalToConfirm(approval)}
                   >
                     <Check size={14} /> {pendingId === approval.id ? "处理中…" : "批准"}
                   </button>
@@ -133,6 +132,29 @@ export function OperationApprovalList({
           </div>
         </section>
       ) : null}
+
+      <ConfirmDialog
+        open={Boolean(approvalToConfirm)}
+        onClose={() => {
+          if (!pendingId) setApprovalToConfirm(null);
+        }}
+        onConfirm={() => {
+          if (approvalToConfirm) void decide(approvalToConfirm, "approved");
+        }}
+        title="批准高风险操作？"
+        description={approvalToConfirm?.summary.title ?? "请核对这一份精确预览。"}
+        confirmLabel="批准这份预览"
+        pending={Boolean(approvalToConfirm && pendingId === approvalToConfirm.id)}
+        destructive
+      >
+        {approvalToConfirm ? (
+          <>
+            {approvalToConfirm.summary.description ? <p>{approvalToConfirm.summary.description}</p> : null}
+            {typeof approvalToConfirm.summary.count === "number" ? <p>影响 {approvalToConfirm.summary.count} 项。</p> : null}
+            <p>批准只授权这一份精确预览，助手不能扩大范围。</p>
+          </>
+        ) : null}
+      </ConfirmDialog>
 
       {expiredApprovals.length > 0 ? (
         <section className="paw-list-card mb-4">

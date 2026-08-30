@@ -10,6 +10,7 @@ import { DailyCheckin } from "./daily-checkin";
 import { TaskDetailContent } from "./task-detail-content";
 import { TodayFixedTimeline } from "./today-fixed-timeline";
 import { DialogSheet } from "./ui/dialog-sheet";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 import { Notice } from "./ui/notice";
 import { EmptyState } from "./ui/primitives";
 import { defaultPostponeDate, moveOutOfScheduleUpdate, postponeTaskUpdate } from "@/lib/planning/task-actions";
@@ -115,6 +116,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
   const [postponeTask, setPostponeTask] = useState<Task | null>(null);
+  const [moveOutTask, setMoveOutTask] = useState<Task | null>(null);
   const [postponeDate, setPostponeDate] = useState(() => defaultPostponeDate());
   const [savingActionId, setSavingActionId] = useState<string | null>(null);
   const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(() => new Set());
@@ -178,12 +180,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     setTaskActionFeedback({ tone: "ok", message: `已延后到 ${postponeDate}，任务仍保持待办。` });
   }
 
-  async function moveOutOfSchedule(task: Task) {
-    if (savingActionId || statusRequests.current.has(task.id)) return;
-    const confirmed = window.confirm(
-      `确认将“${task.title}”移出排期？\n\n它会进入稍后处理，不再出现在今天或参与排期；之后仍可在稍后处理页面找到。`,
-    );
-    if (!confirmed) return;
+  async function confirmMoveOutOfSchedule() {
+    const task = moveOutTask;
+    if (!task || savingActionId || statusRequests.current.has(task.id)) return;
 
     setSavingActionId(task.id);
     const update = moveOutOfScheduleUpdate(task.id);
@@ -197,6 +196,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
 
     setSavingActionId(null);
     setTasks((current) => current.filter((item) => item.id !== task.id));
+    setMoveOutTask(null);
     setTaskActionFeedback({ tone: "ok", message: "已移出排期，可在稍后处理页面找到。" });
   }
 
@@ -435,7 +435,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     </button>
                     <button
                       type="button"
-                      onClick={() => void moveOutOfSchedule(task)}
+                      onClick={() => setMoveOutTask(task)}
                       className="paw-act-btn archive"
                       disabled={savingActionId === task.id || statusSaving}
                     >
@@ -513,6 +513,21 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
           </div>
         </form>
       </DialogSheet>
+
+      <ConfirmDialog
+        open={Boolean(moveOutTask)}
+        onClose={() => {
+          if (!savingActionId) setMoveOutTask(null);
+        }}
+        onConfirm={() => void confirmMoveOutOfSchedule()}
+        title="移出排期？"
+        description={moveOutTask ? `“${moveOutTask.title}”将不再出现在今天，也不再参与排期。` : ""}
+        confirmLabel="移出排期"
+        pending={Boolean(moveOutTask && savingActionId === moveOutTask.id)}
+        destructive
+      >
+        任务会进入“稍后处理”，内容不会被删除，之后仍可找回。
+      </ConfirmDialog>
     </div>
   );
 }

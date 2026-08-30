@@ -59,7 +59,7 @@
   margin: 0;
   color: var(--schedule-accent);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
 }
 
@@ -200,7 +200,7 @@
 .dayHeader strong {
   color: var(--schedule-ink);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .todayHeader {
@@ -359,7 +359,7 @@
   overflow: hidden;
   color: var(--schedule-ink);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -374,7 +374,7 @@
   overflow: hidden;
   color: var(--schedule-muted);
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.15;
   white-space: nowrap;
 }
@@ -582,7 +582,7 @@
   background: var(--app-danger);
   color: #fff;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
   padding: 3px 4px;
 }
@@ -662,14 +662,14 @@
   gap: 7px;
   color: var(--app-ink-soft);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .detailList dd {
   margin: 0;
   color: var(--app-ink);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -726,7 +726,7 @@
     margin: 0 0 8px;
     color: var(--schedule-muted);
     font-size: 14px;
-    font-weight: 650;
+    font-weight: 600;
     line-height: 1;
   }
 
@@ -827,7 +827,7 @@
   .dateChoice span {
     order: 2;
     font-size: 11px;
-    font-weight: 650;
+    font-weight: 600;
   }
 
   .dateChoice strong {
@@ -840,7 +840,7 @@
     background: var(--schedule-card);
     color: var(--schedule-ink);
     font-size: 13px;
-    font-weight: 750;
+    font-weight: 700;
   }
 
   .todayDate {
@@ -856,7 +856,7 @@
 
   .selectedDate span {
     color: var(--schedule-accent);
-    font-weight: 750;
+    font-weight: 700;
   }
 
   .mobileGridShell {
@@ -912,7 +912,7 @@
     box-shadow: 0 3px 9px rgba(62, 48, 36, 0.06);
     color: var(--schedule-muted);
     font-size: 10px;
-    font-weight: 650;
+    font-weight: 600;
   }
 
   .mobileGridShell .timeAxis span:first-child {

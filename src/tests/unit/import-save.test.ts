@@ -52,6 +52,12 @@ function createFakeDb(options: FakeDbOptions = {}) {
     if (name === "courses") {
       return options.existingCourses ?? [];
     }
+    if (name === "time_blocks") {
+      return inserts
+        .map((write, index) => ({ write, index }))
+        .filter(({ write }) => write.table === "time_blocks")
+        .map(({ write, index }) => ({ id: `time_blocks-${index + 1}`, ...write.values }));
+    }
     return [];
   }
 
@@ -90,7 +96,10 @@ function createFakeDb(options: FakeDbOptions = {}) {
             for (const row of rows) {
               inserts.push({ table: tableName(table), values: row, inTransaction });
             }
-            return {
+            const builder = {
+              onConflictDoNothing() {
+                return builder;
+              },
               returning() {
                 return Promise.resolve(
                   rows.map((row, index) => ({
@@ -103,6 +112,7 @@ function createFakeDb(options: FakeDbOptions = {}) {
                 return Promise.resolve().then(resolve, reject);
               },
             };
+            return builder;
           },
         };
       },
@@ -233,9 +243,18 @@ Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learn
 
     expect(db.wasInTransaction()).toBe(true);
     expect(result).toEqual({
+      status: "succeeded",
       blocksCreated: 1,
+      blocksExisting: 0,
       coursesCreated: 1,
       coursesReused: 0,
+      readback: [
+        expect.objectContaining({
+          id: expect.any(String),
+          title: "Deep Learning Lecture",
+          fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      ],
     });
     expect(db.inserts).toEqual(
       expect.arrayContaining([
@@ -274,11 +293,62 @@ Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learn
               rowsPreviewed: 1,
               warnings: [],
               conflicts: [],
+              status: "succeeded",
+              blocksCreated: 1,
+              blocksExisting: 0,
             }),
           }),
         }),
       ]),
     );
+  });
+
+  it("treats a repeated timetable import as no_change and returns persisted readback", async () => {
+    const db = createFakeDb();
+    const input = {
+      workspaceId: "workspace-1",
+      confirmation: "CONFIRM_TIMETABLE_IMPORT",
+      csv: `title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,location,recurrence,notes
+Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learning,Room 204,weekly,
+`,
+    };
+
+    const first = await saveTimetableImport(db, input);
+    const second = await saveTimetableImport(db, input);
+
+    expect(first.status).toBe("succeeded");
+    expect(second).toEqual({
+      status: "no_change",
+      blocksCreated: 0,
+      blocksExisting: 1,
+      coursesCreated: 0,
+      coursesReused: 0,
+      readback: first.readback,
+    });
+    expect(db.inserts.filter((write) => write.table === "time_blocks")).toHaveLength(1);
+  });
+
+  it("collapses duplicate rows within one CSV but keeps a location change distinct", async () => {
+    const db = createFakeDb();
+    const duplicateResult = await saveTimetableImport(db, {
+      workspaceId: "workspace-1",
+      confirmation: "CONFIRM_TIMETABLE_IMPORT",
+      csv: `title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,location,recurrence,notes
+Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learning,Room 204,weekly,
+Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learning,Room 204,weekly,
+`,
+    });
+    const changedLocation = await saveTimetableImport(db, {
+      workspaceId: "workspace-1",
+      confirmation: "CONFIRM_TIMETABLE_IMPORT",
+      csv: `title,kind,day_of_week,start_time,end_time,starts_on,ends_on,course,location,recurrence,notes
+Deep Learning Lecture,course,Monday,09:00,11:00,2026-09-01,2026-09-14,Deep Learning,Room 205,weekly,
+`,
+    });
+
+    expect(duplicateResult).toMatchObject({ status: "succeeded", blocksCreated: 1, blocksExisting: 1 });
+    expect(changedLocation).toMatchObject({ status: "succeeded", blocksCreated: 1, blocksExisting: 0 });
+    expect(db.inserts.filter((write) => write.table === "time_blocks")).toHaveLength(2);
   });
 
   it("requires explicit confirmation before saving plan or timetable imports", async () => {

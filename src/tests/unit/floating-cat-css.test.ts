@@ -40,7 +40,7 @@ describe("agent run and review long text wrapping", () => {
     const reviewPreview = readFileSync("src/components/reschedule-preview.tsx", "utf8");
 
     expect(settingsView).toContain('className="paw-row-meta paw-wrap-anywhere"');
-    expect(settingsView).toContain('className="paw-row-meta paw-wrap-anywhere text-[var(--app-danger)]"');
+    expect(settingsView).toContain('className="paw-row-meta paw-wrap-anywhere paw-danger-text"');
     expect(reviewPreview).toContain('className="paw-suggestion-why paw-wrap-anywhere">{item.reason}</p>');
     expect(reviewPreview).toContain("<ReviewItemState");
     expect(reviewPreview).toContain("formatConflictSide(item.conflict.expected)");

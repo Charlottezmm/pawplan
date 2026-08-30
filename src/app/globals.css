@@ -1218,6 +1218,59 @@ a {
   margin-top: 18px;
 }
 
+.paw-danger-btn {
+  display: inline-flex;
+  min-height: var(--app-control-min);
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--app-danger);
+  border-radius: 12px;
+  background: var(--app-danger);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 16px;
+}
+
+.paw-danger-btn:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--app-danger) 38%, transparent);
+  outline-offset: 2px;
+}
+
+.paw-danger-btn:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.paw-confirm-detail {
+  border: 1px solid var(--app-line);
+  border-radius: 12px;
+  background: var(--app-surface-muted);
+  padding: 12px;
+  color: var(--app-ink);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.paw-confirm-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--app-danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.paw-danger-text {
+  color: var(--app-danger);
+}
+
+.paw-warning-text {
+  color: var(--app-warn);
+}
+
 .paw-task-notes {
   margin-top: 10px;
   color: var(--app-ink-soft);
@@ -1312,7 +1365,7 @@ a {
   margin: 0 0 7px;
   color: var(--app-ink);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
 }
 
@@ -1395,7 +1448,7 @@ a {
   background: var(--app-accent-soft);
   color: var(--app-accent-dark);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
 }
 
@@ -1447,7 +1500,7 @@ a {
 
 .paw-detail-resource-copy strong {
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .paw-detail-resource-copy span {
@@ -2371,7 +2424,7 @@ input.paw-input[type="time"] {
   cursor: pointer;
   color: var(--app-ink-soft);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .paw-timeline {
@@ -2591,7 +2644,7 @@ input.paw-input[type="time"] {
   cursor: pointer;
   color: var(--app-accent-dark);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .paw-list-row.compact {
@@ -2628,7 +2681,7 @@ input.paw-input[type="time"] {
   background: var(--app-accent);
   color: #fff;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   padding: 2px 8px;
   vertical-align: middle;
@@ -3489,6 +3542,52 @@ input.paw-input[type="time"] {
   padding-top: 14px;
 }
 
+.paw-file-upload {
+  cursor: pointer;
+}
+
+.paw-import-status {
+  justify-self: end;
+  border: 1px solid var(--app-line);
+  border-radius: 999px;
+  background: var(--app-surface-muted);
+  padding: 5px 9px;
+  color: var(--app-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.paw-import-status.new {
+  border-color: color-mix(in srgb, var(--app-accent) 28%, var(--app-line));
+  background: var(--app-accent-soft);
+  color: var(--app-accent-dark);
+}
+
+.paw-import-status.conflict {
+  border-color: color-mix(in srgb, var(--app-danger) 34%, var(--app-line));
+  background: var(--app-danger-soft);
+  color: var(--app-danger);
+}
+
+.paw-import-conflict-confirm {
+  display: flex;
+  min-height: var(--app-control-min);
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  color: var(--app-ink);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.paw-import-conflict-confirm input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--app-danger);
+}
+
 .paw-more-action {
   margin-left: auto;
   color: var(--app-ink-muted);
@@ -3517,7 +3616,7 @@ input.paw-input[type="time"] {
   margin-bottom: 4px;
   color: var(--app-accent-dark);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -3602,7 +3701,7 @@ input.paw-input[type="time"] {
 .paw-archive-filter-label {
   color: var(--app-ink);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .paw-archive-filter-label strong {
@@ -3829,7 +3928,7 @@ input.paw-input[type="time"] {
   gap: 5px;
   color: var(--app-ink);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .paw-project-definition p {
@@ -4803,7 +4902,7 @@ input.paw-input[type="time"] {
 .paw-admin-table th {
   color: var(--app-ink-soft);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .paw-mono-cell {

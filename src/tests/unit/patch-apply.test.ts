@@ -61,6 +61,16 @@ function createFakeDb(
                     taskSelectCount += 1;
                     return Promise.resolve(result ?? []);
                   }
+                  if (tableName(table) === "time_blocks") {
+                    const rows = [
+                      ...(options.selectRows?.time_blocks ?? []),
+                      ...inserts
+                        .map((insert, index) => ({ insert, index }))
+                        .filter(({ insert }) => insert.table === "time_blocks")
+                        .map(({ insert, index }) => ({ id: `time_blocks-${index + 1}`, ...insert.values })),
+                    ];
+                    return Promise.resolve(typeof limitValue === "number" ? rows.slice(0, limitValue) : rows);
+                  }
                   if (options.selectRows?.[tableName(table)]) {
                     const rows = options.selectRows[tableName(table)] ?? [];
                     return Promise.resolve(typeof limitValue === "number" ? rows.slice(0, limitValue) : rows);
@@ -68,7 +78,15 @@ function createFakeDb(
                   return Promise.resolve([patch]);
                 },
                 then(resolve: (value: Array<Record<string, unknown>>) => unknown, reject?: (reason: unknown) => unknown) {
-                  const rows = options.selectRows?.[tableName(table)] ?? [patch];
+                  const rows = tableName(table) === "time_blocks"
+                    ? [
+                        ...(options.selectRows?.time_blocks ?? []),
+                        ...inserts
+                          .map((insert, index) => ({ insert, index }))
+                          .filter(({ insert }) => insert.table === "time_blocks")
+                          .map(({ insert, index }) => ({ id: `time_blocks-${index + 1}`, ...insert.values })),
+                      ]
+                    : options.selectRows?.[tableName(table)] ?? [patch];
                   return Promise.resolve(rows).then(resolve, reject);
                 },
               };
@@ -111,7 +129,10 @@ function createFakeDb(
           for (const row of rows) {
             inserts.push({ table: tableName(table), values: row });
           }
-          return {
+          const builder = {
+            onConflictDoNothing() {
+              return builder;
+            },
             returning() {
               return Promise.resolve(
                 rows.map((row, index) => ({
@@ -122,6 +143,7 @@ function createFakeDb(
               );
             },
           };
+          return builder;
         },
       };
     },

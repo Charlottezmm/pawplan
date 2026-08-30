@@ -6,6 +6,7 @@ import { BackLink } from "./back-link";
 import { CatIcon } from "./cat-icon";
 import { QuickCapture } from "./quick-capture";
 import { Notice } from "./ui/notice";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 import type { InboxItemView } from "@/lib/planning/view-data";
 
 type DaySegment = "morning" | "afternoon" | "evening";
@@ -137,6 +138,7 @@ export function InboxView({
   const [destinations, setDestinations] = useState<Record<string, PromotionDestination>>({});
   const [errors, setErrors] = useState<Record<string, PromotionErrors>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const overLimit = items.length > 10;
 
   function formFor(id: string) {
@@ -195,7 +197,7 @@ export function InboxView({
   async function act(id: string, payload: InboxActionPayload) {
     if (dataUnavailable) {
       setNotice({ message: "本地数据源未配置，暂时无法处理。", tone: "danger" });
-      return;
+      return false;
     }
 
     setPendingId(id);
@@ -208,7 +210,7 @@ export function InboxView({
 
       if (!response.ok) {
         setNotice({ message: "处理失败，请重试。", tone: "danger" });
-        return;
+        return false;
       }
 
       setItems((current) => current.filter((item) => item.id !== id));
@@ -229,8 +231,10 @@ export function InboxView({
       });
       if (expandedId === id) setExpandedId(null);
       setNotice({ message: `${actionLabels[payload.action]}。`, tone: "success" });
+      return true;
     } catch {
       setNotice({ message: "网络连接失败，条目没有改变，请重试。", tone: "danger" });
+      return false;
     } finally {
       setPendingId(null);
     }
@@ -302,10 +306,10 @@ export function InboxView({
     });
   }
 
-  function deleteItem(id: string, title: string) {
-    const confirmed = window.confirm(`确定删除“${title}”吗？删除后无法恢复。`);
-    if (!confirmed) return;
-    void act(id, { action: "delete" });
+  async function confirmDeleteItem() {
+    if (!deleteTarget) return;
+    const deleted = await act(deleteTarget.id, { action: "delete" });
+    if (deleted) setDeleteTarget(null);
   }
 
   return (
@@ -336,7 +340,7 @@ export function InboxView({
 
       {dataUnavailable ? (
         <section className="paw-trust-banner">
-          <TriangleAlert size={18} className="mt-0.5 flex-none text-amber-700" />
+          <TriangleAlert size={18} className="mt-0.5 flex-none paw-warning-text" />
           当前没有 DATABASE_URL，收集页会显示为空态；配置数据库后会读取真实数据。
         </section>
       ) : null}
@@ -401,7 +405,7 @@ export function InboxView({
                     <button
                       type="button"
                       disabled={pendingId === item.id}
-                      onClick={() => deleteItem(item.id, item.title)}
+                      onClick={() => setDeleteTarget({ id: item.id, title: item.title })}
                       className="paw-secondary-btn paw-inbox-control paw-inbox-delete"
                       aria-label="删除"
                     >
@@ -595,6 +599,19 @@ export function InboxView({
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => {
+          if (!pendingId) setDeleteTarget(null);
+        }}
+        onConfirm={() => void confirmDeleteItem()}
+        title="删除收集条目？"
+        description={deleteTarget ? `“${deleteTarget.title}”将从收集区永久删除。` : ""}
+        confirmLabel="确认删除"
+        pending={Boolean(deleteTarget && pendingId === deleteTarget.id)}
+        destructive
+      />
     </div>
   );
 }
