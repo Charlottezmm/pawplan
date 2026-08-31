@@ -4,9 +4,23 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
-import { OperationApprovalList } from "@/components/operation-approval-list";
+import {
+  OperationApprovalList,
+  operationApprovalErrorMessage,
+  operationApprovalIsExpired,
+} from "@/components/operation-approval-list";
 
 describe("OperationApprovalList expired task-notes history", () => {
+  it("fails closed for expired approvals and translates stale approval errors", () => {
+    expect(operationApprovalIsExpired("2026-08-31T04:47:18.000Z", Date.parse("2026-08-31T04:47:18.000Z"))).toBe(true);
+    expect(operationApprovalIsExpired("2026-08-31T04:47:19.000Z", Date.parse("2026-08-31T04:47:18.000Z"))).toBe(false);
+    expect(operationApprovalIsExpired("invalid", Date.now())).toBe(true);
+    expect(operationApprovalErrorMessage({
+      code: "approval_already_decided",
+      error: "Approval is missing, expired, or was already decided",
+    })).toBe("这份预览已过期或已经处理，请刷新后让助手重新生成。");
+  });
+
   it("renders an expired-only notice without approval controls", () => {
     const html = renderToStaticMarkup(React.createElement(OperationApprovalList, {
       approvals: [],

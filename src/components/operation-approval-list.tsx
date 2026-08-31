@@ -1,9 +1,10 @@
 "use client";
 
 import { Check, ShieldCheck, X } from "lucide-react";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "./ui/confirm-dialog";
+import { Notice } from "./ui/notice";
 
 export type PendingOperationApproval = {
   id: string;
@@ -28,6 +29,24 @@ export type ExpiredOperationApproval = PendingOperationApproval & {
   status: "pending" | "approved";
 };
 
+const staleApprovalMessage = "这份预览已过期或已经处理，请刷新后让助手重新生成。";
+
+export function operationApprovalIsExpired(expiresAt: string, now = Date.now()) {
+  const expiresAtMs = Date.parse(expiresAt);
+  return !Number.isFinite(expiresAtMs) || expiresAtMs <= now;
+}
+
+export function operationApprovalErrorMessage(body: unknown) {
+  if (body && typeof body === "object") {
+    const payload = body as { code?: unknown; error?: unknown };
+    if (["approval_already_decided", "approval_expired", "approval_not_found"].includes(String(payload.code))) {
+      return staleApprovalMessage;
+    }
+    if (typeof payload.error === "string" && payload.error.trim()) return payload.error;
+  }
+  return "审核失败，请稍后重试。";
+}
+
 export function OperationApprovalList({
   approvals,
   expiredApprovals,
@@ -38,23 +57,58 @@ export function OperationApprovalList({
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [approvalToConfirm, setApprovalToConfirm] = useState<PendingOperationApproval | null>(null);
+  const [nowMs, setNowMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!approvalToConfirm || nowMs === null || !operationApprovalIsExpired(approvalToConfirm.expiresAt, nowMs)) return;
+    setApprovalToConfirm(null);
+    setDialogError(null);
+    setError(staleApprovalMessage);
+    router.refresh();
+  }, [approvalToConfirm, nowMs, router]);
 
   async function decide(approval: PendingOperationApproval, decision: "approved" | "rejected") {
+    if (operationApprovalIsExpired(approval.expiresAt)) {
+      setApprovalToConfirm(null);
+      setDialogError(null);
+      setError(staleApprovalMessage);
+      router.refresh();
+      return;
+    }
     setPendingId(approval.id);
     setError(null);
+    setDialogError(null);
     try {
       const response = await fetch("/api/operation-approvals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approvalId: approval.id, decision }),
       });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error ?? "审核失败");
+      const body = await response.json().catch(() => null) as { code?: string; error?: string } | null;
+      if (!response.ok) {
+        const message = operationApprovalErrorMessage(body);
+        if (body?.code === "approval_already_decided" || body?.code === "approval_expired" || body?.code === "approval_not_found") {
+          setApprovalToConfirm(null);
+          setError(message);
+          router.refresh();
+          return;
+        }
+        throw new Error(message);
+      }
       if (decision === "approved") setApprovalToConfirm(null);
       router.refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "审核失败");
+      const message = reason instanceof Error ? reason.message : "审核失败，请稍后重试。";
+      if (decision === "approved") setDialogError(message);
+      else setError(message);
     } finally {
       setPendingId(null);
     }
@@ -113,10 +167,21 @@ export function OperationApprovalList({
                   <button
                     type="button"
                     className="paw-primary-btn"
-                    disabled={pendingId !== null}
-                    onClick={() => setApprovalToConfirm(approval)}
+                    disabled={pendingId !== null || (nowMs !== null && operationApprovalIsExpired(approval.expiresAt, nowMs))}
+                    onClick={() => {
+                      if (operationApprovalIsExpired(approval.expiresAt)) {
+                        setError(staleApprovalMessage);
+                        router.refresh();
+                        return;
+                      }
+                      setError(null);
+                      setDialogError(null);
+                      setApprovalToConfirm(approval);
+                    }}
                   >
-                    <Check size={14} /> {pendingId === approval.id ? "处理中…" : "批准"}
+                    <Check size={14} /> {nowMs !== null && operationApprovalIsExpired(approval.expiresAt, nowMs)
+                      ? "已过期"
+                      : pendingId === approval.id ? "处理中…" : "批准"}
                   </button>
                   <button
                     type="button"
@@ -149,6 +214,7 @@ export function OperationApprovalList({
       >
         {approvalToConfirm ? (
           <>
+            {dialogError ? <Notice tone="danger" title={dialogError} /> : null}
             {approvalToConfirm.summary.description ? <p>{approvalToConfirm.summary.description}</p> : null}
             {typeof approvalToConfirm.summary.count === "number" ? <p>影响 {approvalToConfirm.summary.count} 项。</p> : null}
             <p>批准只授权这一份精确预览，助手不能扩大范围。</p>
