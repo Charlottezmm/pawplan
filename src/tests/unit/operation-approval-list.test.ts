@@ -6,6 +6,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import {
   OperationApprovalList,
+  formatApprovalExpiry,
   operationApprovalErrorMessage,
   operationApprovalIsExpired,
 } from "@/components/operation-approval-list";
@@ -19,6 +20,8 @@ describe("OperationApprovalList expired task-notes history", () => {
       code: "approval_already_decided",
       error: "Approval is missing, expired, or was already decided",
     })).toBe("这份预览已过期或已经处理，请刷新后让助手重新生成。");
+    expect(formatApprovalExpiry("2026-08-31T04:47:18.000Z")).toBe("2026/08/31 12:47");
+    expect(formatApprovalExpiry("invalid")).toBe("时间无效");
   });
 
   it("renders an expired-only notice without approval controls", () => {

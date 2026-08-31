@@ -47,6 +47,22 @@ export function operationApprovalErrorMessage(body: unknown) {
   return "审核失败，请稍后重试。";
 }
 
+export function formatApprovalExpiry(expiresAt: string) {
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return "时间无效";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "00";
+  return `${value("year")}/${value("month")}/${value("day")} ${value("hour")}:${value("minute")}`;
+}
+
 export function OperationApprovalList({
   approvals,
   expiredApprovals,
@@ -161,7 +177,7 @@ export function OperationApprovalList({
                       </div>
                     </details>
                   ) : null}
-                  <p className="paw-row-meta">批准有效期至 {new Date(approval.expiresAt).toLocaleString("zh-CN")}</p>
+                  <p className="paw-row-meta">批准有效期至 {formatApprovalExpiry(approval.expiresAt)}</p>
                 </div>
                 <div className="flex gap-2 mt-3">
                   <button
@@ -243,7 +259,7 @@ export function OperationApprovalList({
                 <h3 className="paw-row-title mt-3">{approval.summary.title ?? "批量更新任务详情"}</h3>
                 {approval.summary.description ? <p className="paw-row-meta">{approval.summary.description}</p> : null}
                 {typeof approval.summary.count === "number" ? <p className="paw-row-meta">共 {approval.summary.count} 项</p> : null}
-                <p className="paw-row-meta">过期于 {new Date(approval.expiresAt).toLocaleString("zh-CN")}</p>
+                <p className="paw-row-meta">过期于 {formatApprovalExpiry(approval.expiresAt)}</p>
               </article>
             ))}
           </div>
