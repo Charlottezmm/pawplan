@@ -28,7 +28,7 @@ OAuth access is read-write only when the authorization grants write tools. Write
 
 ## What Claude Can Do
 
-Claude can read PawPlan data through MCP tools such as `get_today`, `get_week`, `get_month`, `get_constraints`, `get_capacity`, `get_checkins`, and `get_tasks`.
+Claude can read PawPlan data through MCP tools such as `get_today`, `get_week`, `get_month`, `get_constraints`, `get_checkins`, and `get_tasks`.
 
 For routine task movement, Claude should use high-level rebalance tools:
 

@@ -1,10 +1,7 @@
-import { and, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import {
   changeLogs,
-  dayCapacities,
   planOperations,
-  routines,
-  tasks,
   timeBlockExceptions,
   timeBlocks,
 } from "@/lib/db/schema";
@@ -14,7 +11,6 @@ import {
   createOperationApproval,
   verifyOperationApproval,
 } from "@/lib/approvals/service";
-import { buildCapacityModel } from "@/lib/planning/capacity-model";
 import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 import {
   expandEffectiveRecurringBlocks,
@@ -476,102 +472,6 @@ function occurrenceSummary(rows: Array<Record<string, any>>) {
   }));
 }
 
-function datesForCapacity(dateKeys: string[]) {
-  return dateKeys.map(shanghaiDate);
-}
-
-async function capacityComparison(
-  db: DbLike | any,
-  input: {
-    workspaceId: string;
-    planId: string;
-    plan: MutationPlan;
-  },
-) {
-  if (input.plan.affectedDates.length === 0) return { before: { days: [], warnings: [] }, after: { days: [], warnings: [] } };
-  const rangeStart = shanghaiDate(input.plan.affectedDates[0]);
-  const rangeEnd = addDays(shanghaiDate(input.plan.affectedDates.at(-1)!), 1);
-  const [seriesRows, taskRows, routineRows, capacityRows] = await Promise.all([
-    db
-      .select()
-      .from(timeBlocks)
-      .where(
-        and(
-          eq(timeBlocks.workspaceId, input.workspaceId),
-          lt(timeBlocks.startsAt, rangeEnd),
-          gte(timeBlocks.endsAt, rangeStart),
-        ),
-      ),
-    db
-      .select()
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.workspaceId, input.workspaceId),
-          eq(tasks.planId, input.planId),
-          isNull(tasks.archivedAt),
-          gte(tasks.date, rangeStart),
-          lt(tasks.date, rangeEnd),
-        ),
-      ),
-    db.select().from(routines).where(eq(routines.workspaceId, input.workspaceId)),
-    db
-      .select()
-      .from(dayCapacities)
-      .where(
-        and(
-          eq(dayCapacities.workspaceId, input.workspaceId),
-          gte(dayCapacities.date, rangeStart),
-          lt(dayCapacities.date, rangeEnd),
-        ),
-      ),
-  ]);
-  const rawSeries = seriesRows as SeriesRow[];
-  const seriesIds = rawSeries.map((row) => row.id);
-  const allExceptions = seriesIds.length === 0
-    ? []
-    : (await db
-        .select()
-        .from(timeBlockExceptions)
-        .where(
-          and(
-            eq(timeBlockExceptions.workspaceId, input.workspaceId),
-            inArray(timeBlockExceptions.seriesId, seriesIds),
-            gte(timeBlockExceptions.occurrenceDate, input.plan.affectedDates[0]),
-            lt(timeBlockExceptions.occurrenceDate, shanghaiOccurrenceDate(rangeEnd)),
-          ),
-        )) as ExceptionRow[];
-
-  const beforeOccurrences = expandEffectiveRecurringBlocks(
-    rawSeries,
-    allExceptions.map(exceptionInput),
-    rangeStart,
-    rangeEnd,
-  );
-  const unrelatedSeries = rawSeries.filter((row) => row.id !== input.plan.series.id);
-  const unrelatedExceptions = allExceptions.filter((row) => row.seriesId !== input.plan.series.id);
-  const afterSeries = [...unrelatedSeries, ...input.plan.nextSeries];
-  const afterExceptions = [...unrelatedExceptions, ...input.plan.nextExceptions];
-  const afterOccurrences = expandEffectiveRecurringBlocks(
-    afterSeries,
-    afterExceptions.map(exceptionInput),
-    rangeStart,
-    rangeEnd,
-  );
-  const dates = datesForCapacity(input.plan.affectedDates);
-  const capacityInput = (occurrences: typeof beforeOccurrences) => ({
-    dates,
-    capacities: capacityRows,
-    tasks: taskRows,
-    timeBlocks: occurrences.map((row) => ({ ...row, recurrenceWeekdayMask: null })),
-    routines: routineRows,
-  });
-  return {
-    before: buildCapacityModel(capacityInput(beforeOccurrences)),
-    after: buildCapacityModel(capacityInput(afterOccurrences)),
-  };
-}
-
 async function buildPreview(
   db: DbLike,
   input: {
@@ -587,7 +487,6 @@ async function buildPreview(
   const plan = planTimeBlockSeriesMutation({ action: input.action, request: input.request, ...snapshot });
   const requestHash = timeBlockSeriesHash(requestPayload(input.action, input.request));
   const snapshotHash = timeBlockSeriesHash(snapshotPayload(snapshot.series, snapshot.exceptions));
-  const capacity = await capacityComparison(db, { workspaceId: input.workspaceId, planId, plan });
   const beforeOccurrences = expandEffectiveRecurringBlocks(
     [snapshot.series],
     snapshot.exceptions.map(exceptionInput),
@@ -616,7 +515,6 @@ async function buildPreview(
         before: occurrenceSummary(beforeOccurrences),
         after: occurrenceSummary(afterOccurrences),
       },
-      capacity,
     },
   };
 }
@@ -879,7 +777,6 @@ async function readActualMutationState(
   db: DbLike | any,
   input: {
     workspaceId: string;
-    planId: string;
     plan: MutationPlan;
     seriesIds: string[];
   },
@@ -889,38 +786,6 @@ async function readActualMutationState(
     rangeStart: input.plan.rangeStart,
     rangeEnd: input.plan.rangeEnd,
   });
-  // The same readback runs inside the mutation transaction; one pg client
-  // must execute its queries sequentially.
-  const taskRows = await db
-    .select()
-    .from(tasks)
-    .where(
-      and(
-        eq(tasks.workspaceId, input.workspaceId),
-        eq(tasks.planId, input.planId),
-        isNull(tasks.archivedAt),
-        gte(tasks.date, input.plan.rangeStart),
-        lt(tasks.date, input.plan.rangeEnd),
-      ),
-    );
-  const routineRows = await db.select().from(routines).where(eq(routines.workspaceId, input.workspaceId));
-  const capacityRows = await db
-    .select()
-    .from(dayCapacities)
-    .where(
-      and(
-        eq(dayCapacities.workspaceId, input.workspaceId),
-        gte(dayCapacities.date, input.plan.rangeStart),
-        lt(dayCapacities.date, input.plan.rangeEnd),
-      ),
-    );
-  const capacity = buildCapacityModel({
-    dates: datesForCapacity(input.plan.affectedDates),
-    capacities: capacityRows,
-    tasks: taskRows,
-    timeBlocks: snapshot.occurrences.map((row) => ({ ...row, recurrenceWeekdayMask: null })),
-    routines: routineRows,
-  });
   return {
     status: "succeeded" as const,
     constraints: occurrenceSummary(
@@ -928,7 +793,6 @@ async function readActualMutationState(
         input.seriesIds.includes(row.recurrenceSourceId ?? row.id),
       ),
     ),
-    capacity,
   };
 }
 
@@ -1084,7 +948,6 @@ export async function applyTimeBlockSeriesMutation(
         : await executeMutation(tx, input.workspaceId, plan);
       const transactionReadback = await readActualMutationState(tx, {
         workspaceId: input.workspaceId,
-        planId,
         plan,
         seriesIds: applied.seriesIds,
       });
@@ -1144,7 +1007,6 @@ export async function applyTimeBlockSeriesMutation(
     committed,
     () => readActualMutationState(db, {
       workspaceId: input.workspaceId,
-      planId,
       plan: committed.plan,
       seriesIds: committed.seriesIds,
     }),

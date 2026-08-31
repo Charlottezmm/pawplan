@@ -24,7 +24,6 @@ export const pawPlanToolPermissions = {
   get_week: "read",
   get_month: "read",
   get_constraints: "read",
-  get_capacity: "read",
   get_decisions: "read",
   get_conversations: "read",
   get_checkins: "read",

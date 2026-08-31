@@ -7,7 +7,6 @@ import {
   agentPatchReviews,
   checkins,
   courses,
-  dayCapacities,
   inboxItems,
   plans,
   projects,
@@ -17,7 +16,6 @@ import {
   tracks,
 } from "@/lib/db/schema";
 import {
-  buildCapacityModel,
   capacityDateKey,
   type CapacityRoutineInput,
   type CapacityTaskInput,
@@ -142,9 +140,7 @@ export type TodayViewData = {
 export type WeekDayView = {
   day: string;
   date: string;
-  load: number;
-  capacity: string;
-  state: "ok" | "over" | "room" | "today";
+  state: "default" | "today";
   items: string[];
   tasks: PlanTaskView[];
   fixedItems: TimelineItemView[];
@@ -260,7 +256,6 @@ export type ReschedulePatchItemView = {
   to?: string;
   reason: string;
   impact: string[];
-  capacity: string;
   protected?: boolean;
   protectedEvidence: string[];
   provenance: {
@@ -292,12 +287,6 @@ export type RescheduleViewData = {
 };
 
 const recoveryTargetMinutes = 8 * 60;
-const segmentCapacityFallback: Record<Segment, number> = {
-  morning: 180,
-  afternoon: 240,
-  evening: 120,
-};
-
 const trackColors = ["bg-zinc-900", "bg-sky-700", "bg-violet-600", "bg-emerald-600", "bg-amber-600"];
 
 function isMissingDatabase(error: unknown) {
@@ -334,9 +323,7 @@ function emptyWeekData(dataUnavailable = false): WeekViewData {
     days: buildWeekDates(new Date()).map((date) => ({
       day: weekdayLabel(date),
       date: monthDayLabel(date),
-      load: 0,
-      capacity: "空",
-      state: isSameShanghaiDay(date, startOfShanghaiDay(new Date())) ? "today" : "room",
+      state: isSameShanghaiDay(date, startOfShanghaiDay(new Date())) ? "today" : "default",
       items: [],
       tasks: [],
       fixedItems: [],
@@ -505,37 +492,18 @@ function parseTaskDetail(notes: string | null | undefined): TaskDetailView {
   };
 }
 
-type WeekCapacityInput = {
+type WeekDaysInput = {
   weekDates: Date[];
   today: Date;
   taskRows: CapacityTaskInput[];
   blockRows: CapacityTimeBlockInput[];
   routineRows: CapacityRoutineInput[];
   refs?: ReferenceMaps;
-  capacityRows: Array<{
-    date: Date;
-    morningMinutes: number;
-    afternoonMinutes: number;
-    eveningMinutes: number;
-  }>;
 };
 
-export function buildWeekCapacityDays(input: WeekCapacityInput): WeekDayView[] {
-  const capacity = buildCapacityModel({
-    dates: input.weekDates,
-    capacities: input.capacityRows,
-    tasks: input.taskRows,
-    timeBlocks: input.blockRows,
-    routines: input.routineRows,
-  });
-  const byDate = new Map(capacity.days.map((day) => [day.dateKey, day]));
-
+export function buildWeekDays(input: WeekDaysInput): WeekDayView[] {
   return input.weekDates.map((date) => {
     const key = capacityDateKey(date);
-    const day = byDate.get(key);
-    const available = day ? segmentCapacity(day.segments.morning.availableMinutes, day.segments.afternoon.availableMinutes, day.segments.evening.availableMinutes) : 540;
-    const used = day ? segmentCapacity(day.segments.morning.totalUsedMinutes, day.segments.afternoon.totalUsedMinutes, day.segments.evening.totalUsedMinutes) : 0;
-    const percent = available === 0 ? 0 : Math.round((used / available) * 100);
     const taskViews = input.taskRows
       .filter((task) => (task.status === "todo" || task.status === "done") && capacityDateKey(task.date) === key)
       .sort((a, b) => segmentOrder.indexOf(a.daySegment as Segment) - segmentOrder.indexOf(b.daySegment as Segment) || a.title.localeCompare(b.title))
@@ -549,9 +517,7 @@ export function buildWeekCapacityDays(input: WeekCapacityInput): WeekDayView[] {
     return {
       day: weekdayLabel(date),
       date: monthDayLabel(date),
-      load: percent,
-      capacity: hoursLabel(used),
-      state: isSameShanghaiDay(date, input.today) ? "today" : percent > 100 ? "over" : percent < 60 ? "room" : "ok",
+      state: isSameShanghaiDay(date, input.today) ? "today" : "default",
       items: taskViews.map((task) => task.title).slice(0, 4),
       tasks: taskViews,
       fixedItems: timelineItems.filter((item) => item.kind !== "task"),
@@ -564,10 +530,6 @@ export function buildWeekCapacityDays(input: WeekCapacityInput): WeekDayView[] {
 }
 
 const segmentOrder: Segment[] = ["morning", "afternoon", "evening"];
-
-function segmentCapacity(morning: number, afternoon: number, evening: number) {
-  return morning + afternoon + evening;
-}
 
 function timeOnShanghaiDay(date: Date, time: string) {
   const [hour, minute] = time.split(":").map(Number);
@@ -1009,7 +971,6 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
       completionRows,
       overdueTaskRows,
       todayBlocks,
-      todayCapacityRows,
       weekRecoveryBlocks,
       inboxRows,
       todayCheckinRows,
@@ -1052,10 +1013,6 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
         loadEffectiveTimeBlocks(db, { workspaceId, rangeStart: start, rangeEnd: end }).then((snapshot) =>
           snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null })),
         ),
-        db
-          .select()
-          .from(dayCapacities)
-          .where(and(eq(dayCapacities.workspaceId, workspaceId), gte(dayCapacities.date, start), lt(dayCapacities.date, end))),
         loadEffectiveTimeBlocks(db, {
           workspaceId,
           rangeStart: weekStart,
@@ -1084,22 +1041,12 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
 
     const completedRoutineIds = new Set(completionRows.filter((row) => row.completed).map((row) => row.routineId));
     const recoveryMinutesThisWeek = weekRecoveryBlocks.reduce((sum, block) => sum + minutesBetween(block.startsAt, block.endsAt), 0);
-    const capacity = buildCapacityModel({
-      dates: [start],
-      capacities: todayCapacityRows,
-      tasks: taskRows,
-      timeBlocks: todayBlocks,
-      routines: routineRows,
+    const warningRows = buildWarnings({
+      inboxCount: inboxRows.length,
+      hadYesterdayCheckin: yesterdayCheckinRows.length > 0,
+      recoveryMinutesThisWeek,
+      recoveryTargetMinutes,
     });
-    const warningRows = [
-      ...buildWarnings({
-        inboxCount: inboxRows.length,
-        hadYesterdayCheckin: yesterdayCheckinRows.length > 0,
-        recoveryMinutesThisWeek,
-        recoveryTargetMinutes,
-      }),
-      ...capacity.warnings,
-    ];
 
     const todayCheckin = todayCheckinRows[0] ?? null;
     const timelineItems = buildDayTimelineItems({
@@ -1129,7 +1076,7 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
       warnings: warningRows.map((warning) => ({
         id: warning.code,
         title: warning.message,
-        text: warning.code === "inbox_pileup" ? "Inbox 不占 capacity，但堆积会污染计划判断。" : "这条提醒会进入下一次 agent 重排上下文。",
+        text: warning.code === "inbox_pileup" ? "Inbox 堆积会污染计划判断。" : "这条提醒会进入下一次 agent 重排上下文。",
       })),
       timelineItems,
       fixedItems: timelineItems.filter((item) => item.kind !== "task"),
@@ -1161,7 +1108,7 @@ export async function getWeekPageData(workspaceId: string): Promise<WeekViewData
     const planId = await getActivePlanId(db, workspaceId);
     if (!planId) return emptyWeekData();
 
-    const [taskRows, blockRows, routineRows, capacityRows, checkinRows] = await Promise.all([
+    const [taskRows, blockRows, routineRows, checkinRows] = await Promise.all([
       db
         .select()
         .from(tasks)
@@ -1179,10 +1126,6 @@ export async function getWeekPageData(workspaceId: string): Promise<WeekViewData
         snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null })),
       ),
       db.select().from(routines).where(eq(routines.workspaceId, workspaceId)),
-      db
-        .select()
-        .from(dayCapacities)
-        .where(and(eq(dayCapacities.workspaceId, workspaceId), gte(dayCapacities.date, start), lt(dayCapacities.date, end))),
       db
         .select()
         .from(checkins)
@@ -1206,7 +1149,7 @@ export async function getWeekPageData(workspaceId: string): Promise<WeekViewData
 
     return {
       dataUnavailable: false,
-      days: buildWeekCapacityDays({ weekDates, today, taskRows, blockRows, routineRows, refs, capacityRows }),
+      days: buildWeekDays({ weekDates, today, taskRows, blockRows, routineRows, refs }),
       tracks: balance.map((item, index) => {
         const track = refs.tracks.get(item.trackId);
         return {
@@ -1529,7 +1472,6 @@ export function buildReschedulePatchItems(input: {
         kind: operation.type === "move_task" && operation.overdue_rollover ? "逾期顺延" : operationKind(operation.type),
         title,
         reason: operation.reason,
-        capacity: "应用前会重新计算相关日期容量。",
         protected: false,
         protectedEvidence: evidenceList(operation.protected_evidence),
         provenance: {
@@ -1557,59 +1499,47 @@ export function buildReschedulePatchItems(input: {
           ...base,
           from: `${operation.from_date} ${operation.from_day_segment}`,
           to: `${operation.to_date} ${operation.to_day_segment}`,
-          impact: evidenceList(operation.capacity_impact).length
-            ? evidenceList(operation.capacity_impact)
-            : ["任务移动", `patch ${patch.id.slice(0, 8)}`],
+          impact: ["任务移动", `patch ${patch.id.slice(0, 8)}`],
         });
       } else if (operation.type === "split_task") {
         patchItems.push({
           ...base,
           from: "原任务",
           to: `${operation.new_tasks.length} 个子任务`,
-          impact: evidenceList(operation.capacity_impact).length
-            ? evidenceList(operation.capacity_impact)
-            : operation.new_tasks.map((task) => `${task.title} · ${task.estimated_minutes}m`).slice(0, 3),
+          impact: operation.new_tasks.map((task) => `${task.title} · ${task.estimated_minutes}m`).slice(0, 3),
         });
       } else if (operation.type === "defer_task") {
         patchItems.push({
           ...base,
           from: "当前排期",
           to: operation.target_week_or_date,
-          impact: evidenceList(operation.capacity_impact).length
-            ? evidenceList(operation.capacity_impact)
-            : ["延期", `patch ${patch.id.slice(0, 8)}`],
+          impact: ["延期", `patch ${patch.id.slice(0, 8)}`],
         });
       } else if (operation.type === "move_to_backlog") {
         patchItems.push({
           ...base,
           from: "当前计划",
           to: "Backlog",
-          impact: evidenceList(operation.capacity_impact).length
-            ? evidenceList(operation.capacity_impact)
-            : ["释放本周容量", `patch ${patch.id.slice(0, 8)}`],
+          impact: ["移出当前计划", `patch ${patch.id.slice(0, 8)}`],
         });
       } else if (operation.type === "change_priority") {
         patchItems.push({
           ...base,
           from: operation.from_priority,
           to: operation.to_priority,
-          impact: evidenceList(operation.capacity_impact).length
-            ? evidenceList(operation.capacity_impact)
-            : ["优先级变化", `patch ${patch.id.slice(0, 8)}`],
+          impact: ["优先级变化", `patch ${patch.id.slice(0, 8)}`],
         });
       } else if (operation.type === "import_timetable") {
         const blockCount = materializeTimetableRows(operation.rows).length;
         const locations = [...new Set(operation.rows.map((row) => row.location?.trim()).filter(Boolean))] as string[];
-        const suppliedImpact = evidenceList(operation.capacity_impact);
         patchItems.push({
           ...base,
           title: `导入日程表：${operation.source_label ?? "MCP draft"}`,
           from: "未导入",
           to: `${operation.rows.length} 行 / ${blockCount} 个时间块`,
           impact: [
-            ...(suppliedImpact.length > 0
-              ? suppliedImpact
-              : [`将创建 ${blockCount} 个固定时间块`, "不会自动写入，需用户确认"]),
+            `将创建 ${blockCount} 个固定时间块`,
+            "不会自动写入，需用户确认",
             locations.length > 0 ? `地点：${locations.slice(0, 3).join(" / ")}` : "地点未提供",
           ],
         });
@@ -1619,9 +1549,7 @@ export function buildReschedulePatchItems(input: {
           title: operation.milestone_id,
           from: "当前里程碑",
           to: operation.proposed_text,
-          impact: evidenceList(operation.capacity_impact).length
-            ? evidenceList(operation.capacity_impact)
-            : ["文字建议", `patch ${patch.id.slice(0, 8)}`],
+          impact: ["文字建议", `patch ${patch.id.slice(0, 8)}`],
         });
       }
     });

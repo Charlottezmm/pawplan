@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildDayTimelineItems, buildWeekCapacityDays } from "@/lib/planning/view-data";
+import { buildDayTimelineItems, buildWeekDays } from "@/lib/planning/view-data";
 
-describe("planning view shared capacity", () => {
-  it("builds week day load from the shared capacity model", () => {
+describe("planning week view", () => {
+  it("builds week days without capacity state", () => {
     const weekDates = [
       new Date("2026-06-12T00:00:00.000+08:00"),
       new Date("2026-06-13T00:00:00.000+08:00"),
     ];
 
-    const days = buildWeekCapacityDays({
+    const days = buildWeekDays({
       weekDates,
       today: new Date("2026-06-12T00:00:00.000+08:00"),
       taskRows: [
@@ -47,26 +47,10 @@ describe("planning view shared capacity", () => {
         },
       ],
       routineRows: [],
-      capacityRows: [
-        {
-          date: new Date("2026-06-12T00:00:00.000+08:00"),
-          morningMinutes: 180,
-          afternoonMinutes: 240,
-          eveningMinutes: 120,
-        },
-        {
-          date: new Date("2026-06-13T00:00:00.000+08:00"),
-          morningMinutes: 60,
-          afternoonMinutes: 0,
-          eveningMinutes: 0,
-        },
-      ],
     });
 
     expect(days[0]).toEqual(
       expect.objectContaining({
-        load: 28,
-        capacity: "2h 30m",
         state: "today",
         items: ["Morning implementation"],
         taskCount: 1,
@@ -77,7 +61,9 @@ describe("planning view shared capacity", () => {
     expect(days[0].tasks[0]).toEqual(expect.objectContaining({ title: "Morning implementation", minutes: 90 }));
     expect(days[0].tasks.map((task) => task.id)).not.toContain("task-skipped");
     expect(days[0].fixedItems[0]).toEqual(expect.objectContaining({ title: "Course block", kind: "course" }));
-    expect(days[1]).toEqual(expect.objectContaining({ load: 0, capacity: "0h", state: "room", items: [], taskCount: 0 }));
+    expect(days[1]).toEqual(expect.objectContaining({ state: "default", items: [], taskCount: 0 }));
+    expect(days[0]).not.toHaveProperty("load");
+    expect(days[0]).not.toHaveProperty("capacity");
   });
 });
 

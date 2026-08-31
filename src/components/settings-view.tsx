@@ -902,7 +902,7 @@ export function SettingsView() {
         <div className="paw-list-header">
           <div>
             <h2 className="paw-list-title">日常事项</h2>
-            <p className="paw-list-subtitle">保存到 routines，用于家务、做饭、通勤、运动等固定容量。</p>
+            <p className="paw-list-subtitle">保存到 routines，用于家务、做饭、通勤、运动等固定日常安排。</p>
           </div>
           <span className="paw-more-icon">
             <RotateCcw size={18} />

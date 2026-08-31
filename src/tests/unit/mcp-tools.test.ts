@@ -208,7 +208,6 @@ describe("MCP planning tools", () => {
       "get_week",
       "get_month",
       "get_constraints",
-      "get_capacity",
       "get_decisions",
       "get_conversations",
       "get_checkins",
@@ -245,7 +244,6 @@ describe("MCP planning tools", () => {
       "get_week",
       "get_month",
       "get_constraints",
-      "get_capacity",
       "get_decisions",
       "get_conversations",
       "get_checkins",
@@ -1255,7 +1253,6 @@ describe("MCP planning tools", () => {
                     location: "Room 204",
                   }),
                 ],
-                capacity_impact: ["将创建 1 个固定时间块", "不会自动写入，需用户在 Review 确认"],
               }),
             ],
           },
@@ -1303,7 +1300,6 @@ describe("MCP planning tools", () => {
               recurrence: "周一到周六",
             }),
           ],
-          capacity_impact: ["将创建 1 个固定时间块", "不会自动写入，需用户在 Review 确认"],
         }),
       ],
     });
@@ -1701,79 +1697,6 @@ describe("MCP planning tools", () => {
         location: "Room 204",
       }),
     ]);
-  });
-
-  it("reads shared capacity through a read-only MCP token without writes", async () => {
-    const db = createFakeDb({
-      selectRows: {
-        day_capacities: [
-          {
-            date: new Date("2026-06-12T00:00:00.000+08:00"),
-            morningMinutes: 180,
-            afternoonMinutes: 240,
-            eveningMinutes: 120,
-          },
-        ],
-        tasks: [
-          {
-            id: "task-1",
-            title: "Implement capacity",
-            date: new Date("2026-06-12T00:00:00.000+08:00"),
-            daySegment: "morning",
-            estimatedMinutes: 90,
-            status: "todo",
-          },
-          {
-            id: "task-backlog",
-            title: "Later",
-            date: new Date("2026-06-12T00:00:00.000+08:00"),
-            daySegment: "morning",
-            estimatedMinutes: 300,
-            status: "backlog",
-          },
-        ],
-        time_blocks: [
-          {
-            id: "block-1",
-            title: "Unavailable",
-            kind: "unavailable",
-            startsAt: new Date("2026-06-12T09:00:00.000+08:00"),
-            endsAt: new Date("2026-06-12T10:00:00.000+08:00"),
-          },
-        ],
-        routines: [],
-      },
-    });
-
-    const result = await runPawPlanTool(
-      db,
-      "workspace-1",
-      "get_capacity",
-      { date_from: "2026-06-12", date_to: "2026-06-13" },
-      "read_only",
-    );
-
-    expect(result).toEqual({
-      workspaceId: "workspace-1",
-      filters: { date_from: "2026-06-12", date_to: "2026-06-13" },
-      capacity: expect.objectContaining({
-        days: [
-          expect.objectContaining({
-            dateKey: "2026-06-12",
-            segments: expect.objectContaining({
-              morning: expect.objectContaining({
-                taskMinutes: 90,
-                protectedMinutes: 60,
-                remainingMinutes: 30,
-              }),
-            }),
-          }),
-        ],
-      }),
-    });
-    expect(db.inserts).toEqual([]);
-    expect(db.updates).toEqual([]);
-    expect(db.deletes).toEqual([]);
   });
 
   it("imports a bundled plan into real PawPlan tasks", async () => {

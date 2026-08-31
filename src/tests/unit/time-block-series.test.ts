@@ -44,7 +44,7 @@ describe("time block series mutation planning", () => {
         seriesIds: [series().id],
         exceptionIds: [],
         affectedDates: ["2026-08-10"],
-        transactionReadback: { status: "succeeded", constraints: [], capacity: {} } as never,
+        transactionReadback: { status: "succeeded", constraints: [] } as never,
       },
       async () => { throw new Error("read replica unavailable"); },
       async (value) => { persisted.push(value); },

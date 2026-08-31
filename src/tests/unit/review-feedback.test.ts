@@ -118,8 +118,7 @@ describe("Review core flow", () => {
           from: "2026-08-30 afternoon",
           to: "2026-08-31 morning",
           reason: "为固定课程留出空间",
-          impact: ["释放下午容量"],
-          capacity: "应用前会重新计算容量",
+          impact: ["任务移动"],
           protected: false,
           protectedEvidence: [],
           provenance: {

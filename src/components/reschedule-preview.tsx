@@ -40,6 +40,12 @@ type ApplyPatchResponse = {
 
 type PendingAction = "bulk-reject" | "single-reject" | "apply-selected";
 
+const capacityTextPattern = /(?:容量|capacity|超载|过载|余量|负载|remainingMinutes|protectedOverCapacity)/i;
+
+function isCapacityText(value: string) {
+  return capacityTextPattern.test(value);
+}
+
 export function ReviewPreview({
   data,
   approvals = [],
@@ -371,7 +377,17 @@ export function ReviewPreview({
 
         {visiblePatchItems.map((item: PatchItem) => {
           const decision = decisions[item.id];
-          const userImpact = item.impact.filter((impact) => !/^patch\s/i.test(impact));
+          const userImpact = item.impact.filter(
+            (impact) => !/^patch\s/i.test(impact) && !isCapacityText(impact),
+          );
+          const capacityConflict = item.conflict
+            ? isCapacityText(`${item.conflict.reason} ${JSON.stringify(item.conflict.expected)} ${JSON.stringify(item.conflict.actual)}`)
+            : false;
+          const visibleReason = isCapacityText(item.reason) ? "这项建议会调整任务安排。" : item.reason;
+          const visibleSkippedReason = item.skipped && item.skippedReason && !isCapacityText(item.skippedReason)
+            ? item.skippedReason
+            : "";
+          const visibleProtectedEvidence = item.protectedEvidence.filter((evidence) => !isCapacityText(evidence));
           return (
             <article
               key={item.id}
@@ -390,14 +406,14 @@ export function ReviewPreview({
                 {decision ? <span className="paw-status-pill link">{decision === "accepted" ? "已接受" : "已拒绝"}</span> : null}
               </div>
               <h2 className="paw-suggestion-what mt-3">{item.title}</h2>
-              <p className="paw-suggestion-why paw-wrap-anywhere">{item.reason}</p>
+              <p className="paw-suggestion-why paw-wrap-anywhere">{visibleReason}</p>
               <ReviewItemState
                 isProtected={Boolean(item.protected)}
-                skippedReason={item.skipped ? item.skippedReason ?? "" : undefined}
+                skippedReason={item.skipped ? visibleSkippedReason : undefined}
                 conflict={item.conflict ? {
-                  reason: item.conflict.reason,
-                  expected: formatConflictSide(item.conflict.expected),
-                  actual: formatConflictSide(item.conflict.actual),
+                  reason: capacityConflict ? "当前计划与建议基于的状态不一致" : item.conflict.reason,
+                  expected: capacityConflict ? undefined : formatConflictSide(item.conflict.expected),
+                  actual: capacityConflict ? undefined : formatConflictSide(item.conflict.actual),
                 } : undefined}
               />
               <div className="paw-suggestion-row">
@@ -454,8 +470,7 @@ export function ReviewPreview({
                 {userImpact.map((impact) => (
                   <span key={impact} className="paw-status-pill">{impact}</span>
                 ))}
-                <span className="paw-status-pill">{item.capacity}</span>
-                {item.protectedEvidence.map((evidence) => (
+                {visibleProtectedEvidence.map((evidence) => (
                   <span key={evidence} className="paw-status-pill">
                     <Lock size={12} />
                     {evidence}

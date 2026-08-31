@@ -25,11 +25,6 @@ function minutesLabel(minutes: number) {
   return `${minutes}m`;
 }
 
-function loadColor(state: string) {
-  if (state === "over") return "overloaded";
-  return "";
-}
-
 function clock(iso: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -143,7 +138,7 @@ function FixedItems({ items }: { items: TimelineItemView[] }) {
   if (items.length === 0) return null;
   return (
     <details className="paw-plan-fixed" open>
-      <summary>固定占用 · {items.length} 项</summary>
+      <summary>固定安排 · {items.length} 项</summary>
       <div className="paw-timeline compact">
         {sortByStart(items).map((item) => (
           <div key={item.id} className="paw-time-block">
@@ -294,15 +289,12 @@ function WeekDayCard({ day, onOpenTask }: { day: WeekDayView; onOpenTask: (task:
           <span className="paw-week-day-date">{day.date}</span>
         </span>
         <span className="paw-week-day-right">
-          <span className={day.state === "over" ? "paw-overload-badge" : "paw-status-pill"}>
+          <span className="paw-status-pill">
             {day.doneCount}/{day.taskCount} · {day.totalMinutes}
           </span>
           <span className="paw-week-chevron" aria-hidden="true" />
         </span>
       </summary>
-      <div className="paw-capacity-bar">
-        <div className={`paw-capacity-fill ${loadColor(day.state)}`} style={{ width: `${Math.min(day.load, 100)}%` }} />
-      </div>
       <div className="paw-plan-task-list compact paw-week-tasklist">
         {day.tasks.length === 0 ? <p className="paw-week-empty">这一天还没有任务</p> : null}
         {day.tasks.map((task) => (
@@ -478,7 +470,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
         <h1 className="paw-page-date">计划</h1>
         <div className="paw-agent-row">
           <CatIcon size={40} mood="think" />
-          <p className="paw-agent-msg">日、周、月都以任务为主。固定占用只做参考；手动修改日期立即生效，调整建议则要在审核页确认。</p>
+          <p className="paw-agent-msg">日、周、月都以任务为主。固定安排只做参考；手动修改日期立即生效，调整建议则要在审核页确认。</p>
         </div>
         <div className="paw-plan-view-controls">
         <nav className="paw-sub-tabs" aria-label="计划视图">

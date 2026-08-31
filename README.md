@@ -35,12 +35,12 @@ _Preview captured from a local test session; no real workspace data is shown._
 
 ## 🎯 Why PawPlan
 
-Most planning tools only maintain a task list, and agents tend to produce changes that look good but aren't safely executable. PawPlan plans from a **real schedule** — fixed blocks, routines, courses, and capacity — instead of a blank list, and keeps every agent change behind Review.
+Most planning tools only maintain a task list, and agents tend to produce changes that look good but aren't safely executable. PawPlan plans from a **real schedule** — fixed blocks, routines, and courses — instead of a blank list, and keeps every agent change behind Review.
 
 It lets you:
 
 - Capture tasks, chores, decisions, check-ins, and planning context.
-- Keep protected schedule blocks, routines, courses, and capacity visible to agents.
+- Keep protected schedule blocks, routines, and courses visible to agents.
 - Let external agents propose a daily or weekly rebalance **when you ask**, without touching the plan directly.
 - Show every agent change as a Review draft before anything is applied.
 - Record each agent run with status, idempotency, structured outputs, failures, and readback.
@@ -118,7 +118,7 @@ A Next.js + Postgres app with a narrow MCP boundary between it and external agen
 | --- | --- |
 | `src/app` | App Router pages and API routes |
 | `src/components` | UI for planning, inbox, review, settings, imports |
-| `src/lib/planning` | Planning services, view data builders, capacity, rebalance logic |
+| `src/lib/planning` | Planning services, view data builders, and rebalance logic |
 | `src/lib/agent-runs` | Agent run creation, idempotency, status transitions, readback |
 | `src/lib/mcp` | MCP tool schemas, dispatch, hosted route helpers, server builder |
 | `src/lib/settings` | Workspace settings and observability helpers |
@@ -146,9 +146,9 @@ and `read_write` tokens can access explicitly authorized direct writes. `review_
 archive/delete tasks, replace plan windows, import live tasks, or edit time blocks.
 
 <details>
-<summary><strong>Tool reference</strong> (9 read · 11 write/draft)</summary>
+<summary><strong>Tool reference</strong> (8 read · 11 write/draft)</summary>
 
-**Read** — `get_today` · `get_week` · `get_month` · `get_constraints` · `get_capacity` · `get_decisions` · `get_conversations` · `get_checkins` · `get_tasks`
+**Read** — `get_today` · `get_week` · `get_month` · `get_constraints` · `get_decisions` · `get_conversations` · `get_checkins` · `get_tasks`
 
 **Write & draft** — `create_inbox_item` · `create_checkin` · `update_task_status` · `update_task_schedule` · `update_task_notes` · `update_tasks_batch` · `save_conversation_summary` · `record_decision` · `propose_patch` · `propose_daily_rebalance` · `propose_week_rebalance` · `propose_timetable_import` · `import_plan_bundle`
 
@@ -218,7 +218,7 @@ PawPlan 不再推荐固定频率的每日自动 Review。用户主动要求调�
 
 - `src/app`：App Router 页面和 API routes。
 - `src/components`：计划 / Inbox / Review / Settings / Import 等 UI。
-- `src/lib/planning`：计划服务、view data、capacity、rebalance 逻辑。
+- `src/lib/planning`：计划服务、view data 和 rebalance 逻辑。
 - `src/lib/agent-runs`：agent run 创建、幂等、状态流转、readback。
 - `src/lib/mcp`：MCP tool schema、dispatch、hosted route helper、server builder。
 - `src/lib/settings`：workspace settings 和可观察性服务。

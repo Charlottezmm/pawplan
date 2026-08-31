@@ -2,7 +2,6 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
 import {
   changeLogs,
-  dayCapacities,
   planOperations,
   plans,
   planVersions,
@@ -10,7 +9,6 @@ import {
   planWindowTaskRefs,
   projectMilestones,
   projects,
-  routines,
   tasks,
 } from "@/lib/db/schema";
 import {
@@ -18,8 +16,6 @@ import {
   resolveActivePlanContext,
   type ActivePlanContext,
 } from "@/lib/planning/active-plan";
-import { buildCapacityModel } from "@/lib/planning/capacity-model";
-import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 import {
   consumeOperationApproval,
   createOperationApproval,
@@ -529,26 +525,6 @@ async function loadPreviewState(
         lt(tasks.date, windowEnd),
       ),
     ) as TaskRow[];
-  const blockSnapshot = await loadEffectiveTimeBlocks(db, {
-    workspaceId: input.workspaceId,
-    rangeStart: windowStart,
-    rangeEnd: windowEnd,
-  });
-  const routineRows = await db
-    .select()
-    .from(routines)
-    .where(eq(routines.workspaceId, input.workspaceId)) as Array<typeof routines.$inferSelect>;
-  const capacityRows = await db
-    .select()
-    .from(dayCapacities)
-    .where(
-      and(
-        eq(dayCapacities.workspaceId, input.workspaceId),
-        gte(dayCapacities.date, windowStart),
-        lt(dayCapacities.date, windowEnd),
-      ),
-    ) as Array<typeof dayCapacities.$inferSelect>;
-
   const refIds = refs.map((ref: TaskRefRow) => ref.taskId);
   const refTasks: TaskRow[] = refIds.length
     ? await db
@@ -677,38 +653,6 @@ async function loadPreviewState(
     preservedDoneTaskIds,
     summaryChanged: summaryChanged(plan, input),
   };
-  const archivedIds = new Set(diff.wouldArchiveTaskIds);
-  const simulatedTasks = [
-    ...activeWindowTasks.filter((task) => !archivedIds.has(task.id)),
-    ...input.tasks
-      .map(normalizedTask)
-      .filter((task) => {
-        const ref = refByKey.get(task.externalTaskKey);
-        return !ref || !diff.unchangedTaskIds.includes(ref.taskId);
-      })
-      .map((task) => ({
-        id: `preview:${task.externalTaskKey}`,
-        title: task.title,
-        date: parseDateKey(task.date)!,
-        daySegment: task.daySegment,
-        estimatedMinutes: task.estimatedMinutes,
-        status: "todo" as const,
-      })),
-  ];
-  const capacity = buildCapacityModel({
-    dates: datesInRange(windowStart, windowEnd),
-    capacities: capacityRows,
-    tasks: simulatedTasks,
-    timeBlocks: blockSnapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null })),
-    routines: routineRows,
-    now: windowStart,
-  });
-  for (const warning of capacity.warnings) {
-    conflicts.push({
-      code: "capacity_exceeded",
-      message: warning.message,
-    });
-  }
   const requestHash = sha256(businessPayload(input));
   const stateHash = sha256({
     planId: plan.id,
@@ -730,24 +674,6 @@ async function loadPreviewState(
       status: milestone.status,
       updatedAt: milestone.updatedAt.toISOString(),
     })),
-    blocks: blockSnapshot.series.map((block) => ({
-      id: block.id,
-      startsAt: block.startsAt.toISOString(),
-      endsAt: block.endsAt.toISOString(),
-      recurrenceRule: block.recurrenceRule,
-      recurrenceWeekdayMask: block.recurrenceWeekdayMask,
-      revision: block.revision,
-      updatedAt: block.updatedAt.toISOString(),
-    })),
-    blockExceptions: blockSnapshot.exceptions.map((exception) => ({
-      id: exception.id,
-      seriesId: exception.seriesId,
-      occurrenceDate: exception.occurrenceDate,
-      action: exception.action,
-      updatedAt: exception.updatedAt.toISOString(),
-    })),
-    capacities: capacityRows,
-    routines: routineRows,
   });
 
   return {

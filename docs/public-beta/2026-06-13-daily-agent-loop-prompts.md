@@ -17,7 +17,7 @@ Superseded: 2026-08-27
 手动调用示例：
 
 ```text
-请根据我刚才确认的变化检查 PawPlan。先读取任务、固定安排和容量；如果需要调整，
+请根据我刚才确认的变化检查 PawPlan。先读取任务和固定安排；如果需要调整，
 给出最小改动，并使用 propose_daily_rebalance 或 propose_week_rebalance 创建 Review。
 不要自动 Apply，也不要把逾期任务自动移到 backlog。
 ```

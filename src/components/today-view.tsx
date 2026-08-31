@@ -3,7 +3,7 @@
 import { AlertTriangle, Archive, CalendarClock, Check, ChevronDown, Clock3, Copy, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CatIcon } from "./cat-icon";
 import { DailyCheckin } from "./daily-checkin";
@@ -132,10 +132,6 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const doneCount = tasks.filter((task) => task.displayStatus === "done").length;
   const unresolvedTasks = tasks.filter((task) => task.displayStatus !== "done");
   const unresolvedMinutes = unresolvedTasks.reduce((sum, task) => sum + task.minutes, 0);
-  const fixedMinutes = useMemo(() => {
-    return data.exactFixedItems.reduce((sum, item) => sum + item.minutes, 0);
-  }, [data.exactFixedItems]);
-
   // 猫的表情和台词跟随状态（小时数挂载后再取，避免 SSR 时区差异）
   const [hour, setHour] = useState<number | null>(null);
   useEffect(() => {
@@ -305,12 +301,8 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                 <dd>{unresolvedTasks.length}</dd>
               </div>
               <div>
-                <dt>剩余任务量</dt>
+                <dt>剩余任务时长</dt>
                 <dd>{minutesLabel(unresolvedMinutes)}</dd>
-              </div>
-              <div>
-                <dt>固定占用</dt>
-                <dd>{fixedMinutes > 0 ? minutesLabel(fixedMinutes) : "0m"}</dd>
               </div>
             </dl>
           </div>
@@ -326,11 +318,14 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
           </Link>
         ) : null}
 
-        {data.warnings.slice(0, 1).map((warning) => (
-          <p key={warning.id} className="paw-today-warn">
-            <AlertTriangle size={13} /> {warning.title}
-          </p>
-        ))}
+        {data.warnings
+          .filter((warning) => warning.id !== "over_capacity" && warning.id !== "capacity_overload")
+          .slice(0, 1)
+          .map((warning) => (
+            <p key={warning.id} className="paw-today-warn">
+              <AlertTriangle size={13} /> {warning.title}
+            </p>
+          ))}
       </section>
 
       {data.dataUnavailable ? (

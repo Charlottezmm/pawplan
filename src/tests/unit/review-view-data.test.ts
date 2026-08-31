@@ -73,7 +73,7 @@ describe("review view data", () => {
         from: "2026-06-12 morning",
         to: "2026-06-12 afternoon",
         reason: "Morning is full.",
-        impact: ["morning -60m", "afternoon +60m"],
+        impact: ["任务移动", "patch patch-12"],
         protectedEvidence: ["Recovery block stays protected"],
         provenance: {
           patchId: "patch-12345678",

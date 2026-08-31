@@ -668,7 +668,7 @@ describe("applyAgentPatch", () => {
     expect(db.updates.filter((update) => update.table === "plans" || update.table === "agent_patches")).toEqual([]);
   });
 
-  it("increments rollover metadata only after an overdue Review move is accepted and reads back capacity", async () => {
+  it("increments rollover metadata only after an overdue Review move is accepted", async () => {
     const targetDate = new Date("2026-08-15T16:00:00.000Z");
     const db = createFakeDb({
       id: "patch-overdue",
@@ -697,7 +697,6 @@ describe("applyAgentPatch", () => {
         rolloverCount: 0,
         estimatedMinutes: 60,
       }]],
-      selectRows: { tasks: [], time_blocks: [], routines: [], day_capacities: [] },
       taskUpdateResults: [[{
         id: "task-overdue",
         date: targetDate,
@@ -722,7 +721,6 @@ describe("applyAgentPatch", () => {
         daySegment: "morning",
         status: "todo",
         rolloverCount: 1,
-        targetCapacityAfterMinutes: 120,
       }),
     }));
     expect(db.updates).toEqual(expect.arrayContaining([
@@ -738,7 +736,7 @@ describe("applyAgentPatch", () => {
     ]));
   });
 
-  it("keeps an overdue Review move unapplied when target capacity changed", async () => {
+  it("applies an overdue Review move regardless of other scheduled task minutes", async () => {
     const db = createFakeDb({
       id: "patch-overdue",
       workspaceId: "workspace-1",
@@ -766,19 +764,14 @@ describe("applyAgentPatch", () => {
         rolloverCount: 0,
         estimatedMinutes: 60,
       }]],
-      selectRows: {
-        tasks: [{
-          id: "task-new-conflict",
-          title: "New conflicting work",
-          date: new Date("2026-08-15T16:00:00.000Z"),
-          daySegment: "morning",
-          estimatedMinutes: 180,
-          status: "todo",
-        }],
-        time_blocks: [],
-        routines: [],
-        day_capacities: [],
-      },
+      taskUpdateResults: [[{
+        id: "task-overdue",
+        date: new Date("2026-08-15T16:00:00.000Z"),
+        daySegment: "morning",
+        status: "todo",
+        rolloverCount: 1,
+        lastRolloverAt: new Date("2026-08-15T10:00:00.000Z"),
+      }]],
     });
 
     const result = await applyAgentPatch(db, {
@@ -787,15 +780,9 @@ describe("applyAgentPatch", () => {
       acceptedOperationIndexes: [0],
     });
 
-    expect(result.status).toBe("conflicted");
-    expect(result.conflicts).toEqual([
-      expect.objectContaining({
-        reason: "Target capacity changed since patch was proposed",
-        expected: { remainingMinutesAtLeast: 60 },
-        actual: { remainingMinutes: 0 },
-      }),
-    ]);
-    expect(db.updates.filter((update) => update.table === "tasks")).toEqual([]);
+    expect(result.status).toBe("applied");
+    expect(result.conflicts).toEqual([]);
+    expect(db.updates.filter((update) => update.table === "tasks")).toHaveLength(1);
   });
 
   it("returns conflicts when a selected change_priority is stale", async () => {
@@ -837,7 +824,7 @@ describe("applyAgentPatch", () => {
     ]);
   });
 
-  it("skips accepted operations marked as protected over-capacity conflicts", async () => {
+  it("ignores legacy over-capacity metadata on accepted operations", async () => {
     const db = createFakeDb({
       id: "patch-1",
       workspaceId: "workspace-1",
@@ -858,7 +845,22 @@ describe("applyAgentPatch", () => {
           },
         ],
       },
-    }, 3);
+    }, 3, {
+      taskSelectResults: [[{
+        id: "task-1",
+        date: new Date("2026-06-09T16:00:00.000Z"),
+        daySegment: "morning",
+        status: "todo",
+        rolloverCount: 0,
+      }]],
+      taskUpdateResults: [[{
+        id: "task-1",
+        date: new Date("2026-06-09T16:00:00.000Z"),
+        daySegment: "afternoon",
+        status: "todo",
+        rolloverCount: 0,
+      }]],
+    });
 
     const result = await applyAgentPatch(db, {
       workspaceId: "workspace-1",
@@ -866,22 +868,10 @@ describe("applyAgentPatch", () => {
       acceptedOperationIndexes: [0],
     });
 
-    expect(result.status).toBe("conflicted");
-    expect(result.skipped).toEqual([
-      {
-        index: 0,
-        type: "move_task",
-        reason: "Afternoon is already over capacity because of protected blocks.",
-      },
-    ]);
-    expect(result.conflicts).toEqual([
-      expect.objectContaining({
-        index: 0,
-        type: "move_task",
-        actual: { protectedOverCapacity: true },
-      }),
-    ]);
-    expect(db.updates.filter((update) => update.table === "tasks")).toEqual([]);
+    expect(result.status).toBe("applied");
+    expect(result.skipped).toEqual([]);
+    expect(result.conflicts).toEqual([]);
+    expect(db.updates.filter((update) => update.table === "tasks")).toHaveLength(1);
     expect(db.inserts.filter((insert) => insert.table === "agent_patch_reviews")).toHaveLength(1);
   });
 

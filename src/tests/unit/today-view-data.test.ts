@@ -3,7 +3,6 @@ import {
   agentPatches,
   checkins,
   courses,
-  dayCapacities,
   inboxItems,
   projects,
   routineCompletions,
@@ -217,7 +216,6 @@ describe("today page data", () => {
             },
           ],
         ],
-        [dayCapacities, []],
         [inboxItems, []],
         [checkins, []],
         [agentPatches, []],
@@ -232,6 +230,6 @@ describe("today page data", () => {
     expect(data.tasks.map((task) => task.id)).toEqual(["todo-task"]);
     expect(data.todayTasks.map((task) => task.id)).toEqual(["todo-task"]);
     expect(data.timelineItems.map((item) => item.id)).toEqual(["todo-task"]);
-    expect(data.warnings.map((warning) => warning.id)).not.toContain("capacity_overload");
+    expect(data.warnings.map((warning) => warning.id)).not.toContain("over_capacity");
   });
 });

@@ -12,7 +12,7 @@ describe("agent patch schema", () => {
           from_day_segment: "morning",
           to_date: "2026-06-04",
           to_day_segment: "afternoon",
-          reason: "Morning capacity is full.",
+          reason: "Move the task to the requested date.",
         },
         {
           type: "split_task",
@@ -30,7 +30,7 @@ describe("agent patch schema", () => {
           type: "defer_task",
           task_id: "task-3",
           target_week_or_date: "2026-W24",
-          reason: "This week is overloaded.",
+          reason: "Defer this task to the requested week.",
         },
         {
           type: "move_to_backlog",

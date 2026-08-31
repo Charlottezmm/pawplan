@@ -323,7 +323,7 @@ export function InboxView({
         </div>
         <div className="paw-status-pills">
           <span className="paw-status-pill">未处理 {items.length}</span>
-          <span className="paw-status-pill">不占今日容量</span>
+          <span className="paw-status-pill">暂未安排</span>
         </div>
       </section>
 
@@ -381,7 +381,7 @@ export function InboxView({
                 <div className="paw-inbox-head">
                   <div className="min-w-0">
                     <p className="paw-row-title">{item.title}</p>
-                    <p className="paw-row-meta">{captureAgeLabel(item.age)} · 未安排，不占今日容量</p>
+                    <p className="paw-row-meta">{captureAgeLabel(item.age)} · 尚未排进计划</p>
                   </div>
                   <div className="paw-inbox-head-actions">
                     <button

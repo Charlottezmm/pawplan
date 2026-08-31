@@ -133,7 +133,7 @@ test("renders the completed Today direction and refreshes the README preview", a
     await page.setViewportSize({ width: 1280, height: 1240 });
     await page.goto("/today");
     await expect(page.getByRole("heading", { name: "今天的固定安排" })).toBeVisible();
-    await expect(page.getByText("3h 30m", { exact: true })).toBeVisible();
+    await expect(page.getByText("固定占用", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /深度学习 · 课程/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /午餐/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /健身/ })).toBeVisible();

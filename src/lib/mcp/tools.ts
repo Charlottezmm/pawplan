@@ -1,7 +1,6 @@
 import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
-import { checkins, courses, dayCapacities, routines, tasks } from "@/lib/db/schema";
-import { buildCapacityModel } from "@/lib/planning/capacity-model";
+import { checkins, courses, routines, tasks } from "@/lib/db/schema";
 import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 import {
   completeAgentRun,
@@ -403,7 +402,6 @@ export const pawPlanToolSchemas = {
   get_week: emptyArgsSchema,
   get_month: rangeArgsSchema,
   get_constraints: rangeArgsSchema,
-  get_capacity: rangeArgsSchema,
   get_decisions: z
     .object({
       status: decisionStatusSchema.optional(),
@@ -680,13 +678,12 @@ Read first:
 - get_month
 - get_tasks
 - get_project_portfolio
-- get_capacity
 - get_constraints
 - get_checkins
 
 Required workflow:
 1. Confirm the user requested a schedule review or supplied a concrete event that requires one.
-2. Read current tasks, capacity, and fixed constraints before suggesting exact moves.
+2. Read current tasks and fixed constraints before suggesting exact moves.
 3. If exact task targets are known, use propose_daily_rebalance or propose_week_rebalance to create one Review draft. Never choose new dates merely because a task is overdue.
 4. Inspect the returned status before reporting the outcome:
    - draft_created: say a new Review draft was created and tell the user to open Review.
@@ -728,7 +725,6 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_week: "Read this week's PawPlan planning context for the configured workspace.",
   get_month: "Read a minimal raw month/range task list for the configured workspace.",
   get_constraints: "Read workspace-scoped protected blocks, courses, routines, and time blocks.",
-  get_capacity: "Read shared day/segment capacity for the configured workspace.",
   get_decisions: "Read recent workspace-scoped structured decisions, optionally filtered by status.",
   get_conversations: "Read recent workspace-scoped structured conversation summaries, optionally filtered by context type.",
   get_checkins: "Read recent daily check-ins for the configured workspace.",
@@ -891,49 +887,6 @@ async function readConstraints(
     routines: routineRows.map(serializeDateFields),
     timeBlocks: serializedBlocks,
     protectedBlocks: serializedBlocks.filter((block) => block.protected !== false),
-  };
-}
-
-async function readCapacity(
-  db: PlanningDb,
-  workspaceId: string,
-  args: {
-    date_from?: string;
-    date_to?: string;
-  },
-) {
-  const range = readRange(args);
-  const planId = await getActivePlanId(db, workspaceId);
-  if (!planId) throw new Error("No active plan");
-  const [taskRows, blockSnapshot, routineRows, capacityRows] = await Promise.all([
-    db
-      .select()
-      .from(tasks)
-      .where(and(
-        eq(tasks.workspaceId, workspaceId),
-        eq(tasks.planId, planId),
-        isNull(tasks.archivedAt),
-        gte(tasks.date, range.start),
-        lt(tasks.date, range.end),
-      )),
-    loadEffectiveTimeBlocks(db, { workspaceId, rangeStart: range.start, rangeEnd: range.end }),
-    db.select().from(routines).where(eq(routines.workspaceId, workspaceId)),
-    db
-      .select()
-      .from(dayCapacities)
-      .where(and(eq(dayCapacities.workspaceId, workspaceId), gte(dayCapacities.date, range.start), lt(dayCapacities.date, range.end))),
-  ]);
-
-  return {
-    workspaceId,
-    filters: args,
-    capacity: buildCapacityModel({
-      dates: datesInRange(range.start, range.end),
-      capacities: capacityRows,
-      tasks: taskRows,
-      timeBlocks: blockSnapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null })),
-      routines: routineRows,
-    }),
   };
 }
 
@@ -1174,10 +1127,6 @@ export async function runPawPlanTool(
   if (toolName === "get_constraints") {
     const parsed = pawPlanToolSchemas.get_constraints.parse(args);
     return readConstraints(db, workspaceId, parsed);
-  }
-  if (toolName === "get_capacity") {
-    const parsed = pawPlanToolSchemas.get_capacity.parse(args);
-    return readCapacity(db, workspaceId, parsed);
   }
   if (toolName === "get_decisions") {
     const parsed = pawPlanToolSchemas.get_decisions.parse(args);

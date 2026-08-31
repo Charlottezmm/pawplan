@@ -1,6 +1,6 @@
 # Inbox Life-Admin
 
-Inbox is a capture buffer. It is not Today, not capacity, and not a hidden project plan.
+Inbox is a capture buffer. It is not Today and not a hidden project plan.
 
 ## Capture Only
 
@@ -12,7 +12,7 @@ Use Inbox for low-commitment items:
 - unclear project seeds
 - things that need triage later
 
-Inbox items do not count against Today capacity. Capturing an item should not imply that it is committed work.
+Inbox items stay unscheduled until promoted. Capturing an item should not imply that it is committed work.
 
 ## Today Is Committed Work
 

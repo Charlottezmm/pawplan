@@ -2761,7 +2761,6 @@ input.paw-input[type="time"] {
   padding: 2px 0;
 }
 
-.paw-capacity-bar,
 .paw-goal-progress {
   height: 5px;
   overflow: hidden;
@@ -2769,20 +2768,11 @@ input.paw-input[type="time"] {
   background: var(--app-muted-soft);
 }
 
-.paw-capacity-bar {
-  margin-top: 10px;
-}
-
-.paw-capacity-fill,
 .paw-goal-progress-fill {
   height: 100%;
   border-radius: 3px;
   background: var(--app-accent);
   transition: width 400ms ease;
-}
-
-.paw-capacity-fill.overloaded {
-  background: var(--app-danger);
 }
 
 .paw-week-tasks {
@@ -2792,17 +2782,11 @@ input.paw-input[type="time"] {
   font-weight: 500;
 }
 
-.paw-overload-badge,
 .paw-deadline-tag {
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
   padding: 3px 10px;
-}
-
-.paw-overload-badge {
-  background: var(--app-danger-soft);
-  color: var(--app-danger);
 }
 
 .paw-month-stats {

@@ -4,10 +4,7 @@ const daySegmentSchema = z.enum(["morning", "afternoon", "evening"]);
 const prioritySchema = z.enum(["low", "normal", "high", "urgent"]);
 const timetableKindSchema = z.enum(["course", "exam", "meeting", "unavailable", "routine", "recovery"]);
 const evidenceFields = {
-  capacity_impact: z.array(z.string()).optional(),
   protected_evidence: z.array(z.string()).optional(),
-  protected_over_capacity: z.boolean().optional(),
-  protected_over_capacity_reason: z.string().optional(),
 };
 
 const moveTaskSchema = z.object({

@@ -41,7 +41,7 @@ describe("agent run and review long text wrapping", () => {
 
     expect(settingsView).toContain('className="paw-row-meta paw-wrap-anywhere"');
     expect(settingsView).toContain('className="paw-row-meta paw-wrap-anywhere paw-danger-text"');
-    expect(reviewPreview).toContain('className="paw-suggestion-why paw-wrap-anywhere">{item.reason}</p>');
+    expect(reviewPreview).toContain('className="paw-suggestion-why paw-wrap-anywhere">{visibleReason}</p>');
     expect(reviewPreview).toContain("<ReviewItemState");
     expect(reviewPreview).toContain("formatConflictSide(item.conflict.expected)");
   });

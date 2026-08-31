@@ -2,7 +2,6 @@ import { getTableName } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   changeLogs,
-  dayCapacities,
   planOperations,
   plans,
   planVersions,
@@ -10,9 +9,7 @@ import {
   planWindowTaskRefs,
   projectMilestones,
   projects,
-  routines,
   tasks,
-  timeBlocks,
 } from "@/lib/db/schema";
 import {
   previewReplacePlanWindow,
@@ -309,11 +306,20 @@ describe("replace plan window", () => {
     delete process.env.APP_SECRET;
   });
 
-  it("previews exact archive/create changes without mutating live tasks", async () => {
+  it("previews exact archive/create changes without applying a workload limit", async () => {
     const db = createDb();
     const before = structuredClone(db.tables.tasks);
+    const request = input();
+    request.tasks[0].estimatedMinutes = 600;
+    db.tables.day_capacities.push({
+      workspaceId: request.workspaceId,
+      date: new Date("2026-08-20T00:00:00.000+08:00"),
+      morningMinutes: 0,
+      afternoonMinutes: 0,
+      eveningMinutes: 0,
+    });
 
-    const preview = await previewReplacePlanWindow(db, input());
+    const preview = await previewReplacePlanWindow(db, request);
 
     expect(preview).toEqual(expect.objectContaining({
       status: "preview",

@@ -173,12 +173,6 @@ export async function proposeTimetableImport(
   const preview = buildTimetableRowsPreview(rows);
   const blocks = materializeTimetableRows(rows);
   const conflicts = [...preview.conflicts, ...(await findTimetableImportConflicts(db, { workspaceId, blocks }))];
-  const capacityImpact = [
-    `将创建 ${blocks.length} 个固定时间块`,
-    "不会自动写入，需用户在 Review 确认",
-    ...(preview.warnings.length > 0 ? [`检测到 ${preview.warnings.length} 个导入警告`] : []),
-    ...(conflicts.length > 0 ? [`检测到 ${conflicts.length} 个时间冲突`] : []),
-  ];
   const patch = {
     operations: [
       {
@@ -186,7 +180,6 @@ export async function proposeTimetableImport(
         source_label: args.source_label,
         rows,
         reason: args.reason,
-        capacity_impact: capacityImpact,
         protected_evidence: [...preview.warnings, ...conflicts],
       },
     ],

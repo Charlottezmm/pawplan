@@ -16,7 +16,7 @@
 如需手动调整，请直接告诉已连接 PawPlan MCP 的 agent：
 
 ```text
-请读取 PawPlan 当前任务、固定安排和容量，并根据我刚才确认的情况提出最小调整。
+请读取 PawPlan 当前任务和固定安排，并根据我刚才确认的情况提出最小调整。
 只有目标任务、日期和上午/下午/晚上时段明确时，才调用 propose_daily_rebalance
 或 propose_week_rebalance。不要自动 Apply；创建 Review 后告诉我去 PawPlan 审核。
 ```

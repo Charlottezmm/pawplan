@@ -1,20 +1,16 @@
-import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import {
   agentPatches,
   agentPatchReviews,
   changeLogs,
-  dayCapacities,
   plans,
   planVersions,
-  routines,
   tasks,
 } from "@/lib/db/schema";
 import { materializeTimetableRows, saveTimetableRowsInTransaction } from "@/lib/imports/timetable-save";
 import { findTimetableImportConflicts } from "@/lib/mcp/timetable-import";
 import { agentPatchSchema, type AgentPatch } from "@/lib/patches/patch-schema";
 import { getActivePlanId } from "@/lib/planning/active-plan";
-import { buildCapacityModel, type CapacitySegment } from "@/lib/planning/capacity-model";
-import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 
 type PatchApplyDb = {
   transaction<T>(callback: (tx: any) => Promise<T>): Promise<T>;
@@ -236,58 +232,6 @@ async function findTask(tx: any, workspaceId: string, planId: string, taskId: st
   return task as Record<string, unknown> | undefined;
 }
 
-async function readTargetCapacity(
-  tx: any,
-  input: {
-    workspaceId: string;
-    planId: string;
-    taskId: string;
-    targetDate: Date;
-    targetSegment: CapacitySegment;
-  },
-) {
-  const rangeEnd = new Date(input.targetDate.getTime() + 24 * 60 * 60 * 1000);
-  const [scheduledTasks, blockRows, routineRows, capacityRows] = await Promise.all([
-    tx
-      .select()
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.workspaceId, input.workspaceId),
-          eq(tasks.planId, input.planId),
-          isNull(tasks.archivedAt),
-          gte(tasks.date, input.targetDate),
-          lt(tasks.date, rangeEnd),
-        ),
-      ),
-    loadEffectiveTimeBlocks(tx, {
-      workspaceId: input.workspaceId,
-      rangeStart: input.targetDate,
-      rangeEnd,
-    }).then((snapshot) => snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null }))),
-    tx.select().from(routines).where(eq(routines.workspaceId, input.workspaceId)),
-    tx
-      .select()
-      .from(dayCapacities)
-      .where(
-        and(
-          eq(dayCapacities.workspaceId, input.workspaceId),
-          gte(dayCapacities.date, input.targetDate),
-          lt(dayCapacities.date, rangeEnd),
-        ),
-      ),
-  ]);
-  const capacity = buildCapacityModel({
-    dates: [input.targetDate],
-    capacities: capacityRows,
-    tasks: scheduledTasks.filter((task: { id: string }) => task.id !== input.taskId),
-    timeBlocks: blockRows,
-    routines: routineRows,
-    now: new Date(),
-  });
-  return capacity.days[0]?.segments[input.targetSegment];
-}
-
 async function applyOperation(
   tx: any,
   workspaceId: string,
@@ -296,18 +240,6 @@ async function applyOperation(
   operation: AgentPatch["operations"][number],
 ) {
   const now = new Date();
-  if (operation.protected_over_capacity && operation.type !== "move_to_backlog") {
-    const reason = operation.protected_over_capacity_reason ?? "Target is protected over capacity";
-    const conflict = {
-      index,
-      type: operation.type,
-      reason,
-      expected: { protectedOverCapacity: false },
-      actual: { protectedOverCapacity: true },
-    };
-    return { skipped: { index, type: operation.type, reason }, conflict };
-  }
-
   if (operation.type === "move_task") {
     const targetDate = dateFromDateKey(operation.to_date);
     if (!targetDate) {
@@ -359,39 +291,6 @@ async function applyOperation(
       return { skipped: { index, type: operation.type, reason: conflict.reason }, conflict };
     }
 
-    let targetCapacity: Awaited<ReturnType<typeof readTargetCapacity>> | undefined;
-    if (operation.overdue_rollover) {
-      const estimatedMinutes =
-        typeof currentTask.estimatedMinutes === "number" ? currentTask.estimatedMinutes : null;
-      if (estimatedMinutes === null) {
-        const conflict = {
-          index,
-          type: operation.type,
-          reason: "Overdue task estimate is unavailable",
-          expected: { estimatedMinutes: "number" },
-          actual: { estimatedMinutes: currentTask.estimatedMinutes ?? null },
-        };
-        return { skipped: { index, type: operation.type, reason: conflict.reason }, conflict };
-      }
-      targetCapacity = await readTargetCapacity(tx, {
-        workspaceId,
-        planId,
-        taskId: operation.task_id,
-        targetDate,
-        targetSegment: operation.to_day_segment,
-      });
-      if (!targetCapacity || targetCapacity.remainingMinutes < estimatedMinutes) {
-        const conflict = {
-          index,
-          type: operation.type,
-          reason: "Target capacity changed since patch was proposed",
-          expected: { remainingMinutesAtLeast: estimatedMinutes },
-          actual: { remainingMinutes: targetCapacity?.remainingMinutes ?? null },
-        };
-        return { skipped: { index, type: operation.type, reason: conflict.reason }, conflict };
-      }
-    }
-
     const nextRolloverCount = operation.overdue_rollover ? actualRolloverCount + 1 : actualRolloverCount;
     const updateValues = operation.overdue_rollover
       ? {
@@ -429,9 +328,6 @@ async function applyOperation(
             updatedTask.lastRolloverAt instanceof Date
               ? updatedTask.lastRolloverAt.toISOString()
               : updatedTask.lastRolloverAt ?? null,
-          targetCapacityAfterMinutes: targetCapacity
-            ? targetCapacity.remainingMinutes - Number(currentTask.estimatedMinutes)
-            : undefined,
         },
       },
     };

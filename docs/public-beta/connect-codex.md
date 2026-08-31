@@ -41,7 +41,7 @@ Do not commit the raw token, paste it into planning docs, or include it in scree
 
 ## What Codex Can Do
 
-Codex can read PawPlan data through MCP tools such as `get_today`, `get_week`, `get_month`, `get_constraints`, `get_capacity`, `get_checkins`, and `get_tasks`.
+Codex can read PawPlan data through MCP tools such as `get_today`, `get_week`, `get_month`, `get_constraints`, `get_checkins`, and `get_tasks`.
 
 For routine task movement, Codex should use high-level rebalance tools:
 
