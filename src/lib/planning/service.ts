@@ -213,15 +213,39 @@ export async function updateTaskSchedule(
     blocked?: boolean;
     date?: string;
     daySegment?: DaySegment;
+    estimatedMinutes?: number;
+    expectedEstimatedMinutes?: number;
     source?: ChangeSource;
   },
 ) {
-  if (!input.date && !input.daySegment) throw new PlanningServiceError("Task schedule update required", 400);
+  if (!input.date && !input.daySegment && input.estimatedMinutes === undefined) {
+    throw new PlanningServiceError("Task schedule or estimate update required", 400);
+  }
+  for (const estimate of [input.estimatedMinutes, input.expectedEstimatedMinutes]) {
+    if (estimate !== undefined && (!Number.isInteger(estimate) || estimate < 5 || estimate > 480)) {
+      throw new PlanningServiceError("Task estimate must be an integer from 5 to 480 minutes", 400);
+    }
+  }
 
-  const values: { status?: TaskStatus; blocked?: boolean; date?: Date; daySegment?: DaySegment; updatedAt: Date } = {
+  const values: {
+    status?: TaskStatus;
+    blocked?: boolean;
+    date?: Date;
+    daySegment?: DaySegment;
+    estimatedMinutes?: number;
+    updatedAt: Date;
+  } = {
     updatedAt: new Date(),
   };
-  const detailsJson: { taskId: string; status?: TaskStatus; blocked?: boolean; date?: string; daySegment?: DaySegment } = {
+  const detailsJson: {
+    taskId: string;
+    status?: TaskStatus;
+    blocked?: boolean;
+    date?: string;
+    daySegment?: DaySegment;
+    estimatedMinutes?: number;
+    expectedEstimatedMinutes?: number;
+  } = {
     taskId: input.taskId,
   };
 
@@ -247,20 +271,49 @@ export async function updateTaskSchedule(
     detailsJson.daySegment = input.daySegment;
   }
 
+  if (input.estimatedMinutes !== undefined) {
+    values.estimatedMinutes = input.estimatedMinutes;
+    detailsJson.estimatedMinutes = input.estimatedMinutes;
+  }
+  if (input.expectedEstimatedMinutes !== undefined) {
+    detailsJson.expectedEstimatedMinutes = input.expectedEstimatedMinutes;
+  }
+
   return db.transaction(async (tx) => {
+    const baseCondition = and(
+      eq(tasks.id, input.taskId),
+      eq(tasks.workspaceId, input.workspaceId),
+      isNull(tasks.archivedAt),
+    );
     const [task] = await tx
       .update(tasks)
       .set(values)
-      .where(and(eq(tasks.id, input.taskId), eq(tasks.workspaceId, input.workspaceId), isNull(tasks.archivedAt)))
+      .where(
+        input.expectedEstimatedMinutes === undefined
+          ? baseCondition
+          : and(baseCondition, eq(tasks.estimatedMinutes, input.expectedEstimatedMinutes)),
+      )
       .returning();
 
-    if (!task) return null;
+    if (!task) {
+      if (input.expectedEstimatedMinutes === undefined) return null;
+      const [currentTask] = await tx
+        .select({ estimatedMinutes: tasks.estimatedMinutes })
+        .from(tasks)
+        .where(baseCondition)
+        .limit(1);
+      if (!currentTask) return null;
+      throw new PlanningServiceError("Task estimate changed since the update was requested", 409);
+    }
 
     await tx.insert(changeLogs).values({
       workspaceId: input.workspaceId,
       planId: task.planId,
       source: input.source ?? "manual",
-      summary: "Updated task schedule",
+      summary:
+        input.estimatedMinutes !== undefined && !input.date && !input.daySegment
+          ? "Updated task estimate"
+          : "Updated task schedule",
       detailsJson,
     });
 

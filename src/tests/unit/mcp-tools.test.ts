@@ -335,6 +335,8 @@ describe("MCP planning tools", () => {
         status: { type: "string", enum: ["todo", "done", "backlog"] },
         date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
         day_segment: { type: "string", enum: ["morning", "afternoon", "evening"] },
+        estimated_minutes: { type: "integer", minimum: 5, maximum: 480 },
+        expected_estimated_minutes: { type: "integer", minimum: 5, maximum: 480 },
       },
       additionalProperties: false,
     });
@@ -770,6 +772,54 @@ describe("MCP planning tools", () => {
     ]);
   });
 
+  it("updates a task estimate through MCP with expected-value protection", async () => {
+    const db = createFakeDb({
+      taskUpdateResult: [{
+        id: "task-1",
+        workspaceId: "workspace-1",
+        planId: "plan-1",
+        status: "todo",
+        estimatedMinutes: 20,
+      }],
+    });
+
+    const result = await runPawPlanTool(db, "workspace-1", "update_task_schedule", {
+      task_id: "task-1",
+      estimated_minutes: 20,
+      expected_estimated_minutes: 60,
+    });
+
+    expect(result).toEqual({
+      task: expect.objectContaining({ id: "task-1", status: "todo", estimatedMinutes: 20 }),
+    });
+    expect(db.updates).toEqual([
+      expect.objectContaining({
+        table: "tasks",
+        values: { estimatedMinutes: 20, updatedAt: expect.any(Date) },
+      }),
+    ]);
+    expect(db.inserts).toEqual([
+      expect.objectContaining({
+        table: "change_logs",
+        values: expect.objectContaining({
+          source: "mcp",
+          summary: "Updated task estimate",
+          detailsJson: expect.objectContaining({
+            estimatedMinutes: 20,
+            expectedEstimatedMinutes: 60,
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it("rejects an MCP estimate update without the expected current estimate", async () => {
+    await expect(runPawPlanTool(createFakeDb(), "workspace-1", "update_task_schedule", {
+      task_id: "task-1",
+      estimated_minutes: 20,
+    })).rejects.toThrow("expected_estimated_minutes is required");
+  });
+
   it("updates task notes through MCP with source=mcp", async () => {
     const db = createFakeDb({
       taskUpdateResult: [
@@ -855,6 +905,35 @@ describe("MCP planning tools", () => {
           patchJson: patch,
           createdBy: "codex",
         }),
+      }),
+    ]);
+    expect(db.updates.filter((write) => write.table === "tasks")).toEqual([]);
+  });
+
+  it("accepts change_estimate in a Review-first propose_patch payload", async () => {
+    const db = createFakeDb({ activePlanId: "plan-1" });
+    const patch = {
+      operations: [{
+        type: "change_estimate",
+        task_id: "task-1",
+        from_estimated_minutes: 60,
+        to_estimated_minutes: 20,
+        reason: "Match the approved course-loop timebox.",
+      }],
+    };
+
+    const result = await runPawPlanTool(db, "workspace-1", "propose_patch", {
+      mode: "week",
+      reason: "Preview the estimate correction.",
+      patch,
+      created_by: "codex",
+    });
+
+    expect(result).toEqual(expect.objectContaining({ status: "draft", previewOnly: true }));
+    expect(db.inserts).toEqual([
+      expect.objectContaining({
+        table: "agent_patches",
+        values: expect.objectContaining({ patchJson: patch }),
       }),
     ]);
     expect(db.updates.filter((write) => write.table === "tasks")).toEqual([]);

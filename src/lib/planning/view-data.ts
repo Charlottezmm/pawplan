@@ -1374,6 +1374,7 @@ function operationKind(type: string) {
     defer_task: "延期",
     move_to_backlog: "移入 backlog",
     change_priority: "优先级",
+    change_estimate: "调整估时",
     suggest_milestone_change: "里程碑",
     import_timetable: "导入日程",
   };
@@ -1390,7 +1391,35 @@ type ReviewPatchRow = {
 type ReviewTaskRow = {
   id: string;
   title: string;
+  date?: Date | string | null;
+  daySegment?: Segment;
+  estimatedMinutes?: number;
+  status?: TaskStatus;
 };
+
+function reviewTaskDateKey(value: ReviewTaskRow["date"]) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : capacityDateKey(date);
+}
+
+function estimateCapacityImpact(
+  tasks: ReviewTaskRow[],
+  task: ReviewTaskRow | undefined,
+  estimateOverrides: Map<string, number>,
+) {
+  const dateKey = reviewTaskDateKey(task?.date);
+  if (!task || !dateKey || !task.daySegment || typeof task.estimatedMinutes !== "number") return null;
+  let after = 0;
+  const before = tasks.reduce((total, candidate) => {
+    if (candidate.status === "backlog" || candidate.status === "skipped") return total;
+    if (candidate.daySegment !== task.daySegment || reviewTaskDateKey(candidate.date) !== dateKey) return total;
+    const currentMinutes = candidate.estimatedMinutes ?? 0;
+    after += estimateOverrides.get(candidate.id) ?? currentMinutes;
+    return total + currentMinutes;
+  }, 0);
+  return { before, after };
+}
 
 type ReviewAuditRow = {
   patchId: string;
@@ -1447,13 +1476,21 @@ export function buildReschedulePatchItems(input: {
   reviews?: ReviewAuditRow[];
   agentRuns?: ReviewAgentRunRow[] | Map<string, ReviewAgentRunRow> | Record<string, ReviewAgentRunRow>;
 }): ReschedulePatchItemView[] {
-  const tasksById = new Map(input.tasks.map((task) => [task.id, task.title]));
+  const tasksById = new Map(input.tasks.map((task) => [task.id, task]));
   const reviewsByPatchId = new Map(input.reviews?.map((review) => [review.patchId, review]) ?? []);
   const runsByPatchId = agentRunsByPatchId(input.agentRuns);
 
   const patchItems: ReschedulePatchItemView[] = [];
   for (const patch of input.patches) {
     const parsed = patch.patchJson as AgentPatch;
+    const estimateOverrides = new Map(
+      parsed.operations
+        .filter(
+          (operation): operation is Extract<AgentPatch["operations"][number], { type: "change_estimate" }> =>
+            operation.type === "change_estimate",
+        )
+        .map((operation) => [operation.task_id, operation.to_estimated_minutes]),
+    );
     const review = reviewsByPatchId.get(patch.id);
     const run = runsByPatchId.get(patch.id);
     const skippedByIndex = reviewEventsByIndex(review?.skippedJson);
@@ -1461,7 +1498,8 @@ export function buildReschedulePatchItems(input: {
 
     parsed.operations.forEach((operation, index) => {
       const taskId = "task_id" in operation ? operation.task_id : null;
-      const title = taskId ? tasksById.get(taskId) ?? `任务 ${taskId.slice(0, 8)}` : "里程碑建议";
+      const task = taskId ? tasksById.get(taskId) : undefined;
+      const title = taskId ? task?.title ?? `任务 ${taskId.slice(0, 8)}` : "里程碑建议";
       const skipped = skippedByIndex.get(index);
       const conflict = conflictByIndex.get(index);
       const base = {
@@ -1529,6 +1567,18 @@ export function buildReschedulePatchItems(input: {
           to: operation.to_priority,
           impact: ["优先级变化", `patch ${patch.id.slice(0, 8)}`],
         });
+      } else if (operation.type === "change_estimate") {
+        const capacity = estimateCapacityImpact(input.tasks, task, estimateOverrides);
+        patchItems.push({
+          ...base,
+          from: capacity
+            ? `${operation.from_estimated_minutes}m · 时段负载 ${capacity.before}m`
+            : `${operation.from_estimated_minutes}m`,
+          to: capacity
+            ? `${operation.to_estimated_minutes}m · 时段负载 ${capacity.after}m`
+            : `${operation.to_estimated_minutes}m`,
+          impact: ["估时与容量重新计算", `patch ${patch.id.slice(0, 8)}`],
+        });
       } else if (operation.type === "import_timetable") {
         const blockCount = materializeTimetableRows(operation.rows).length;
         const locations = [...new Set(operation.rows.map((row) => row.location?.trim()).filter(Boolean))] as string[];
@@ -1570,7 +1620,14 @@ export async function getReschedulePageData(workspaceId: string): Promise<Resche
         .where(and(eq(agentPatches.workspaceId, workspaceId), eq(agentPatches.planId, planId), eq(agentPatches.status, "draft")))
         .orderBy(desc(agentPatches.createdAt)),
       db
-        .select({ id: tasks.id, title: tasks.title })
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          date: tasks.date,
+          daySegment: tasks.daySegment,
+          estimatedMinutes: tasks.estimatedMinutes,
+          status: tasks.status,
+        })
         .from(tasks)
         .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.planId, planId), isNull(tasks.archivedAt))),
     ]);

@@ -232,12 +232,39 @@ async function findTask(tx: any, workspaceId: string, planId: string, taskId: st
   return task as Record<string, unknown> | undefined;
 }
 
+async function lockEstimateTasks(
+  tx: any,
+  workspaceId: string,
+  planId: string,
+  operations: Array<{ task_id: string }>,
+) {
+  if (operations.length === 0) return new Map<string, Record<string, unknown>>();
+  const taskIds = [...new Set(operations.map((operation) => operation.task_id))].sort();
+  const rows = await tx
+    .select()
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        eq(tasks.planId, planId),
+        inArray(tasks.id, taskIds),
+        isNull(tasks.archivedAt),
+      ),
+    )
+    .orderBy(tasks.id)
+    .for("update");
+  return new Map(
+    (rows as Array<Record<string, unknown>>).map((task) => [String(task.id), task]),
+  );
+}
+
 async function applyOperation(
   tx: any,
   workspaceId: string,
   planId: string,
   index: number,
   operation: AgentPatch["operations"][number],
+  lockedEstimateTasks?: Map<string, Record<string, unknown>>,
 ) {
   const now = new Date();
   if (operation.type === "move_task") {
@@ -395,6 +422,58 @@ async function applyOperation(
     return { applied: { index, type: operation.type, taskId: operation.task_id, action: "updated task priority" } };
   }
 
+  if (operation.type === "change_estimate") {
+    const currentTask = lockedEstimateTasks?.get(operation.task_id)
+      ?? await findTask(tx, workspaceId, planId, operation.task_id);
+    if (!currentTask) {
+      return { skipped: { index, type: operation.type, reason: "Task not found" } };
+    }
+    const actualEstimatedMinutes =
+      typeof currentTask.estimatedMinutes === "number" ? currentTask.estimatedMinutes : null;
+    if (actualEstimatedMinutes !== operation.from_estimated_minutes) {
+      const conflict = {
+        index,
+        type: operation.type,
+        reason: "Task estimate changed since patch was proposed",
+        expected: { estimatedMinutes: operation.from_estimated_minutes },
+        actual: { estimatedMinutes: actualEstimatedMinutes },
+      };
+      return { skipped: { index, type: operation.type, reason: conflict.reason }, conflict };
+    }
+
+    const updatedTasks = await tx
+      .update(tasks)
+      .set({ estimatedMinutes: operation.to_estimated_minutes, updatedAt: now })
+      .where(
+        and(
+          eq(tasks.id, operation.task_id),
+          eq(tasks.workspaceId, workspaceId),
+          eq(tasks.planId, planId),
+          eq(tasks.estimatedMinutes, operation.from_estimated_minutes),
+          isNull(tasks.archivedAt),
+        ),
+      )
+      .returning();
+    if (updatedTasks.length === 0) {
+      return { skipped: { index, type: operation.type, reason: "Task not found" } };
+    }
+    const updatedTask = updatedTasks[0] as Record<string, unknown>;
+    return {
+      applied: {
+        index,
+        type: operation.type,
+        taskId: operation.task_id,
+        action: "updated task estimate",
+        readback: {
+          estimatedMinutes: updatedTask.estimatedMinutes,
+          date: dateKeyFromValue(updatedTask.date),
+          daySegment: updatedTask.daySegment,
+          status: updatedTask.status,
+        },
+      },
+    };
+  }
+
   if (operation.type === "import_timetable") {
     const blocks = materializeTimetableRows(operation.rows);
     const overlaps = await findTimetableImportConflicts(tx, { workspaceId, blocks });
@@ -513,9 +592,72 @@ export async function applyAgentPatch(db: PatchApplyDb, input: ApplyAgentPatchIn
       };
     }
 
+    const acceptedEstimateOperations = acceptedOperationIndexes
+      .map((index) => ({ index, operation: patch.operations[index] }))
+      .filter(
+        (entry): entry is {
+          index: number;
+          operation: Extract<AgentPatch["operations"][number], { type: "change_estimate" }>;
+        } => entry.operation.type === "change_estimate",
+      );
+    const lockedEstimateTaskRows = await lockEstimateTasks(
+      tx,
+      input.workspaceId,
+      patchRow.planId,
+      acceptedEstimateOperations.map((entry) => entry.operation),
+    );
+    for (const { index, operation } of acceptedEstimateOperations) {
+      const currentTask = lockedEstimateTaskRows.get(operation.task_id);
+      if (!currentTask) {
+        skipped.push({ index, type: operation.type, reason: "Task not found" });
+        continue;
+      }
+      const actualEstimatedMinutes =
+        typeof currentTask.estimatedMinutes === "number" ? currentTask.estimatedMinutes : null;
+      if (actualEstimatedMinutes !== operation.from_estimated_minutes) {
+        const reason = "Task estimate changed since patch was proposed";
+        skipped.push({ index, type: operation.type, reason });
+        conflicts.push({
+          index,
+          type: operation.type,
+          reason,
+          expected: { estimatedMinutes: operation.from_estimated_minutes },
+          actual: { estimatedMinutes: actualEstimatedMinutes },
+        });
+      }
+    }
+    if (skipped.length > 0) {
+      await insertReviewAudit(tx, {
+        workspaceId: input.workspaceId,
+        patchId: input.patchId,
+        planId: patchRow.planId,
+        acceptedOperationIndexes,
+        rejectedOperationIndexes,
+        skipped,
+        conflicts,
+      });
+      return {
+        patchId: input.patchId,
+        planId: patchRow.planId,
+        status: "conflicted",
+        acceptedOperationIndexes,
+        rejectedOperationIndexes,
+        applied,
+        skipped,
+        conflicts,
+      };
+    }
+
     for (const index of acceptedOperationIndexes) {
       const operation = patch.operations[index];
-      const result = await applyOperation(tx, input.workspaceId, patchRow.planId, index, operation);
+      const result = await applyOperation(
+        tx,
+        input.workspaceId,
+        patchRow.planId,
+        index,
+        operation,
+        lockedEstimateTaskRows,
+      );
       if (result.applied) applied.push(result.applied);
       if (result.skipped) skipped.push(result.skipped);
       if (result.conflict) conflicts.push(result.conflict);

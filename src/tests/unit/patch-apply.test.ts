@@ -51,6 +51,14 @@ function createFakeDb(
                 orderBy() {
                   return this;
                 },
+                for() {
+                  if (tableName(table) === "tasks") {
+                    const result = options.taskSelectResults?.[taskSelectCount];
+                    taskSelectCount += 1;
+                    return Promise.resolve(result ?? []);
+                  }
+                  return Promise.resolve([]);
+                },
                 limit() {
                   const limitValue = arguments[0] as number | undefined;
                   if (tableName(table) === "plan_versions") {
@@ -822,6 +830,116 @@ describe("applyAgentPatch", () => {
         actual: { priority: "urgent" },
       }),
     ]);
+  });
+
+  it("applies change_estimate with compare-and-set semantics and persisted readback", async () => {
+    const db = createFakeDb({
+      id: "patch-estimate",
+      workspaceId: "workspace-1",
+      planId: "plan-1",
+      status: "draft",
+      patchJson: {
+        operations: [{
+          type: "change_estimate",
+          task_id: "task-estimate",
+          from_estimated_minutes: 60,
+          to_estimated_minutes: 20,
+          reason: "Match the approved course-loop timebox.",
+        }],
+      },
+    }, 2, {
+      taskSelectResults: [[{
+        id: "task-estimate",
+        estimatedMinutes: 60,
+        date: new Date("2026-09-01T16:00:00.000Z"),
+        daySegment: "evening",
+        status: "todo",
+      }]],
+      taskUpdateResults: [[{
+        id: "task-estimate",
+        estimatedMinutes: 20,
+        date: new Date("2026-09-01T16:00:00.000Z"),
+        daySegment: "evening",
+        status: "todo",
+      }]],
+    });
+
+    const result = await applyAgentPatch(db, {
+      workspaceId: "workspace-1",
+      patchId: "patch-estimate",
+      acceptedOperationIndexes: [0],
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.applied[0]).toEqual(expect.objectContaining({
+      type: "change_estimate",
+      taskId: "task-estimate",
+      action: "updated task estimate",
+      readback: {
+        estimatedMinutes: 20,
+        date: "2026-09-02",
+        daySegment: "evening",
+        status: "todo",
+      },
+    }));
+    expect(db.updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: "tasks",
+        values: { estimatedMinutes: 20, updatedAt: expect.any(Date) },
+      }),
+    ]));
+    expect(db.taskUpdateWhereContains("task-estimate")).toBe(true);
+  });
+
+  it("preflights all accepted estimate changes and writes none when one estimate is stale", async () => {
+    const db = createFakeDb({
+      id: "patch-estimate-stale",
+      workspaceId: "workspace-1",
+      planId: "plan-1",
+      status: "draft",
+      patchJson: {
+        operations: [
+          {
+            type: "change_estimate",
+            task_id: "task-current",
+            from_estimated_minutes: 60,
+            to_estimated_minutes: 20,
+            reason: "Calibrate the first task.",
+          },
+          {
+            type: "change_estimate",
+            task_id: "task-stale",
+            from_estimated_minutes: 90,
+            to_estimated_minutes: 45,
+            reason: "Calibrate the second task.",
+          },
+        ],
+      },
+    }, 0, {
+      taskSelectResults: [[
+        { id: "task-current", estimatedMinutes: 60 },
+        { id: "task-stale", estimatedMinutes: 75 },
+      ]],
+    });
+
+    const result = await applyAgentPatch(db, {
+      workspaceId: "workspace-1",
+      patchId: "patch-estimate-stale",
+      acceptedOperationIndexes: [0, 1],
+    });
+
+    expect(result.status).toBe("conflicted");
+    expect(result.applied).toEqual([]);
+    expect(result.conflicts).toEqual([
+      expect.objectContaining({
+        index: 1,
+        type: "change_estimate",
+        expected: { estimatedMinutes: 90 },
+        actual: { estimatedMinutes: 75 },
+      }),
+    ]);
+    expect(db.updates.filter((update) => update.table === "tasks")).toEqual([]);
+    expect(db.inserts.filter((insert) => insert.table === "plan_versions" || insert.table === "change_logs")).toEqual([]);
   });
 
   it("ignores legacy over-capacity metadata on accepted operations", async () => {

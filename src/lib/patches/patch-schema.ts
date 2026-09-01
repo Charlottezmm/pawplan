@@ -58,6 +58,15 @@ const changePrioritySchema = z.object({
   ...evidenceFields,
 });
 
+const changeEstimateSchema = z.object({
+  type: z.literal("change_estimate"),
+  task_id: z.string(),
+  from_estimated_minutes: z.number().int().min(5).max(480),
+  to_estimated_minutes: z.number().int().min(5).max(480),
+  reason: z.string(),
+  ...evidenceFields,
+});
+
 const suggestMilestoneChangeSchema = z.object({
   type: z.literal("suggest_milestone_change"),
   milestone_id: z.string(),
@@ -102,6 +111,7 @@ export const agentPatchSchema = z.object({
       deferTaskSchema,
       moveToBacklogSchema,
       changePrioritySchema,
+      changeEstimateSchema,
       suggestMilestoneChangeSchema,
       importTimetableSchema,
     ]),

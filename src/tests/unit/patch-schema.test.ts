@@ -45,6 +45,13 @@ describe("agent patch schema", () => {
           reason: "The deadline moved earlier.",
         },
         {
+          type: "change_estimate",
+          task_id: "task-6",
+          from_estimated_minutes: 60,
+          to_estimated_minutes: 20,
+          reason: "The approved course loop uses a shorter timebox.",
+        },
+        {
           type: "suggest_milestone_change",
           milestone_id: "milestone-1",
           proposed_text: "Ship MCP planning foundation.",
@@ -79,9 +86,27 @@ describe("agent patch schema", () => {
       "defer_task",
       "move_to_backlog",
       "change_priority",
+      "change_estimate",
       "suggest_milestone_change",
       "import_timetable",
     ]);
+  });
+
+  it("enforces the shared 5 to 480 minute estimate range", () => {
+    const patch = (toEstimatedMinutes: number) => ({
+      operations: [{
+        type: "change_estimate",
+        task_id: "task-1",
+        from_estimated_minutes: 60,
+        to_estimated_minutes: toEstimatedMinutes,
+        reason: "Calibrate the task estimate.",
+      }],
+    });
+
+    expect(agentPatchSchema.safeParse(patch(5)).success).toBe(true);
+    expect(agentPatchSchema.safeParse(patch(480)).success).toBe(true);
+    expect(agentPatchSchema.safeParse(patch(4)).success).toBe(false);
+    expect(agentPatchSchema.safeParse(patch(481)).success).toBe(false);
   });
 
   it("rejects patches that touch protected blocks", () => {

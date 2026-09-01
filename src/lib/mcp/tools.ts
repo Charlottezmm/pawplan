@@ -146,10 +146,12 @@ const taskBatchOperationSchema = z
     date: dateStringSchema.optional(),
     day_segment: daySegmentSchema.optional(),
     blocked: z.boolean().optional(),
+    estimated_minutes: z.number().int().min(5).max(480).optional(),
     expected_status: taskStatusSchema.optional(),
     expected_date: dateStringSchema.optional(),
     expected_day_segment: daySegmentSchema.optional(),
     expected_blocked: z.boolean().optional(),
+    expected_estimated_minutes: z.number().int().min(5).max(480).optional(),
   })
   .strict()
   .refine(
@@ -157,8 +159,9 @@ const taskBatchOperationSchema = z
       operation.status !== undefined ||
       operation.date !== undefined ||
       operation.day_segment !== undefined ||
-      operation.blocked !== undefined,
-    { message: "Each batch operation must update status, date, day_segment, or blocked" },
+      operation.blocked !== undefined ||
+      operation.estimated_minutes !== undefined,
+    { message: "Each batch operation must update status, date, day_segment, blocked, or estimated_minutes" },
   );
 
 const taskBatchFiltersSchema = z
@@ -525,6 +528,8 @@ export const pawPlanToolSchemas = {
       day_segment: daySegmentSchema.optional(),
       status: writableTaskStatusSchema.optional(),
       blocked: z.boolean().optional(),
+      estimated_minutes: z.number().int().min(5).max(480).optional(),
+      expected_estimated_minutes: z.number().int().min(5).max(480).optional(),
     })
     .strict(),
   update_task_notes: z
@@ -753,14 +758,15 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   create_inbox_item: "Create an inbox item and record an MCP audit changelog.",
   create_checkin: "Create or update a daily check-in with MCP source attribution.",
   update_task_status: "Update a task status with MCP source attribution.",
-  update_task_schedule: "Update a task date or day segment with MCP source attribution.",
+  update_task_schedule:
+    "Update a task date, day segment, or estimate with MCP source attribution. Estimate changes require the expected current estimate.",
   update_task_notes: "Update only a task's notes/details with MCP source attribution; this does not change schedule, status, priority, or title.",
   propose_task_notes_batch:
     "Create one Review for 1 to 50 exact task-notes replacements, with every before/after diff visible. This never changes live tasks and does not support partial approval.",
   apply_task_notes_batch:
     "Atomically apply one user-approved task-notes batch using only its approval_id, signed Preview token, and idempotency key, then verify every note by readback.",
   update_tasks_batch:
-    "Atomically apply up to 50 trusted direct task status/schedule edits with idempotency and final readback. Routine planning must use Review-first rebalance tools.",
+    "Atomically apply up to 50 trusted direct task status, schedule, or estimate edits with optimistic preconditions, idempotency, audit, and final readback. Routine planning must use Review-first tools.",
   save_conversation_summary: "Save a structured conversation summary without storing raw transcript, with MCP provenance.",
   record_decision: "Record a structured workspace decision with MCP provenance.",
   propose_patch: "Create a preview-only agent patch draft; this never applies the patch.",
@@ -1252,7 +1258,12 @@ export async function runPawPlanTool(
 
   if (toolName === "update_task_schedule") {
     const parsed = pawPlanToolSchemas.update_task_schedule.parse(args);
-    if (!parsed.date && !parsed.day_segment) throw new Error("date or day_segment is required");
+    if (!parsed.date && !parsed.day_segment && parsed.estimated_minutes === undefined) {
+      throw new Error("date, day_segment, or estimated_minutes is required");
+    }
+    if (parsed.estimated_minutes !== undefined && parsed.expected_estimated_minutes === undefined) {
+      throw new Error("expected_estimated_minutes is required when estimated_minutes changes");
+    }
     const task = await updateTaskSchedule(db, {
       workspaceId,
       taskId: parsed.task_id,
@@ -1260,6 +1271,8 @@ export async function runPawPlanTool(
       blocked: parsed.blocked,
       date: parsed.date,
       daySegment: parsed.day_segment,
+      estimatedMinutes: parsed.estimated_minutes,
+      expectedEstimatedMinutes: parsed.expected_estimated_minutes,
       source: "mcp",
     });
     if (!task) throw new Error("Task not found");
@@ -1314,10 +1327,12 @@ export async function runPawPlanTool(
         date: operation.date,
         daySegment: operation.day_segment,
         blocked: operation.blocked,
+        estimatedMinutes: operation.estimated_minutes,
         expectedStatus: operation.expected_status,
         expectedDate: operation.expected_date,
         expectedDaySegment: operation.expected_day_segment,
         expectedBlocked: operation.expected_blocked,
+        expectedEstimatedMinutes: operation.expected_estimated_minutes,
       })),
     });
   }

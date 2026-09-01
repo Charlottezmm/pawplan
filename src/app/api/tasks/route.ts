@@ -17,13 +17,32 @@ const taskUpdateSchema = z
     blocked: z.boolean().optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     daySegment: z.enum(["morning", "afternoon", "evening"]).optional(),
+    estimatedMinutes: z.number().int().min(5).max(480).optional(),
+    expectedEstimatedMinutes: z.number().int().min(5).max(480).optional(),
     notes: z.string().trim().min(1).max(2000).optional(),
   })
-  .refine((value) => value.status || value.blocked !== undefined || value.date || value.daySegment || value.notes, {
+  .refine((value) =>
+    value.status ||
+    value.blocked !== undefined ||
+    value.date ||
+    value.daySegment ||
+    value.estimatedMinutes !== undefined ||
+    value.notes,
+  {
     message: "At least one task update field is required",
   })
-  .refine((value) => !value.notes || (!value.status && value.blocked === undefined && !value.date && !value.daySegment), {
+  .refine((value) => !value.notes || (
+    !value.status &&
+    value.blocked === undefined &&
+    !value.date &&
+    !value.daySegment &&
+    value.estimatedMinutes === undefined &&
+    value.expectedEstimatedMinutes === undefined
+  ), {
     message: "Task notes updates cannot be mixed with status or schedule updates",
+  })
+  .refine((value) => value.estimatedMinutes === undefined || value.expectedEstimatedMinutes !== undefined, {
+    message: "expectedEstimatedMinutes is required when estimatedMinutes changes",
   });
 
 export async function GET(request: Request) {
@@ -94,7 +113,10 @@ export async function PATCH(request: Request) {
 
   const db = getDb();
   try {
-    const hasScheduleUpdate = parsed.data.date !== undefined || parsed.data.daySegment !== undefined;
+    const hasScheduleUpdate =
+      parsed.data.date !== undefined ||
+      parsed.data.daySegment !== undefined ||
+      parsed.data.estimatedMinutes !== undefined;
     if (parsed.data.notes) {
       const task = await updateTaskNotes(db, {
         workspaceId,
@@ -115,6 +137,12 @@ export async function PATCH(request: Request) {
           blocked: parsed.data.blocked,
           date: parsed.data.date,
           daySegment: parsed.data.daySegment,
+          ...(parsed.data.estimatedMinutes === undefined
+            ? {}
+            : { estimatedMinutes: parsed.data.estimatedMinutes }),
+          ...(parsed.data.expectedEstimatedMinutes === undefined
+            ? {}
+            : { expectedEstimatedMinutes: parsed.data.expectedEstimatedMinutes }),
           source: "manual",
         })
       : await updateTaskStatus(db, {

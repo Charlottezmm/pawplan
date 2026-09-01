@@ -20,6 +20,7 @@ type FakeDbOptions = {
   activePlanId?: string | null;
   inboxItems?: Array<Record<string, unknown>>;
   taskUpdateResult?: Array<Record<string, unknown>>;
+  taskRows?: Array<Record<string, unknown>>;
   protectedBlockIds?: string[];
 };
 
@@ -43,6 +44,9 @@ function createFakeDb(options: FakeDbOptions = {}) {
     }
     if (name === "time_blocks") {
       return (options.protectedBlockIds ?? []).map((id) => ({ id }));
+    }
+    if (name === "tasks") {
+      return options.taskRows ?? [];
     }
     return [];
   }
@@ -251,6 +255,60 @@ describe("planning service", () => {
       }),
     ]);
     expect(db.inserts.filter((write) => write.table === "agent_patches")).toEqual([]);
+  });
+
+  it("updates a task estimate with an expected-value guard and audit", async () => {
+    const db = createFakeDb({
+      taskUpdateResult: [{ id: "task-1", planId: "plan-1", status: "todo", estimatedMinutes: 20 }],
+    });
+
+    const task = await updateTaskSchedule(db, {
+      workspaceId: "workspace-1",
+      taskId: "task-1",
+      estimatedMinutes: 20,
+      expectedEstimatedMinutes: 60,
+      source: "manual",
+    });
+
+    expect(task).toEqual({ id: "task-1", planId: "plan-1", status: "todo", estimatedMinutes: 20 });
+    expect(db.updates).toEqual([
+      expect.objectContaining({
+        table: "tasks",
+        values: { estimatedMinutes: 20, updatedAt: expect.any(Date) },
+      }),
+    ]);
+    expect(db.inserts).toEqual([
+      expect.objectContaining({
+        table: "change_logs",
+        values: expect.objectContaining({
+          summary: "Updated task estimate",
+          detailsJson: {
+            taskId: "task-1",
+            estimatedMinutes: 20,
+            expectedEstimatedMinutes: 60,
+          },
+        }),
+      }),
+    ]);
+  });
+
+  it("returns a 409 conflict when the expected estimate is stale", async () => {
+    const db = createFakeDb({
+      taskUpdateResult: [],
+      taskRows: [{ id: "task-1", estimatedMinutes: 45 }],
+    });
+
+    await expect(updateTaskSchedule(db, {
+      workspaceId: "workspace-1",
+      taskId: "task-1",
+      estimatedMinutes: 20,
+      expectedEstimatedMinutes: 60,
+      source: "manual",
+    })).rejects.toMatchObject({
+      message: "Task estimate changed since the update was requested",
+      status: 409,
+    });
+    expect(db.inserts).toEqual([]);
   });
 
   it("updates task notes and writes a manual change log without touching schedule fields", async () => {

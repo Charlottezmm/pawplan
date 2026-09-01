@@ -253,6 +253,52 @@ describe("tasks route", () => {
     expect(updateTaskStatus).not.toHaveBeenCalled();
   });
 
+  it("updates an existing estimate only with the expected current value", async () => {
+    const task = { id: taskId, estimatedMinutes: 20, status: "todo" };
+    const db = { id: "db" };
+    const { getWorkspaceIdFromSession } = await import("@/lib/auth/session");
+    const { getDb } = await import("@/lib/db/client");
+    const { updateTaskSchedule, updateTaskStatus } = await import("@/lib/planning/service");
+    vi.mocked(getWorkspaceIdFromSession).mockResolvedValue("workspace-1");
+    vi.mocked(getDb).mockReturnValue(db);
+    vi.mocked(updateTaskSchedule).mockResolvedValue(task);
+    const { PATCH } = await import("@/app/api/tasks/route");
+
+    const response = await PATCH(patchRequest({
+      id: taskId,
+      estimatedMinutes: 20,
+      expectedEstimatedMinutes: 60,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ task });
+    expect(updateTaskSchedule).toHaveBeenCalledWith(db, {
+      workspaceId: "workspace-1",
+      taskId,
+      status: undefined,
+      blocked: undefined,
+      date: undefined,
+      daySegment: undefined,
+      estimatedMinutes: 20,
+      expectedEstimatedMinutes: 60,
+      source: "manual",
+    });
+    expect(updateTaskStatus).not.toHaveBeenCalled();
+  });
+
+  it("rejects an estimate update without optimistic-concurrency state", async () => {
+    const { getWorkspaceIdFromSession } = await import("@/lib/auth/session");
+    const { getDb } = await import("@/lib/db/client");
+    vi.mocked(getWorkspaceIdFromSession).mockResolvedValue("workspace-1");
+    const { PATCH } = await import("@/app/api/tasks/route");
+
+    const response = await PATCH(patchRequest({ id: taskId, estimatedMinutes: 20 }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid task update" });
+    expect(getDb).not.toHaveBeenCalled();
+  });
+
   it("keeps status when status and schedule are updated together", async () => {
     const task = { id: taskId, status: "done", date: "2026-06-17", daySegment: "evening" };
     const db = { id: "db" };

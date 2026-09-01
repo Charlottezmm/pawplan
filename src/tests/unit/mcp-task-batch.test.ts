@@ -20,6 +20,8 @@ function createBatchDb(options: { tasks?: Row[]; failAtTaskUpdate?: number } = {
         date: new Date("2026-07-14T16:00:00.000Z"),
         daySegment: "morning",
         blocked: false,
+        estimatedMinutes: 60,
+        notes: "keep task 1 notes",
       },
       {
         id: "task-2",
@@ -29,6 +31,8 @@ function createBatchDb(options: { tasks?: Row[]; failAtTaskUpdate?: number } = {
         date: new Date("2026-07-14T16:00:00.000Z"),
         daySegment: "afternoon",
         blocked: false,
+        estimatedMinutes: 90,
+        notes: "keep task 2 notes",
       },
     ]),
     batches: [] as Row[],
@@ -254,10 +258,51 @@ describe("atomic MCP task batch", () => {
     expect(db.state.changeLogs).toEqual([]);
   });
 
+  it("atomically updates estimates with stale-state protection, audit, and persisted readback", async () => {
+    const db = createBatchDb();
+    const result = await updateTasksBatch(db, {
+      workspaceId: "workspace-1",
+      idempotencyKey: "batch-estimates-1",
+      operations: [
+        { taskId: "task-1", estimatedMinutes: 20, expectedEstimatedMinutes: 60 },
+        { taskId: "task-2", estimatedMinutes: 45, expectedEstimatedMinutes: 90 },
+      ],
+    });
+
+    expect(result.readback).toEqual([
+      expect.objectContaining({ id: "task-1", status: "todo", estimatedMinutes: 20 }),
+      expect.objectContaining({ id: "task-2", status: "todo", estimatedMinutes: 45 }),
+    ]);
+    expect(db.state.tasks.map((task) => task.estimatedMinutes)).toEqual([20, 45]);
+    expect(db.state.tasks.map((task) => task.notes)).toEqual(["keep task 1 notes", "keep task 2 notes"]);
+    expect(db.state.changeLogs.map((log) => log.detailsJson.values.estimatedMinutes)).toEqual([20, 45]);
+
+    await expect(updateTasksBatch(db, {
+      workspaceId: "workspace-1",
+      idempotencyKey: "batch-estimates-stale",
+      operations: [
+        { taskId: "task-1", estimatedMinutes: 10, expectedEstimatedMinutes: 60 },
+        { taskId: "task-2", estimatedMinutes: 30, expectedEstimatedMinutes: 45 },
+      ],
+    })).rejects.toMatchObject({
+      code: "task_state_conflict",
+      status: 409,
+      details: { conflicts: [expect.objectContaining({ taskId: "task-1", field: "estimated_minutes", actual: 20 })] },
+    });
+    expect(db.state.tasks.map((task) => task.estimatedMinutes)).toEqual([20, 45]);
+  });
+
   it("defends batch size, unique task IDs, and required update fields in the service", async () => {
     const db = createBatchDb();
     await expect(
       updateTasksBatch(db, { workspaceId: "workspace-1", idempotencyKey: "batch-empty", operations: [] }),
+    ).rejects.toMatchObject({ code: "invalid_batch", status: 400 });
+    await expect(
+      updateTasksBatch(db, {
+        workspaceId: "workspace-1",
+        idempotencyKey: "batch-invalid-estimate",
+        operations: [{ taskId: "task-1", estimatedMinutes: 481 }],
+      }),
     ).rejects.toMatchObject({ code: "invalid_batch", status: 400 });
     await expect(
       updateTasksBatch(db, {

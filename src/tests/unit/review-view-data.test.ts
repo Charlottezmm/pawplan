@@ -243,4 +243,55 @@ describe("review view data", () => {
       agentRunLabel: "Created by overdue replan",
     }));
   });
+
+  it("shows estimate and same-slot capacity before and after", () => {
+    const items = buildReschedulePatchItems({
+      patches: [{
+        id: "patch-estimate",
+        createdBy: "codex",
+        createdAt: new Date("2026-09-01T08:00:00.000Z"),
+        patchJson: {
+          operations: [{
+            type: "change_estimate",
+            task_id: "task-estimate",
+            from_estimated_minutes: 60,
+            to_estimated_minutes: 20,
+            reason: "Match the approved course-loop timebox.",
+          }, {
+            type: "change_estimate",
+            task_id: "task-peer",
+            from_estimated_minutes: 40,
+            to_estimated_minutes: 10,
+            reason: "Match the approved closure timebox.",
+          }],
+        },
+      }],
+      tasks: [
+        {
+          id: "task-estimate",
+          title: "2995 preview",
+          date: new Date("2026-09-01T16:00:00.000Z"),
+          daySegment: "evening",
+          estimatedMinutes: 60,
+          status: "todo",
+        },
+        {
+          id: "task-peer",
+          title: "Same-slot closure",
+          date: new Date("2026-09-01T16:00:00.000Z"),
+          daySegment: "evening",
+          estimatedMinutes: 40,
+          status: "todo",
+        },
+      ],
+    });
+
+    expect(items[0]).toEqual(expect.objectContaining({
+      kind: "调整估时",
+      title: "2995 preview",
+      from: "60m · 时段负载 100m",
+      to: "20m · 时段负载 30m",
+      impact: ["估时与容量重新计算", "patch patch-es"],
+    }));
+  });
 });
