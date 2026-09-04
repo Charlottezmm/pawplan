@@ -82,6 +82,7 @@ export function ReviewPreview({
     visiblePatchItems,
     visibleDraftPatchIds,
   );
+  const hasVisibleSuggestions = visiblePatchItems.length > 0;
 
   function decide(id: string, decision: Decision) {
     setDecisions((current) => {
@@ -313,18 +314,29 @@ export function ReviewPreview({
         </ReviewNotice>
       ) : null}
 
-      <div className="paw-trust-banner">日常与恢复时间受保护，不会自动修改；所有调整建议只有在你确认并通过最终核对后才会写入。</div>
+      <div className="paw-trust-banner">
+        <span className="paw-trust-banner-icon" aria-hidden="true">
+          <Lock size={15} />
+        </span>
+        <span><strong>保护规则</strong>：日常与恢复时间不会自动修改；每次调整都需经你确认，并在写入后核对最终状态。</span>
+      </div>
 
       <OperationApprovalList approvals={approvals} expiredApprovals={expiredApprovals} />
 
-      <section className="paw-list-card mb-4">
+      <section className={`paw-list-card paw-review-summary-card ${hasVisibleSuggestions ? "" : "is-empty"} mb-4`}>
         <div className="paw-list-header">
           <div>
             <h2 className="paw-list-title">待审核建议</h2>
-            <p className="paw-list-subtitle">提交前会重查任务状态和固定日程冲突。</p>
+            <p className="paw-list-subtitle">
+              {hasVisibleSuggestions
+                ? "逐条确认后提交；写入前会重查任务状态和固定日程冲突。"
+                : "需要你确认的任务与日程调整会集中显示在这里。"}
+            </p>
           </div>
           <div className="paw-review-queue-actions">
-            <span className="paw-status-pill">{draftCount} 份建议 · {operationCount} 项调整</span>
+            <span className="paw-review-count-badge">
+              {hasVisibleSuggestions ? `${draftCount} 份建议 · ${operationCount} 项调整` : "0 项待审核"}
+            </span>
             {draftCount > 0 ? (
               <button
                 type="button"
@@ -339,14 +351,30 @@ export function ReviewPreview({
             ) : null}
           </div>
         </div>
-        <div className="paw-status-pills mt-4">
-          <span className="paw-status-pill">任务调整 {taskChangeCount}</span>
-          <span className="paw-status-pill">日程导入 {timetableImportCount}</span>
-          <span className="paw-status-pill">受保护 {protectedCount}</span>
-          <span className="paw-status-pill">已跳过 {skippedCount}</span>
-          <span className={conflictCount > 0 ? "paw-status-pill warn" : "paw-status-pill"}>冲突 {conflictCount}</span>
-          <span className="paw-status-pill">用户确认后才写入</span>
-        </div>
+        {hasVisibleSuggestions ? (
+          <div className="paw-status-pills mt-4">
+            <span className="paw-status-pill">任务调整 {taskChangeCount}</span>
+            <span className="paw-status-pill">日程导入 {timetableImportCount}</span>
+            <span className="paw-status-pill">受保护 {protectedCount}</span>
+            <span className="paw-status-pill">已跳过 {skippedCount}</span>
+            <span className={conflictCount > 0 ? "paw-status-pill warn" : "paw-status-pill"}>冲突 {conflictCount}</span>
+            <span className="paw-status-pill">用户确认后才写入</span>
+          </div>
+        ) : (
+          <div
+            className={`paw-review-empty-state ${applyNotice ? "is-success" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="paw-review-empty-icon" aria-hidden="true">
+              <Check size={18} strokeWidth={2.4} />
+            </span>
+            <div>
+              <h3>{applyNotice ? "已完成并核对" : "现在没有待审核建议"}</h3>
+              <p>{applyNotice ?? "计划保持原样。新的调整建议生成后，会在这里等你逐条确认。"}</p>
+            </div>
+          </div>
+        )}
       </section>
 
       {applyError ? (
@@ -355,7 +383,7 @@ export function ReviewPreview({
         </ReviewNotice>
       ) : null}
 
-      {applyNotice ? (
+      {applyNotice && hasVisibleSuggestions ? (
         <ReviewNotice tone="success" title="最终状态已核对">
           {applyNotice}
         </ReviewNotice>
@@ -367,14 +395,7 @@ export function ReviewPreview({
         </ReviewNotice>
       ) : null}
 
-      <section className="paw-suggestion-list">
-        {visiblePatchItems.length === 0 ? (
-          <div className="paw-empty">
-            <h2>暂时没有新建议</h2>
-            <p>新的调整建议生成后会出现在这里，你可以逐条确认。</p>
-          </div>
-        ) : null}
-
+      {hasVisibleSuggestions ? <section className="paw-suggestion-list">
         {visiblePatchItems.map((item: PatchItem) => {
           const decision = decisions[item.id];
           const userImpact = item.impact.filter(
@@ -492,7 +513,7 @@ export function ReviewPreview({
             </article>
           );
         })}
-      </section>
+      </section> : null}
 
       {visiblePatchItems.length > 0 ? (
       <section className="paw-review-bottom">

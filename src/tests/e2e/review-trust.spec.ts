@@ -29,16 +29,14 @@ test("review route frames suggestions as user-reviewed drafts, not applied chang
 
   await expect(page.getByRole("heading", { name: "审核", exact: true })).toBeVisible();
   await expect(page.getByText("这些是待确认的调整建议，只有你确认后才会生效。")).toBeVisible();
-  await expect(page.getByText("日常与恢复时间受保护，不会自动修改；所有调整建议只有在你确认并通过最终核对后才会写入。")).toBeVisible();
-  await expect(page.getByText("待审核建议")).toBeVisible();
-  await expect(page.getByText("任务调整 0")).toBeVisible();
-  await expect(page.getByText("日程导入 0")).toBeVisible();
-  await expect(page.getByText("受保护 0")).toBeVisible();
-  await expect(page.getByText("已跳过 0")).toBeVisible();
-  await expect(page.getByText("冲突 0")).toBeVisible();
-  await expect(page.getByText("0 份建议 · 0 项调整")).toBeVisible();
+  await expect(page.getByText(/保护规则.*日常与恢复时间不会自动修改/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "待审核建议", exact: true })).toBeVisible();
+  await expect(page.getByText("0 项待审核")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "现在没有待审核建议" })).toBeVisible();
+  await expect(page.getByText("任务调整 0")).toHaveCount(0);
+  await expect(page.getByText("日程导入 0")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "清空全部待审核建议" })).toHaveCount(0);
-  await expect(page.getByText("提交前会重查任务状态和固定日程冲突。")).toBeVisible();
+  await expect(page.getByText("需要你确认的任务与日程调整会集中显示在这里。")).toBeVisible();
   await expect(page.getByText("已应用")).toHaveCount(0);
   await expect.poll(() => onboardingEvents).toEqual([{ eventKey: "review_opened" }]);
 });

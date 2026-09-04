@@ -103,6 +103,22 @@ describe("Review feedback", () => {
 });
 
 describe("Review core flow", () => {
+  it("collapses an empty review queue into one clear status", () => {
+    const html = renderToStaticMarkup(React.createElement(ReviewPreview, {
+      data: {
+        dataUnavailable: false,
+        draftPatchIds: [],
+        patchItems: [],
+      },
+    }));
+
+    expect(html).toContain("0 项待审核");
+    expect(html).toContain("现在没有待审核建议");
+    expect(html).toContain("计划保持原样");
+    expect(html).not.toContain("任务调整 0");
+    expect(html).not.toContain("暂时没有新建议");
+  });
+
   it("renders Chinese plan differences and separate queue counts", () => {
     const html = renderToStaticMarkup(React.createElement(ReviewPreview, {
       data: {
