@@ -62,9 +62,12 @@ This is intentionally **preview-first**: Review, draft, suggestion, and brief ar
 ## 🚀 Quickstart
 
 ```bash
-npm install                       # install dependencies
-cp .env.example .env.local        # then set the vars below
-npm run db:migrate                # run migrations
+npm ci                            # use package-lock.json
+test -f .env.local || cp .env.example .env.local
+# Set .env.local for local development; preserve any existing values.
+# Export DATABASE_URL for CLI tools, using a dedicated local/test database.
+export DATABASE_URL='postgresql://USER:PASSWORD@127.0.0.1:5432/pawplan_dev'
+npm run db:migrate                # writes to the explicitly selected database
 npm run dev                       # start the app
 ```
 
@@ -76,13 +79,19 @@ Required env (`.env.local`):
 | `APP_SECRET` | App secret |
 | `NEXT_PUBLIC_APP_NAME` | Set to `PawPlan` for the current product |
 
-Verify before shipping:
+Agent entry: [AGENTS.md](AGENTS.md). Exact local acceptance commands, isolation
+setup, and evidence boundaries: [Local Gate](docs/public-beta/2026-06-13-public-beta-smoke-checklist.md#local-gate).
+`next dev` reads `.env.local`; do not assume CLI migration, Vitest, or the local
+MCP process receives those values. Explicitly export the intended environment.
+
+Start with the database-free check:
 
 ```bash
-npm run test
-npm run build
-npm run test:e2e
+RUN_DATABASE_INTEGRATION=0 DATABASE_URL= npm run test
 ```
+
+This skips database integration tests. Build, database acceptance, and browser
+checks are separate gates; none authorizes deployment or production writes.
 
 ## 📦 What's Included
 
@@ -231,14 +240,9 @@ PawPlan 不再推荐固定频率的每日自动 Review。用户主动要求调�
 
 ### 本地开发
 
-```bash
-npm install
-cp .env.example .env.local        # 设置 DATABASE_URL / APP_SECRET / NEXT_PUBLIC_APP_NAME(=PawPlan)
-npm run db:migrate
-npm run dev
-```
-
-验证：`npm run test` · `npm run build` · `npm run test:e2e`
+统一使用上方 [Quickstart](#-quickstart)，避免两套命令漂移。Agent 先读
+[AGENTS.md](AGENTS.md)，按现有 [Local Gate](docs/public-beta/2026-06-13-public-beta-smoke-checklist.md#local-gate)
+完成隔离环境验收；默认单测通过不代表数据库或完整用户流程通过。
 
 ---
 

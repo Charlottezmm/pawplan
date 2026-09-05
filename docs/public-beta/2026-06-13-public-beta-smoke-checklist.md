@@ -2,23 +2,110 @@
 
 Date: 2026-06-13
 
-Run this before sharing a v1 formal invite link.
+Use Local Gate for repository work. The later invite/deployment checklist is
+only for separately authorized release work; it is not permission to migrate,
+create invites, or modify production data.
 
 ## Local Gate
 
 ```bash
 git status --short --branch
-npm run test
-npm run build
-npm run test:e2e
+node --version
+npm --version
+npm ci
+RUN_DATABASE_INTEGRATION=0 DATABASE_URL= npm run test
 ```
 
-Expected:
+Use the committed lockfile. Next 14 requires Node >=18.17; record the actual
+runtime used. Existing installed dependencies can be reused for a docs-only
+check; report that a clean install was not tested.
 
-- Unit tests pass.
-- Production build passes.
-- Playwright e2e passes on desktop and mobile projects.
-- No unexpected untracked files except intended docs, migrations, source, and tests.
+### Isolated PostgreSQL acceptance
+
+Prerequisites: PostgreSQL `initdb`, `pg_ctl`, `createdb`, `psql` on PATH and a free
+port 55439. This creates a new temporary cluster, not a database in the user's
+existing server. Run the following in one shell; stop if any setup step fails.
+The test-only trust authentication is restricted to loopback and a private
+temporary socket directory. Do not reuse this setup for a shared environment.
+
+```bash
+set -e
+TASK_PG_DIR=$(mktemp -d /tmp/pawplan-agent-check.XXXXXX)
+initdb -D "$TASK_PG_DIR/data" -A trust -U pawplan_test > "$TASK_PG_DIR/init.log"
+pg_ctl -D "$TASK_PG_DIR/data" -l "$TASK_PG_DIR/server.log" \
+  -o "-h 127.0.0.1 -p 55439 -k $TASK_PG_DIR" -w start
+trap 'pg_ctl -D "$TASK_PG_DIR/data" -m fast -w stop' EXIT
+createdb -h 127.0.0.1 -p 55439 -U pawplan_test pawplan_agent_check
+export DATABASE_URL='postgresql://pawplan_test@127.0.0.1:55439/pawplan_agent_check'
+export APP_SECRET='test-secret'
+npm run db:migrate
+RUN_DATABASE_INTEGRATION=1 npm run test -- src/tests/integration
+npm run build
+# Before browser checks: confirm 3000 is free; do not kill an unrelated server.
+# If occupied, stop here and identify it rather than letting Playwright reuse it.
+if lsof -nP -iTCP:3000 -sTCP:LISTEN; then
+  echo 'Port 3000 is occupied; identify the server before running E2E.'
+  exit 1
+fi
+npm run test:e2e -- src/tests/e2e/review-trust.spec.ts --workers=1
+psql "$DATABASE_URL" -c 'SELECT count(*) AS remaining_test_workspaces FROM workspaces;'
+# Expected: 0. On shell exit the trap stops this temporary cluster.
+```
+
+If PostgreSQL is unavailable, report integration as blocked/skipped, not passed.
+Do not substitute `.env.production.local` or the personal `daily_progress` DB.
+Next build can load local env files; explicit `DATABASE_URL` and `APP_SECRET`
+above override those values without changing the files.
+
+### What each gate proves
+
+| Gate | Evidence and limitations |
+| --- | --- |
+| `npm run test` | Vitest includes unit and integration directories. Without `RUN_DATABASE_INTEGRATION=1`, all DB tests skip. `db-transaction.test.ts` accepts any nonempty URL; validate the isolated target before enabling it. |
+| `RUN_DATABASE_INTEGRATION=1 npm run test -- src/tests/integration` | Actual PostgreSQL transactions, Review/Apply/readback, stale-preview rollback, archive/restore and replacement failure checks. Require zero unexpected skips. |
+| `npm run build` | Next compilation and TypeScript checks; does not prove browser behavior or database mutation correctness. |
+| `npm run test:e2e -- src/tests/e2e/review-trust.spec.ts --workers=1` | Desktop Chromium and mobile WebKit Review copy/empty state, plus mocked onboarding success/failure. Does not exercise browser Apply. |
+| `npm run test:e2e` | Broader suite, with a mix of mocked routes, fake DBs and real local DB fixtures. Inspect skips; some DB cases skip if unavailable. `readme-preview.spec.ts` rewrites tracked `public/screenshots/pawplan-preview.png`; run it only when that artifact is in scope. |
+
+Playwright starts `npm run dev` at `127.0.0.1:3000`, sets `APP_SECRET=test-secret`
+and a test admin ID, and has `reuseExistingServer: true`. An existing server may
+have a different database or secret. Keep the port free and run build/E2E
+sequentially because they share `.next`. If browser binaries are missing, use
+`npx playwright install chromium webkit` when installation is in scope.
+
+There is currently no tracked GitHub Actions workflow. `npm run lint` invokes
+`next lint`, but ESLint dependencies/configuration are not set up: it prompts
+for initialization and is not a working unattended gate. Do not report lint or
+remote CI as passed, or initialize a new lint/CI framework during unrelated work.
+
+### Core flow: batch task notes
+
+Reuse `src/tests/integration/task-notes-batch-db.test.ts`:
+
+1. Seed 43 tasks in a new test workspace; propose one notes approval. Assert
+   `draft_created`, 43 diffs and unchanged persisted notes before approval.
+2. Retry the proposal with the same key: one approval, same token, `duplicate`.
+3. Explicitly approve, then Apply. Assert `succeeded`, `processedCount=43`,
+   `mutationApplied=true` and successful post-commit readback.
+4. Independently SELECT the tasks and compare notes by exact ID; assert 43 audit
+   rows and approval `consumed`. Retry Apply: no additional audit rows.
+5. Change a task after Preview: Apply must reject with `preview_stale`, preserve
+   old notes and leave approval unconsumed. Test cleanup deletes its workspaces.
+
+This exercises real services and PostgreSQL; approval is simulated by a service
+call, not a browser click or a hosted MCP request. For changes to Review UI/API
+or MCP permissions, additionally check that actual boundary: no task mutation
+before user confirmation; only accepted operations applied; rejected/skipped
+operations unchanged; refresh and read back exact IDs after Apply.
+`review_only` must not Apply or directly mutate tasks.
+
+### Closeout
+
+- Report commands, environment, pass/fail/skip counts, and which assertions used mocks.
+- Confirm test workspace cleanup and stop only services started for this run.
+- Run `git diff --check`, `git diff --stat`, and `git status --short`; preserve unrelated changes.
+- List blocked or omitted checks with reasons. A local gate does not authorize commit, push or deployment.
+
 
 ## Database And Migration
 
