@@ -5913,3 +5913,31 @@ input.paw-input[type="time"] {
     justify-content: flex-start;
   }
 }
+
+/* Scheduling controls stay within their task card at every width. */
+.paw-backlog-scheduling-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 18px;
+}
+.paw-backlog-scheduling-row > :first-child { min-width: 0; }
+.paw-backlog-scheduling-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+}
+.paw-backlog-scheduling-actions button { white-space: nowrap; }
+.paw-backlog-scheduling-actions .paw-task-transition { max-width: 100%; min-width: 0; }
+.paw-backlog-scheduling-actions .paw-task-transition label { min-width: 0; }
+.paw-today-timeline-jump { color: var(--app-accent); font-size: 13px; font-weight: 600; }
+@media (max-width: 760px) {
+  .paw-backlog-scheduling-row { grid-template-columns: minmax(0, 1fr); }
+  .paw-backlog-scheduling-actions { align-items: stretch; justify-content: flex-start; }
+  .paw-backlog-scheduling-actions > .paw-secondary-btn { width: 100%; }
+  .paw-backlog-scheduling-actions .paw-task-transition { width: 100%; justify-content: flex-start; }
+  .paw-backlog-scheduling-actions .paw-task-transition label { flex: 1; }
+}

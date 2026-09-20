@@ -273,7 +273,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     <div className="paw-page paw-today-page" id="today-tasks">
       <div className="paw-today-main">
       <section className="paw-today-header">
-        <a href="#today-timeline" className="paw-today-timeline-jump paw-secondary-btn">查看今天的时间轴 ↓</a>
+        <a href="#today-timeline" className="paw-today-timeline-jump">查看今天的时间轴 ↓</a>
         <div className="paw-today-hero">
           <div className="paw-today-hero-text">
             <p className="paw-today-greeting">{greeting}</p>
@@ -492,7 +492,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       </div>
 
       <aside className="paw-today-desktop-timeline" id="today-timeline">
-        <a href="#today-tasks" className="paw-today-timeline-jump paw-secondary-btn">↑ 回到任务</a>
+        <a href="#today-tasks" className="paw-today-timeline-jump">↑ 回到任务</a>
         <TodayTaskTimeline fixedItems={data.exactFixedItems} initialData={data.timingData} />
       </aside>
 

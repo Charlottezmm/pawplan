@@ -51,7 +51,7 @@ export function BacklogView({ data, legacySkipped }: { data: BacklogViewData; le
               </header>
               <div className="paw-backlog-list">
                 {group.tasks.map((task) => (
-                  <article key={task.id} className="paw-backlog-task">
+                  <article key={task.id} className="paw-backlog-task paw-backlog-scheduling-row">
                     <div>
                       <h3>{task.title}</h3>
                       {task.notes ? <p>{task.notes}</p> : null}
@@ -61,7 +61,7 @@ export function BacklogView({ data, legacySkipped }: { data: BacklogViewData; le
                       <span>优先级 {priorityLabels[task.priority]}</span>
                       <span>最近更新 {task.updatedLabel}</span>
                     </div>
-                    <div className="flex flex-wrap gap-2"><TaskTimingButton taskId={task.id} label="找一个时间段" /><BacklogRescheduleControl taskId={task.id} /></div>
+                    <div className="paw-backlog-scheduling-actions"><TaskTimingButton taskId={task.id} label="找一个时间段" /><BacklogRescheduleControl taskId={task.id} /></div>
                   </article>
                 ))}
               </div>

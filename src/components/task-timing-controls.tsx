@@ -744,16 +744,6 @@ export function TodayTaskTimeline({
   };
   return (
     <>
-      <div className={styles.timelineTools}>
-        <button
-          type="button"
-          className="paw-secondary-btn"
-          onClick={() => activate()}
-        >
-          <CalendarClock size={15} />
-          安排任务时段
-        </button>
-      </div>
       {error ? (
         <p role="alert" className={styles.error}>
           {error}
@@ -790,6 +780,7 @@ export function TodayTaskTimeline({
       <TodayFixedTimeline
         items={items}
         includesTasks
+        headerAction={<button type="button" className="paw-secondary-btn" onClick={() => activate()}><CalendarClock size={15} />安排任务时段</button>}
         onTaskSelect={activate}
         now={now}
         completedTaskIds={scheduled

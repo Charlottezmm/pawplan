@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Check, Clock3, LockKeyhole } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { layoutTimetableIntervals, minuteLabel } from "@/lib/planning/timetable-layout";
 import type { TimelineItemView } from "@/lib/planning/view-data";
 import { redactPrivateTitle } from "@/lib/display/privacy";
@@ -31,7 +31,7 @@ function shanghaiMinute(value: string) {
   return get("hour") * 60 + get("minute");
 }
 
-export function TodayFixedTimeline({ items, includesTasks = false, onTaskSelect, now, completedTaskIds = [] }: { items: TimelineItemView[]; includesTasks?: boolean; onTaskSelect?: (id: string) => void; now?: Date | null; completedTaskIds?: string[] }) {
+export function TodayFixedTimeline({ items, includesTasks = false, onTaskSelect, now, completedTaskIds = [], headerAction }: { items: TimelineItemView[]; includesTasks?: boolean; onTaskSelect?: (id: string) => void; now?: Date | null; completedTaskIds?: string[]; headerAction?: ReactNode }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const positioned = useRef(false);
   const [selected, setSelected] = useState<TimelineItemView | null>(null);
@@ -67,7 +67,7 @@ export function TodayFixedTimeline({ items, includesTasks = false, onTaskSelect,
           <p>时间轴</p>
           <h2 id="today-fixed-heading">{includesTasks ? "今天的时间安排" : "今天的固定安排"}</h2>
         </div>
-        <span><LockKeyhole size={13} /> {includesTasks ? "固定安排受保护" : "只读"}</span>
+        {headerAction ?? <span><LockKeyhole size={13} /> 只读</span>}
       </header>
       <p className={styles.hint}>{includesTasks ? "点击任务查看时间、记录进展或安排后续。" : "只显示确有起止时间的课程、会议和个人安排。"}</p>
       <p className={styles.mobileHint}>上下滑动查看全天安排</p>
