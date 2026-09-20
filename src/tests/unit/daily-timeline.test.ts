@@ -146,10 +146,10 @@ describe("daily timeline", () => {
     expect(r.backlog_triage[0]).toMatchObject({ duplicate_candidate: true, stale_candidate: true, selected: false, task_ids: ["b1", "b2"] });
     expect(work(r)).toHaveLength(0);
   });
-  it("treats routine capacity windows as availability rather than fixed busy time", () => {
+  it("protects routine time blocks just like the current production timetable", () => {
     const r = buildDailyTimeline(source([task("a", { estimatedMinutes: 200 })], [{ id: "r", title: "study window", kind: "routine", startsAt: at("09:00"), endsAt: at("10:00") }]), args());
-    expect(work(r).every(s => minute(s.start) >= minute(at("09:00")) && minute(s.end) <= minute(at("10:00")))).toBe(true);
-    expect(r.outcomes[0].allocated_minutes).toBe(50);
+    expect(work(r).every(s => minute(s.end) <= minute(at("09:00")) || minute(s.start) >= minute(at("10:00")))).toBe(true);
+    expect(r.outcomes[0].allocated_minutes).toBe(150);
   });
   it("validates impossible dates, reversed windows, duplicate options, dependencies and backlog selection", () => {
     expect(() => buildDailyTimeline(source(), args({ date: "2026-02-30" }))).toThrow(/date/);

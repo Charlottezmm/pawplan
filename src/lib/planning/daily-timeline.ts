@@ -66,7 +66,7 @@ export function buildDailyTimeline(source: TimelineSource, rawArgs: unknown) {
     for (const id of option.depends_on) requireTask(id);
     options.set(option.task_id, option);
   }
-  const fixed: Slot[] = source.blocks.filter(b => b.kind !== "routine").map(b => ({
+  const fixed: Slot[] = source.blocks.map(b => ({
     start: instant(b.startsAt), end: instant(b.endsAt), kind: "fixed", title: b.title,
   })).filter(b => b.end > day.start && b.start < day.end);
   const protections: Slot[] = args.protected_windows.map(w => ({ ...window(w), title: w.title, kind: w.kind }));
@@ -131,14 +131,6 @@ export function buildDailyTimeline(source: TimelineSource, rawArgs: unknown) {
   const slots: Slot[] = [];
   let free: Interval[] = now >= day.end ? [] : [{ start: Math.max(day.start, Math.ceil(now)), end: day.end }];
   for (const r of reservations) free = subtract(free, r);
-  // Routine time blocks are availability windows in the existing capacity model.
-  const availability = source.blocks.filter(b => b.kind === "routine").map(b => ({ start: instant(b.startsAt), end: instant(b.endsAt) }));
-  if (availability.length) free = free.flatMap(f => availability.map(a => ({ start: Math.max(f.start, a.start), end: Math.min(f.end, a.end) })).filter(a => a.end > a.start))
-    .sort((a, b) => a.start - b.start).reduce<Interval[]>((result, f) => {
-      const last = result[result.length - 1];
-      if (last && f.start <= last.end) last.end = Math.max(last.end, f.end); else result.push(f);
-      return result;
-    }, []);
   const allocate = (task: TimelineTask, windows: Interval[]) => {
     const f = latest.get(task.id), option = options.get(task.id);
     if (task.blocked || (f && ["stuck", "paused", "completed"].includes(f.state))) return;
