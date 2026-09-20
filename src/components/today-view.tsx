@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Archive, CalendarClock, Check, ChevronDown, Clock3, Copy, RotateCcw } from "lucide-react";
+import { AlertTriangle, Archive, CalendarClock, Check, ChevronDown, Clock3, Copy, LockKeyhole, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -19,6 +19,7 @@ import {
   persistedDateMatchesDateKey,
   postponeTaskUpdate,
 } from "@/lib/planning/task-actions";
+import { displayTask, reconcileTodayTasks, sortTodayTasks, type StatusOverride } from "@/lib/planning/today-task-state";
 import type { TodayViewData } from "@/lib/planning/view-data";
 
 type Task = TodayViewData["tasks"][number];
@@ -108,19 +109,20 @@ export async function persistTodayTaskUpdate(
     throw new Error("Task update response did not confirm the requested state");
   }
   if (typeof window !== "undefined") window.dispatchEvent(new Event("pawplan:timing-changed"));
+  return savedTask;
 }
 
 export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTasks?: ReactNode }) {
-  const [tasks, setTasks] = useState<Array<Task & { displayStatus: DisplayStatus }>>(
-    () => data.tasks
-      .map((task) => ({
-        ...task,
-        displayStatus: task.blocked && task.status === "todo" ? "blocked" as const : task.status,
-      }))
-      .sort((a, b) => Number(a.displayStatus === "done" || a.displayStatus === "backlog") - Number(b.displayStatus === "done" || b.displayStatus === "backlog")),
-  );
+  const statusOverrides = useRef(new Map<string, StatusOverride>());
+  const [tasks, setTasks] = useState(() => sortTodayTasks(data.tasks.map(displayTask)));
   useEffect(() => {
-    setTasks(data.tasks.map(task => ({ ...task, displayStatus: task.blocked && task.status === "todo" ? "blocked" as const : task.status })));
+    setTasks(reconcileTodayTasks(data.tasks, statusOverrides.current));
+    for (const task of data.tasks) {
+      const local = statusOverrides.current.get(task.id);
+      if (local?.updatedAt && task.updatedAt && Date.parse(task.updatedAt) >= Date.parse(local.updatedAt)) {
+        statusOverrides.current.delete(task.id);
+      }
+    }
   }, [data.tasks]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
@@ -239,11 +241,14 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       };
     }
 
-    setTasks((current) => current.map((task) => task.id === id ? optimisticTask : task));
+    statusOverrides.current.set(id, { status: optimisticTask.status, blocked: optimisticTask.blocked });
+    setTasks((current) => sortTodayTasks(current.map((task) => task.id === id ? optimisticTask : task)));
     try {
-      await persistTodayTaskUpdate(id, patch);
+      const saved = await persistTodayTaskUpdate(id, patch);
+      statusOverrides.current.set(id, { status: optimisticTask.status, blocked: optimisticTask.blocked, updatedAt: typeof saved.updatedAt === "string" ? saved.updatedAt : undefined });
     } catch {
-      setTasks((current) => current.map((task) => task.id === id ? currentTask : task));
+      statusOverrides.current.delete(id);
+      setTasks((current) => sortTodayTasks(current.map((task) => task.id === id ? displayTask({ ...task, status: currentTask.status, blocked: currentTask.blocked }) : task)));
       setTaskActionFeedback({ tone: "error", message: `“${currentTask.title}”状态保存失败，已恢复原状态，请重试。` });
     } finally {
       statusRequests.current.delete(id);
@@ -399,7 +404,8 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   </span>
                   <span className="paw-task-headmeta">
                     <Clock3 size={12} aria-hidden="true" />
-                    {task.timeLabel ? `${task.timeProtected ? "🔒 " : ""}${task.timeLabel}` : `${segmentLabel[task.segment]} · ${minutesLabel(task.minutes)}`}
+                    {task.timeLabel && task.timeProtected ? <LockKeyhole size={12} aria-label="时段受保护" /> : null}
+                    {task.timeLabel ?? `${segmentLabel[task.segment]} · ${minutesLabel(task.minutes)}`}
                     <ChevronDown size={16} className="paw-task-chevron" />
                   </span>
                 </button>
@@ -409,7 +415,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   <div className="paw-task-meta">
                     <span className="paw-task-tag">{task.context}</span>
                     <span>{task.track}</span>
-                    {task.timeLabel ? <span>{task.timeProtected ? "🔒 " : ""}{task.timeLabel}</span> : null}
+                    {task.timeLabel ? <span>{task.timeProtected ? <LockKeyhole size={12} aria-label="时段受保护" /> : null}{task.timeLabel}</span> : null}
                     <span>能量 {task.energy}</span>
                     <span>优先级 {priorityLabel[task.priority]}</span>
                   </div>
@@ -487,7 +493,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
 
       <aside className="paw-today-desktop-timeline" id="today-timeline">
         <a href="#today-tasks" className="paw-today-timeline-jump paw-secondary-btn">↑ 回到任务</a>
-        <TodayTaskTimeline fixedItems={data.exactFixedItems} />
+        <TodayTaskTimeline fixedItems={data.exactFixedItems} initialData={data.timingData} />
       </aside>
 
       <DialogSheet

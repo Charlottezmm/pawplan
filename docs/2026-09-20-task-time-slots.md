@@ -1,6 +1,6 @@
 # Task time slots in the existing Today view
 
-Tasks can now have a persisted start/end time, a protected slot, a formal deadline, a preferred completion date and a continuation checkpoint. Today keeps its existing layout; the right-hand timeline includes task slots alongside fixed arrangements. On mobile, a jump link leads to the same timeline. Backlog offers this-week/next-week searches with an explicit date range.
+Tasks can now have a persisted start/end time, a protected slot, a formal deadline, a preferred completion date and a continuation checkpoint. Today keeps its existing layout; the right-hand timeline includes task slots alongside fixed arrangements. On mobile, a jump link leads to the same timeline in a bounded, scrollable region. Task slots are included in the server-rendered first page; the timeline refreshes after changes rather than every browser focus. Backlog offers this-week/next-week searches with an explicit date range.
 
 ## User flow
 
@@ -9,7 +9,7 @@ Tasks can now have a persisted start/end time, a protected slot, a formal deadli
 - **继续一段** extends the selected slot and previews any affected later movable slots, preserving order. Fixed/protected blocks and formal deadlines are hard constraints. If a later task cannot fit, the proposal fails without changing anything; first choose a later date for that task.
 - **先收尾** records progress/remaining work and clears the slot while retaining `todo`. **后续再做** records the checkpoint and proposes a new slot. Only **完成任务** sets `done`.
 - Backlog's **找一个时间段** searches the explicit range. This week begins today; next week is Monday–Sunday in Asia/Shanghai. It reserves existing planned work, recurring fixed blocks and configured segment capacity first. No fit leaves the task in Backlog with an explanation.
-- Each proposal shows exact before/after slots, protection, deadline/preferred-date changes, checkpoints and capacity warnings. Confirmation approves and applies that exact proposal. Closing a preview leaves it in Review; returning to edit rejects the pending preview.
+- Each proposal shows exact before/after slots, protection, deadline/preferred-date changes, checkpoints and capacity warnings. Confirmation approves and applies that exact proposal. Closing an unconfirmed preview or returning to edit rejects that pending preview. If rejection fails, the dialog stays open for retry. An approved operation whose Apply failed stays available in Review for retry.
 
 Protected slots must be explicitly unlocked before they can move. Preferred completion dates produce warnings, whereas formal deadlines block invalid placement. Capacity warnings for manually chosen slots remain visible for user judgment; automatic suggestions do not add new overload. Reaching a slot's end never automatically completes a task.
 
@@ -48,3 +48,9 @@ Production migration and deployment require explicit authorization. Before relea
 - Production build passed. `git diff --check` passed.
 - The isolated database contained zero remaining workspaces after verification. The owned development server and PostgreSQL cluster were stopped.
 - Personal/production data was not changed. At this local acceptance checkpoint, implementation was in the `codex/task-timeblocks` worktree and had not yet been committed, pushed or deployed.
+
+### UI review fixes · 2026-09-20
+
+Today uses the same pending-first ordering at load and refresh. In-flight status edits survive older server snapshots while fresh timing details remain visible. Batch date changes clear selection and submission rechecks that IDs belong to the visible date. Duration inputs reject blank, fractional and out-of-range values before sending a preview. LAN HTTP can generate idempotency keys without `randomUUID`. Dialogs mount only when opened; completed task slots have task-specific read-only details.
+
+Validation: 94 Vitest files / 564 tests passed with isolated database integration enabled; 24 Playwright cases passed across desktop Chromium and mobile WebKit, including rejected-preview and approved-Apply retry failures. Production build and diff checks passed. No production migration is required for these UI fixes.

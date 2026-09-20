@@ -27,6 +27,8 @@ import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 import { calculateTrackBalance } from "@/lib/planning/track-balance";
 import { expandRecurringBlocks } from "@/lib/planning/recurring-time-blocks";
 import { buildWarnings } from "@/lib/planning/warnings";
+import { serializeTimingTask } from "@/lib/planning/task-timing-service";
+import type { TimingTask, TimingBlock } from "@/lib/planning/task-timing";
 import type { AgentPatch } from "@/lib/patches/patch-schema";
 
 type Segment = "morning" | "afternoon" | "evening";
@@ -47,6 +49,7 @@ export type CheckinView = {
 };
 
 export type TodayTaskView = {
+  updatedAt?: string;
   timeLabel?: string | null;
   timeProtected?: boolean;
   checkpoint?: string | null;
@@ -125,6 +128,7 @@ export type WarningView = {
 };
 
 export type TodayViewData = {
+  timingData?: { tasks: TimingTask[]; fixed: TimingBlock[]; date: string };
   dataUnavailable: boolean;
   tasks: TodayTaskView[];
   todayTasks: PlanTaskView[];
@@ -314,6 +318,7 @@ function emptyTodayData(dataUnavailable = false): TodayViewData {
     timelineItems: [],
     fixedItems: [],
     exactFixedItems: [],
+    timingData: { tasks: [], fixed: [], date: capacityDateKey(new Date()) },
     patchCount: 0,
     checkin: null,
     streakDays: 0,
@@ -868,6 +873,7 @@ async function loadReferenceMaps(workspaceId: string) {
 type ReferenceMaps = Awaited<ReturnType<typeof loadReferenceMaps>>;
 
 type TaskRowForView = CapacityTaskInput & {
+  updatedAt?: Date;
   checkpoint?: string | null;
   notes?: string | null;
   blocked?: boolean;
@@ -906,6 +912,7 @@ function buildTodayTaskSummary(task: TaskRowForView, refs: ReferenceMaps): Today
   const view = buildPlanTaskView(task, refs);
   return {
     id: view.id,
+    updatedAt: task.updatedAt?.toISOString(),
     timeLabel: task.scheduledStart && task.scheduledEnd ? `${timeLabel(task.scheduledStart)}–${timeLabel(task.scheduledEnd)}` : null,
     timeProtected: task.movable === false,
     checkpoint: task.checkpoint ?? null,
@@ -1065,6 +1072,11 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
     return {
       dataUnavailable: false,
       tasks: taskRows.map((task) => buildTodayTaskSummary(task, refs)),
+      timingData: {
+        tasks: taskRows.map(serializeTimingTask),
+        fixed: buildExactFixedTimelineItems({ date: start, blockRows: todayBlocks, routineRows }),
+        date: capacityDateKey(start),
+      },
       todayTasks: taskRows.map((task) => buildPlanTaskView(task, refs)),
       overdueTasks: overdueTaskRows.map((task) => buildPlanTaskView(task, refs)),
       routines: routineRows.map((routine) => ({

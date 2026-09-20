@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "src/tests/e2e",
-  testMatch: "task-timing.spec.ts",
+  testMatch: ["task-timing.spec.ts", "task-timing-failures.spec.ts"],
   workers: 1,
   timeout: 45000,
   webServer: {

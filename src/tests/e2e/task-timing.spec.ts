@@ -186,11 +186,27 @@ test("backlog next week creates a persisted slot through confirmation", async ({
 test("Review shows the full preview and applies a proposal after confirmation", async ({
   page,
 }) => {
-  await page.goto("/today");
-  await clickSlot(page);
-  await page.getByLabel("保护这个时段，调整时保留").check();
-  await page.getByRole("button", { name: "预览安排", exact: true }).click();
-  await page.getByRole("button", { name: /^关闭MATH 4710/ }).click();
+  // MCP/API proposals intentionally remain in Review; dismissing a UI preview does not.
+  const proposal = await page.request.post("/api/task-timing", {
+    data: {
+      request: {
+        action: "schedule",
+        edits: [
+          {
+            taskId,
+            date: today(),
+            startTime: "20:00",
+            minutes: 30,
+            locked: true,
+            deadlineAt: null,
+            targetDate: null,
+          },
+        ],
+      },
+      idempotencyKey: randomUUID(),
+    },
+  });
+  expect(proposal.ok()).toBe(true);
   await page.goto("/review");
   await expect(page.getByText("任务时间安排", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "确认并应用", exact: true }).click();
@@ -203,4 +219,212 @@ test("Review shows the full preview and applies a proposal after confirmation", 
     (await pool.query("select movable from tasks where id=$1", [taskId]))
       .rows[0].movable,
   ).toBe(false);
+});
+
+test("closing an unconfirmed preview rejects it without changing the task", async ({
+  page,
+}) => {
+  await page.goto("/today");
+  await clickSlot(page);
+  await page.getByLabel("保护这个时段，调整时保留").check();
+  const proposed = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/task-timing") &&
+      response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "预览安排", exact: true }).click();
+  const { approvalId } = await (await proposed).json();
+  expect(approvalId).toBeTruthy();
+  await page.getByRole("button", { name: /^关闭MATH 4710/ }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (
+          await pool.query(
+            "select status from operation_approvals where id=$1",
+            [approvalId],
+          )
+        ).rows[0].status,
+    )
+    .toBe("rejected");
+  expect(
+    (await pool.query("select movable from tasks where id=$1", [taskId]))
+      .rows[0].movable,
+  ).toBe(true);
+  await page.goto("/review");
+  await expect(page.getByText("任务时间安排", { exact: true })).toHaveCount(0);
+});
+
+test("blank and out-of-range durations never send a preview request", async ({
+  page,
+}) => {
+  await page.goto("/today");
+  await clickSlot(page);
+  let proposals = 0;
+  page.on("request", (request) => {
+    if (
+      request.url().includes("/api/task-timing") &&
+      request.method() === "POST"
+    )
+      proposals++;
+  });
+  for (const [mode, label, invalid] of [
+    ["设置时段", "本次安排（分钟）", ["", "0", "4", "481"]],
+    ["继续一段", "继续多少分钟", ["", "0", "4", "121"]],
+  ] as const) {
+    await page.getByRole("button", { name: mode, exact: true }).click();
+    for (const value of invalid) {
+      await page.getByLabel(label).fill(value);
+      const preview = page.getByRole("button", {
+        name: "预览安排",
+        exact: true,
+      });
+      if (await preview.isEnabled()) await preview.click();
+      await expect(
+        page.getByRole("button", { name: "确认并应用", exact: true }),
+      ).toHaveCount(0);
+      expect(proposals).toBe(0);
+    }
+  }
+});
+
+test("batch date changes only submit checked tasks from the visible date", async ({
+  page,
+}) => {
+  const tomorrow = new Date(`${today()}T12:00:00+08:00`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const nextDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+  }).format(tomorrow);
+  await pool.query(
+    "update tasks set scheduled_start=null,scheduled_end=null where id=$1",
+    [taskId],
+  );
+  await pool.query(
+    "update tasks set scheduled_start=null,scheduled_end=null,date=$2 where id=$1",
+    [nextId, `${nextDate}T00:00:00+08:00`],
+  );
+  await page.goto("/today");
+  await page.getByRole("button", { name: "安排任务时段", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: /MATH 4710/ })).toBeChecked();
+  await page.getByLabel("日期", { exact: true }).fill(nextDate);
+  await expect(page.getByRole("checkbox", { name: /MATH 4710/ })).toHaveCount(
+    0,
+  );
+  const visibleTask = page.getByRole("checkbox", { name: /GE · 课前准备/ });
+  await expect(visibleTask).toBeVisible();
+  await visibleTask.check();
+  await page.getByLabel("从几点开始").fill("18:00");
+  const request = page.waitForRequest(
+    (request) =>
+      request.url().includes("/api/task-timing") && request.method() === "POST",
+  );
+  await page.getByRole("button", { name: "预览安排", exact: true }).click();
+  expect((await request).postDataJSON().request).toMatchObject({
+    date: nextDate,
+    taskIds: [nextId],
+  });
+  await expect(page.getByText("确认这次调整")).toBeVisible();
+  await page.getByRole("button", { name: /^关闭/ }).click();
+});
+
+test("Today keeps completed tasks last after a timing save refresh", async ({
+  page,
+}) => {
+  // Put the first database row into done so a raw server-order replacement is detectable.
+  await pool.query(
+    "update tasks set status='done',created_at='2020-01-01' where id=$1",
+    [taskId],
+  );
+  await page.goto("/today");
+  const ids = () =>
+    page
+      .locator(".paw-task-list [data-task-id]")
+      .evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute("data-task-id")),
+      );
+  await expect.poll(ids).toEqual([nextId, taskId]);
+  await clickSlot(page, "GE · 课前准备");
+  await page.getByLabel("做到哪里／剩下什么").fill("refresh regression");
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.url().includes("/today") &&
+      response.headers()["content-type"]?.includes("text/x-component"),
+  );
+  await apply(page);
+  await refreshed;
+  await expect(page.locator(`[data-task-id="${nextId}"]`)).toContainText(
+    "GE · 课前准备",
+  );
+  await expect.poll(ids).toEqual([nextId, taskId]);
+  await page.reload();
+  await expect.poll(ids).toEqual([nextId, taskId]);
+});
+
+test("initial task slots do not depend on a client timing fetch", async ({
+  page,
+}) => {
+  await page.route("**/api/task-timing?*", (route) => route.abort());
+  await page.goto("/today");
+  await expect(
+    page.getByRole("button", {
+      name: /MATH 4710 · Note7 补课，20:00 至 20:30/,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /GE · 课前准备，20:45 至 21:15/ }),
+  ).toBeVisible();
+});
+
+test("mobile timeline is scrollable and completed task details use task wording", async ({
+  page,
+}, info) => {
+  await pool.query("update tasks set status='done' where id=$1", [taskId]);
+  await page.goto("/today");
+  const timeline = page.getByRole("region", {
+    name: "全天时间轴",
+    exact: true,
+  });
+  await expect(timeline).toBeVisible();
+  if (info.project.name === "mobile") {
+    const dimensions = await timeline.evaluate((node) => ({
+      height: node.getBoundingClientRect().height,
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      overflowY: getComputedStyle(node).overflowY,
+    }));
+    expect(dimensions.height).toBeLessThanOrEqual(421);
+    expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight);
+    expect(dimensions.overflowY).toMatch(/auto|scroll/);
+  }
+  await clickSlot(page);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("已完成任务", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByText("已完成，此处仅查看已记录的任务时段", { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByText("固定时间安排", { exact: true })).toHaveCount(
+    0,
+  );
+});
+
+test("preview still works when crypto.randomUUID is unavailable", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window.crypto, "randomUUID", {
+      value: undefined,
+      configurable: true,
+    });
+  });
+  await page.goto("/today");
+  await clickSlot(page);
+  await page.getByLabel("保护这个时段，调整时保留").check();
+  await page.getByRole("button", { name: "预览安排", exact: true }).click();
+  await expect(page.getByText("确认这次调整")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "确认并应用", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /^关闭MATH 4710/ }).click();
 });

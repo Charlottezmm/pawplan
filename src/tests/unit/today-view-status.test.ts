@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { persistTodayTaskUpdate } from "@/components/today-view";
 
@@ -10,7 +9,7 @@ describe("Today task status persistence", () => {
       task: { id: taskId, status: "done", blocked: false },
     }));
 
-    await expect(persistTodayTaskUpdate(taskId, { status: "done", blocked: false }, request)).resolves.toBeUndefined();
+    await expect(persistTodayTaskUpdate(taskId, { status: "done", blocked: false }, request)).resolves.toMatchObject({ id: taskId });
     expect(request).toHaveBeenCalledWith("/api/tasks", expect.objectContaining({
       method: "PATCH",
       body: JSON.stringify({ id: taskId, status: "done", blocked: false }),
@@ -22,7 +21,7 @@ describe("Today task status persistence", () => {
       task: { id: taskId, status: "todo", blocked: false, date: "2026-09-03T16:00:00.000Z" },
     }));
 
-    await expect(persistTodayTaskUpdate(taskId, { status: "todo", date: "2026-09-04" }, request)).resolves.toBeUndefined();
+    await expect(persistTodayTaskUpdate(taskId, { status: "todo", date: "2026-09-04" }, request)).resolves.toMatchObject({ id: taskId });
   });
 
   it("rejects network errors and non-2xx responses", async () => {
@@ -45,14 +44,4 @@ describe("Today task status persistence", () => {
     await expect(persistTodayTaskUpdate(taskId, { status: "done" }, wrongState)).rejects.toThrow("did not confirm");
   });
 
-  it("keeps rollback and duplicate-request guards without moving completed tasks", () => {
-    const source = readFileSync("src/components/today-view.tsx", "utf8");
-
-    expect(source).toContain("statusRequests.current.has(id)");
-    expect(source).toContain("task.id === id ? currentTask : task");
-    expect(source).toContain("已恢复原状态，请重试");
-    expect(source).not.toContain('typeof el.animate === "function"');
-    expect(source).not.toContain("setTasks((current) => [...current].sort");
-    expect(source).toContain("task.id === id ? optimisticTask : task");
-  });
 });

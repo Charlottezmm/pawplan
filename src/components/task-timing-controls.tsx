@@ -16,6 +16,11 @@ import {
   type TimingPreview,
 } from "@/lib/planning/task-timing";
 import type { TimelineItemView } from "@/lib/planning/view-data";
+import {
+  selectedTimingTaskIds,
+  timingMinutes,
+  timingRequestKey,
+} from "@/lib/client/task-timing-form";
 import styles from "./task-timing-controls.module.css";
 
 type TimingData = { tasks: TimingTask[]; fixed: TimingBlock[]; date: string };
@@ -106,8 +111,8 @@ export function TaskTimingDialog({
   const [dateTo, setDateTo] = useState(date);
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState("22:00");
-  const [minutes, setMinutes] = useState(30);
-  const [extension, setExtension] = useState(20);
+  const [minutes, setMinutes] = useState("30");
+  const [extension, setExtension] = useState("20");
   const [locked, setLocked] = useState(false);
   const [deadline, setDeadline] = useState("");
   const [target, setTarget] = useState("");
@@ -115,6 +120,7 @@ export function TaskTimingDialog({
   const [selected, setSelected] = useState<string[]>([]);
   const requestRef = useRef<{ json: string; key: string } | null>(null);
   const approvalRef = useRef<string | null>(null);
+  const busyRef = useRef(false);
   const [success, setSuccess] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
@@ -147,11 +153,13 @@ export function TaskTimingDialog({
         setEnd("22:00");
         setMode(task?.status === "backlog" ? "defer" : "schedule");
         setMinutes(
-          task?.scheduledStart && task.scheduledEnd
-            ? (Date.parse(task.scheduledEnd) -
-                Date.parse(task.scheduledStart)) /
-                60000
-            : (task?.estimatedMinutes ?? 30),
+          String(
+            task?.scheduledStart && task.scheduledEnd
+              ? (Date.parse(task.scheduledEnd) -
+                  Date.parse(task.scheduledStart)) /
+                  60000
+              : (task?.estimatedMinutes ?? 30),
+          ),
         );
         setLocked(task ? !task.movable : false);
         setTarget(task?.targetDate ?? "");
@@ -180,6 +188,8 @@ export function TaskTimingDialog({
   }, [open, taskId, day]);
   const task = data?.tasks.find((t) => t.id === taskId);
   async function propose() {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     setSuccess(null);
@@ -193,7 +203,7 @@ export function TaskTimingDialog({
           startTime: start,
           endTime: end,
           gapMinutes: 10,
-          taskIds: selected,
+          taskIds: selectedTimingTaskIds(data?.tasks ?? [], date, selected),
         };
       else if (mode === "schedule")
         request = {
@@ -203,7 +213,7 @@ export function TaskTimingDialog({
               taskId,
               date,
               startTime: start,
-              minutes,
+              minutes: timingMinutes(minutes, 480),
               locked,
               deadlineAt: deadline
                 ? new Date(`${deadline}:00+08:00`).toISOString()
@@ -222,7 +232,7 @@ export function TaskTimingDialog({
           startTime: start,
           endTime: end,
           gapMinutes: 10,
-          minutes,
+          minutes: timingMinutes(minutes, 480),
           checkpoint:
             checkpoint.trim() ||
             (task?.status === "backlog" ? "从现有任务内容开始。" : ""),
@@ -231,7 +241,7 @@ export function TaskTimingDialog({
         request = {
           action: "extend",
           taskId,
-          minutes: extension,
+          minutes: timingMinutes(extension, 120),
           endTime: end,
         };
       else if (mode === "pause")
@@ -239,7 +249,7 @@ export function TaskTimingDialog({
       else request = { action: "complete", taskId, checkpoint };
       const json = JSON.stringify(request);
       if (requestRef.current?.json !== json)
-        requestRef.current = { json, key: crypto.randomUUID() };
+        requestRef.current = { json, key: timingRequestKey() };
       setPreview(
         await send("/api/task-timing", "POST", {
           request,
@@ -249,11 +259,13 @@ export function TaskTimingDialog({
     } catch (e) {
       setError(e instanceof Error ? e.message : "无法生成预览");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
   async function apply() {
-    if (!preview?.approvalId) return;
+    if (!preview?.approvalId || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -275,33 +287,40 @@ export function TaskTimingDialog({
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败，请重试");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
-  async function back() {
-    if (preview?.approvalId && !approvalRef.current) {
-      setBusy(true);
-      try {
+  async function dismiss(returnToEditor: boolean) {
+    if (busyRef.current) return;
+    // An approved Apply retry belongs in Review; never reject or replace it.
+    if (returnToEditor && approvalRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      if (preview?.approvalId && !approvalRef.current) {
         await send("/api/operation-approvals", "POST", {
           approvalId: preview.approvalId,
           decision: "rejected",
         });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "无法撤回预览");
-        setBusy(false);
-        return;
       }
+      setPreview(null);
+      requestRef.current = null;
+      if (returnToEditor) {
+        approvalRef.current = null;
+      } else {
+        onClose();
+        router.refresh();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "无法撤回预览，请重试。");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
     }
-    setPreview(null);
-    setError(null);
-    requestRef.current = null;
-    approvalRef.current = null;
-    setBusy(false);
   }
-  const close = () => {
-    onClose();
-    if (success) router.refresh();
-  };
+  const close = () => void dismiss(false);
   const options =
     data?.tasks.filter(
       (t) => t.date === date && t.status === "todo" && t.movable,
@@ -323,7 +342,7 @@ export function TaskTimingDialog({
         {success ? (
           <>
             <p role="status">{success}</p>
-            <button className="paw-primary-btn" onClick={close}>
+            <button type="button" className="paw-primary-btn" onClick={close}>
               完成
             </button>
           </>
@@ -333,14 +352,16 @@ export function TaskTimingDialog({
             <TimingChanges preview={preview} />
             <div className={styles.actions}>
               <button
+                type="button"
                 className="paw-secondary-btn"
-                onClick={() => void back()}
-                disabled={busy}
+                onClick={() => void dismiss(true)}
+                disabled={busy || Boolean(approvalRef.current)}
               >
                 返回修改
               </button>
               {preview.approvalId ? (
                 <button
+                  type="button"
                   className="paw-primary-btn"
                   onClick={() => void apply()}
                   disabled={busy}
@@ -384,8 +405,8 @@ export function TaskTimingDialog({
                         )
                         .map(([m, label]) => (
                           <button
-                            key={m}
                             type="button"
+                            key={m}
                             aria-pressed={mode === m}
                             disabled={busy}
                             onClick={() => setMode(m)}
@@ -425,6 +446,7 @@ export function TaskTimingDialog({
                       <div className={styles.actions}>
                         {[false, true].map((next) => (
                           <button
+                            type="button"
                             className="paw-secondary-btn"
                             key={String(next)}
                             onClick={() => {
@@ -446,7 +468,10 @@ export function TaskTimingDialog({
                           type="date"
                           value={date}
                           min={shanghaiDateKey()}
-                          onChange={(e) => setDate(e.target.value)}
+                          onChange={(e) => {
+                            setDate(e.target.value);
+                            if (!taskId) setSelected([]);
+                          }}
                         />
                       </label>
                       {mode === "defer" ? (
@@ -488,7 +513,7 @@ export function TaskTimingDialog({
                             min={5}
                             max={480}
                             value={minutes}
-                            onChange={(e) => setMinutes(Number(e.target.value))}
+                            onChange={(e) => setMinutes(e.target.value)}
                           />
                         </label>
                       ) : null}
@@ -539,7 +564,7 @@ export function TaskTimingDialog({
                           min={5}
                           max={120}
                           value={extension}
-                          onChange={(e) => setExtension(Number(e.target.value))}
+                          onChange={(e) => setExtension(e.target.value)}
                         />
                       </label>
                       <label>
@@ -578,8 +603,13 @@ export function TaskTimingDialog({
                   </p>
                 ) : null}
                 <button
+                  type="button"
                   className="paw-primary-btn"
-                  disabled={busy || (!taskId && !selected.length)}
+                  disabled={
+                    busy ||
+                    (!taskId &&
+                      !selectedTimingTaskIds(data.tasks, date, selected).length)
+                  }
                   onClick={() => void propose()}
                 >
                   {busy ? "正在预览…" : "预览安排"}
@@ -612,24 +642,31 @@ export function TaskTimingButton({
         <CalendarClock size={14} />
         {label}
       </button>
-      <TaskTimingDialog
-        taskId={taskId}
-        open={open}
-        onClose={() => setOpen(false)}
-      />
+      {open ? (
+        <TaskTimingDialog
+          taskId={taskId}
+          open={open}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
     </>
   );
 }
 export function TodayTaskTimeline({
   fixedItems,
+  initialData,
 }: {
   fixedItems: TimelineItemView[];
+  initialData?: TimingData;
 }) {
-  const [data, setData] = useState<TimingData | null>(null);
+  const [data, setData] = useState<TimingData | null>(initialData ?? null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | undefined>();
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    if (initialData) setData(initialData);
+  }, [initialData]);
   useEffect(() => {
     let active = true;
     const refresh = () =>
@@ -641,19 +678,17 @@ export function TodayTaskTimeline({
           }
         })
         .catch((e) => active && setError(e.message));
-    void refresh();
+    if (!initialData) void refresh();
     setNow(new Date());
     const timer = setInterval(() => setNow(new Date()), 30000);
     const handler = () => void refresh();
     window.addEventListener(changedEvent, handler);
-    window.addEventListener("focus", handler);
     return () => {
       active = false;
       clearInterval(timer);
       window.removeEventListener(changedEvent, handler);
-      window.removeEventListener("focus", handler);
     };
-  }, []);
+  }, [initialData]);
   const scheduled =
     data?.tasks.filter(
       (t) =>
@@ -710,7 +745,11 @@ export function TodayTaskTimeline({
   return (
     <>
       <div className={styles.timelineTools}>
-        <button className="paw-secondary-btn" onClick={() => activate()}>
+        <button
+          type="button"
+          className="paw-secondary-btn"
+          onClick={() => activate()}
+        >
           <CalendarClock size={15} />
           安排任务时段
         </button>
@@ -722,6 +761,7 @@ export function TodayTaskTimeline({
       ) : null}
       {current ? (
         <button
+          type="button"
           className={styles.focusCard}
           onClick={() => activate(current.id)}
         >
@@ -734,7 +774,11 @@ export function TodayTaskTimeline({
         </button>
       ) : null}
       {due ? (
-        <button className={styles.dueCard} onClick={() => activate(due.id)}>
+        <button
+          type="button"
+          className={styles.dueCard}
+          onClick={() => activate(due.id)}
+        >
           {due.title} 的时段已结束 · 记录进展
         </button>
       ) : null}
@@ -752,11 +796,13 @@ export function TodayTaskTimeline({
           .filter((t) => t.status === "done")
           .map((t) => t.id)}
       />
-      <TaskTimingDialog
-        taskId={selected}
-        open={open}
-        onClose={() => setOpen(false)}
-      />
+      {open ? (
+        <TaskTimingDialog
+          taskId={selected}
+          open={open}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
     </>
   );
 }

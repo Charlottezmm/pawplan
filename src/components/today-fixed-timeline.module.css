@@ -191,7 +191,32 @@
   font-size: 14px;
 }
 
-.task { border-color: color-mix(in srgb, #23836c 35%, var(--app-line)); border-left-color: #23836c; background: color-mix(in srgb, var(--app-surface) 87%, #73c9ac); }
+.task { border-color: color-mix(in srgb, var(--app-positive) 35%, var(--app-line)); border-left-color: var(--app-positive); background: color-mix(in srgb, var(--app-surface) 87%, var(--app-positive-soft)); }
 .done { opacity: .6; }
-.now { position: absolute; left: 0; right: 0; border-top: 2px solid #bd5b37; pointer-events: none; z-index: 2; }
-.now span { position: absolute; top: -10px; right: 0; background: #bd5b37; color: white; font-size: 10px; border-radius: 4px; padding: 1px 4px; }
+.now { position: absolute; left: 0; right: 0; border-top: 2px solid var(--app-danger); pointer-events: none; z-index: 2; }
+.now span { position: absolute; top: -10px; right: 0; background: var(--app-danger); color: var(--app-surface); font-size: 10px; border-radius: 4px; padding: 1px 4px; }
+
+.block strong > svg {
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+.mobileHint { display: none; }
+@media (max-width: 760px) {
+  .viewport {
+    max-height: min(420px, 60dvh);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    margin-top: 10px;
+    padding-top: 6px;
+    padding-bottom: 8px;
+    scrollbar-gutter: stable;
+  }
+  .canvas { margin-top: 0; }
+  .mobileHint {
+    display: block;
+    margin: 6px 0 0;
+    color: var(--app-ink-muted);
+    font-size: 11px;
+  }
+}
