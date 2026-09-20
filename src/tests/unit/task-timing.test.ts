@@ -58,15 +58,15 @@ describe("task timing planning", () => {
     ]);
     expect(rows[0].scheduledStart).toBeNull();
   });
-  it("preserves morning preference and explicitly reports no fit", () => {
+  it("falls back outside the preferred segment when the selected window fits", () => {
     const result = buildTimingChanges(
       arrange(["a"]),
       [task("a", { estimatedMinutes: 300 })],
       [],
       now,
     );
-    expect(result.changes).toEqual([]);
-    expect(result.warnings[0]).toContain("没有可用时段");
+    expect(result.changes).toHaveLength(1);
+    expect(result.warnings[0]).toContain("原时段偏好");
   });
   it("reserves unslotted work before backlog suggestions", () => {
     const request = { ...arrange(["b"]), endTime: "09:00" };
@@ -236,4 +236,10 @@ describe("task timing planning", () => {
     );
     expect(r.changes[0].after.scheduledStart).toBe(localInstant(date, 615));
   });
+});
+
+it("places unfinished morning work in an explicitly selected evening window", () => {
+ const result = buildTimingChanges({...arrange(["a"]), startTime:"18:30",endTime:"21:30"}, [task("a")], [], new Date("2026-09-21T18:20:00+08:00"));
+ expect(result.changes[0].after.scheduledStart).toBe(localInstant(date,1110));
+ expect(result.changes[0].after.daySegment).toBe("evening");
 });

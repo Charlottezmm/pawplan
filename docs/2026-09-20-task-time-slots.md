@@ -5,7 +5,7 @@ Tasks can now have a persisted start/end time, a protected slot, a formal deadli
 ## User flow
 
 - Open a task's **安排／收尾** action, or click its timeline block. Set a date, start time and this session's duration. The task's original whole-task estimate remains unchanged.
-- **安排任务时段** proposes slots for the selected day's tasks, preserving their morning/afternoon/evening preferences. A manual start time overrides the coarse preference explicitly.
+- **安排任务时段** proposes slots for the selected day's tasks, trying morning/afternoon/evening preferences first, then falling back within the explicitly selected clock window with a preview warning. A manual start time overrides the coarse preference explicitly.
 - **继续一段** extends the selected slot and previews any affected later movable slots, preserving order. Fixed/protected blocks and formal deadlines are hard constraints. If a later task cannot fit, the proposal fails without changing anything; first choose a later date for that task.
 - **先收尾** records progress/remaining work and clears the slot while retaining `todo`. **后续再做** records the checkpoint and proposes a new slot. Only **完成任务** sets `done`.
 - Backlog's **找一个时间段** searches the explicit range. This week begins today; next week is Monday–Sunday in Asia/Shanghai. It reserves existing planned work, recurring fixed blocks and configured segment capacity first. No fit leaves the task in Backlog with an explanation.
@@ -54,3 +54,5 @@ Production migration and deployment require explicit authorization. Before relea
 Today uses the same pending-first ordering at load and refresh. In-flight status edits survive older server snapshots while fresh timing details remain visible. Batch date changes clear selection and submission rechecks that IDs belong to the visible date. Duration inputs reject blank, fractional and out-of-range values before sending a preview. LAN HTTP can generate idempotency keys without `randomUUID`. Dialogs mount only when opened; completed task slots have task-specific read-only details.
 
 Validation: 94 Vitest files / 564 tests passed with isolated database integration enabled; 24 Playwright cases passed across desktop Chromium and mobile WebKit, including rejected-preview and approved-Apply retry failures. Production build and diff checks passed. No production migration is required for these UI fixes.
+
+The Today axis expands short occupied intervals to readable blocks, with all ticks and the current-time marker mapped consistently. The scrollable axis opens near the current time on both desktop and mobile. MCP clients with an older cached tool catalog must refresh/reconnect to discover the task-timing tools; `get_agent_guidance.taskTiming` describes their workflow and permission requirements.

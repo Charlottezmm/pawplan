@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Check, Clock3, LockKeyhole } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
+import { timelineDisplayScale } from "@/lib/planning/timeline-display-scale";
 import { layoutTimetableIntervals, minuteLabel } from "@/lib/planning/timetable-layout";
 import type { TimelineItemView } from "@/lib/planning/view-data";
 import { redactPrivateTitle } from "@/lib/display/privacy";
@@ -47,14 +48,12 @@ export function TodayFixedTimeline({ items, includesTasks = false, onTaskSelect,
       startMinute: Math.min(8 * 60, Math.floor(earliest / 60) * 60),
       endMinute: Math.max(22 * 60, Math.ceil(latest / 60) * 60),
     };
-    return { axis, items: layoutTimetableIntervals(intervals, axis) };
+    return { axis, items: layoutTimetableIntervals(intervals, axis), position: timelineDisplayScale(axis.startMinute, axis.endMinute, intervals) };
   }, [items]);
-  const height = layout.axis.endMinute - layout.axis.startMinute;
+  const height = layout.position(layout.axis.endMinute);
   useEffect(() => {
     if (positioned.current || !now || !viewportRef.current) return;
-    if (window.matchMedia("(max-width: 760px)").matches) {
-      viewportRef.current.scrollTop = Math.max(0, shanghaiMinute(now.toISOString()) - layout.axis.startMinute - 80);
-    }
+    viewportRef.current.scrollTop = Math.max(0, layout.position(shanghaiMinute(now.toISOString())) - 80);
     positioned.current = true;
   }, [now, layout.axis.startMinute]);
   const ticks: number[] = [];
@@ -70,22 +69,22 @@ export function TodayFixedTimeline({ items, includesTasks = false, onTaskSelect,
         {headerAction ?? <span><LockKeyhole size={13} /> 只读</span>}
       </header>
       <p className={styles.hint}>{includesTasks ? "点击任务查看时间、记录进展或安排后续。" : "只显示确有起止时间的课程、会议和个人安排。"}</p>
-      <p className={styles.mobileHint}>上下滑动查看全天安排</p>
+      <p className={styles.mobileHint}>上下滚动查看全天 · 短任务已放大显示</p>
       <div ref={viewportRef} className={styles.viewport} role="region" aria-label="全天时间轴" tabIndex={0}>
       <div className={styles.canvas} style={{ "--timeline-height": `${height}px` } as TimelineStyle}>
         <div className={styles.axis} aria-hidden="true">
-          {ticks.map((minute) => <span key={minute} style={{ top: `${minute - layout.axis.startMinute}px` }}>{minuteLabel(minute)}</span>)}
+          {ticks.map((minute) => <span key={minute} style={{ top: `${layout.position(minute)}px` }}>{minuteLabel(minute)}</span>)}
         </div>
         <div className={styles.grid}>
-          {ticks.map((minute) => <span key={minute} style={{ top: `${minute - layout.axis.startMinute}px` }} aria-hidden="true" />)}
+          {ticks.map((minute) => <span key={minute} style={{ top: `${layout.position(minute)}px` }} aria-hidden="true" />)}
           {layout.items.map((item) => (
             <button
               key={item.id}
               type="button"
               className={`${styles.block} ${item.height < 60 ? styles.compact : ""} ${item.conflict ? styles.conflict : ""} ${item.kind === "task" ? styles.task : ""} ${completedTaskIds.includes(item.id) ? styles.done : ""}`}
               style={{
-                "--block-top": `${item.top}px`,
-                "--block-height": `${item.height}px`,
+                "--block-top": `${layout.position(item.startMinute)}px`,
+                "--block-height": `${layout.position(item.endMinute)-layout.position(item.startMinute)}px`,
                 "--lane-left": `${(item.lane / item.laneCount) * 100}%`,
                 "--lane-width": `${100 / item.laneCount}%`,
               } as TimelineStyle}
@@ -97,7 +96,7 @@ export function TodayFixedTimeline({ items, includesTasks = false, onTaskSelect,
               {item.conflict ? <AlertTriangle size={13} aria-hidden="true" /> : null}
             </button>
           ))}
-          {now && shanghaiMinute(now.toISOString()) >= layout.axis.startMinute && shanghaiMinute(now.toISOString()) <= layout.axis.endMinute ? <div className={styles.now} style={{ top: `${shanghaiMinute(now.toISOString()) - layout.axis.startMinute}px` }} aria-label="当前时间"><span>现在</span></div> : null}
+          {now && shanghaiMinute(now.toISOString()) >= layout.axis.startMinute && shanghaiMinute(now.toISOString()) <= layout.axis.endMinute ? <div className={styles.now} style={{ top: `${layout.position(shanghaiMinute(now.toISOString()))}px` }} aria-label="当前时间"><span>现在</span></div> : null}
           {layout.items.length === 0 ? <p className={styles.empty}>今天没有固定安排，空白时间不会自动填入任务。</p> : null}
         </div>
       </div>

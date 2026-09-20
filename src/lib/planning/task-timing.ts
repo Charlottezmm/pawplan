@@ -434,7 +434,7 @@ export function buildTimingChanges(
         Math.max(a, clockMinute(request.startTime)),
         Math.min(b, clockMinute(request.endTime)),
         request.gapMinutes,
-      );
+      ) ?? fit(t, t.date, t.estimatedMinutes, clockMinute(request.startTime), clockMinute(request.endTime), request.gapMinutes);
       if (slot === null) fullDays.add(t.date);
       else {
         setSlot(t, slot, t.estimatedMinutes);
@@ -457,16 +457,21 @@ export function buildTimingChanges(
         let a = clockMinute(request.startTime);
         let b = clockMinute(request.endTime);
         if (request.action === "arrange" && !wasBacklog) {
-          const boundsForTask = bounds[task.daySegment];
-          a = Math.max(a, boundsForTask[0]);
-          b = Math.min(b, boundsForTask[1]);
+          const preferred = bounds[task.daySegment];
+          chosen = fit(task, date, duration, Math.max(a, preferred[0]), Math.min(b, preferred[1]), request.gapMinutes);
         }
-        chosen = fit(task, date, duration, a, b, request.gapMinutes);
+        // Day segments are preferences; the user-selected clock window is authoritative.
+        if (chosen === null) chosen = fit(task, date, duration, a, b, request.gapMinutes);
         if (chosen !== null) break;
       }
       if (chosen === null) {
         warnings.push(`${task.title}：所选日期内没有可用时段，保持原安排。`);
         continue;
+      }
+      const preferred = bounds[task.daySegment];
+      const chosenMinute = clockMinute(localClock(new Date(chosen).toISOString()));
+      if (request.action === "arrange" && !wasBacklog && (chosenMinute < preferred[0] || chosenMinute + duration > preferred[1])) {
+        warnings.push(`${task.title}：原时段偏好无法容纳，已在所选时间范围内安排，请确认。`);
       }
       setSlot(task, chosen, duration);
       if (request.action === "defer") task.checkpoint = request.checkpoint;

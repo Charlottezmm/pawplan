@@ -516,9 +516,8 @@ a {
   position: sticky;
   top: 88px;
   min-width: 0;
-  max-height: calc(100dvh - 110px);
-  overflow-y: auto;
-  scrollbar-width: thin;
+  max-height: none;
+  overflow: visible;
 }
 
 .paw-today-hero {

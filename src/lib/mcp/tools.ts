@@ -679,6 +679,13 @@ export { isPawPlanWriteTool, pawPlanWriteToolNames };
 export const pawPlanToolNames = Object.keys(pawPlanToolSchemas) as PawPlanToolName[];
 
 export const pawPlanAgentGuidance = {
+  taskTiming: {
+    read: "get_task_timing",
+    propose: "propose_task_timing",
+    apply: "apply_task_timing",
+    workflow: "Exact task times use get_task_timing -> propose_task_timing -> user approval -> apply_task_timing -> persisted readback. arrange treats morning/afternoon/evening as preferences, with fallback inside the requested clock window. Fixed/protected slots and formal deadlines remain hard constraints.",
+    discovery: "These tools are served by /api/mcp. If this connection does not list them, refresh/reconnect the MCP connection and its tool catalog; do not claim exact scheduling is unsupported or applied through a date-only tool. apply_task_timing requires write permission.",
+  },
   purpose: "Use PawPlan MCP as a review-first planning interface. PawPlan owns validation, persistence, Review, audit, and readback.",
   planningPrompt: `Use this workflow only when the user explicitly asks to review or rebalance their PawPlan schedule. Do not run a recurring daily cleanup or create a Review merely because tasks are overdue.
 
@@ -730,7 +737,7 @@ export const pawPlanServerInstructions =
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_task_timing: "Read persisted task time windows, protection, deadlines, desired dates and checkpoints, plus fixed arrangements in Asia/Shanghai. No mutation.",
-  propose_task_timing: "Preview exact task slots, extensions, deferred remaining work, completion or backlog placement. Creates one Review, does not change tasks. Use only after user requests planning. schedule.edits are explicit times; arrange preserves day segments. Date range is explicit and at most 31 days. Locked tasks must be explicitly unlocked before moving. Wait for the user to approve the exact preview.",
+  propose_task_timing: "Preview exact task slots, extensions, deferred remaining work, completion or backlog placement. Creates one Review, does not change tasks. Use only after user requests planning. schedule.edits are explicit times; arrange tries day-segment preferences first, then uses the explicitly selected clock window and warns about preference changes. Date range is explicit and at most 31 days. Locked tasks must be explicitly unlocked before moving. Wait for the user to approve the exact preview.",
   apply_task_timing: "Apply a user-approved task timing Review atomically and read back exact IDs. Cannot approve. Retry with the same approval_id; stale previews require regeneration and approval.",
   get_agent_guidance: "Read PawPlan on-demand planning guidance and Review-first safety rules.",
   get_mcp_usage: "Read the current workspace Hosted MCP daily write quota and Shanghai-midnight reset time.",
