@@ -1,15 +1,13 @@
 "use client";
 
 import { AlertTriangle, Check, Clock3, LockKeyhole } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
-import { timelineDisplayScale } from "@/lib/planning/timeline-display-scale";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { layoutTimetableIntervals, minuteLabel } from "@/lib/planning/timetable-layout";
 import type { TimelineItemView } from "@/lib/planning/view-data";
 import { redactPrivateTitle } from "@/lib/display/privacy";
 import { DialogSheet } from "./ui/dialog-sheet";
 import styles from "./today-fixed-timeline.module.css";
 
-type TimelineStyle = CSSProperties & Record<`--${string}`, string | number>;
 
 const kindLabels: Record<TimelineItemView["kind"], string> = {
   task: "任务",
@@ -48,16 +46,14 @@ export function TodayFixedTimeline({ items, includesTasks = false, onTaskSelect,
       startMinute: Math.min(8 * 60, Math.floor(earliest / 60) * 60),
       endMinute: Math.max(22 * 60, Math.ceil(latest / 60) * 60),
     };
-    return { axis, items: layoutTimetableIntervals(intervals, axis), position: timelineDisplayScale(axis.startMinute, axis.endMinute, intervals) };
+    return { axis, items: layoutTimetableIntervals(intervals, axis) };
   }, [items]);
-  const height = layout.position(layout.axis.endMinute);
   useEffect(() => {
     if (positioned.current || !now || !viewportRef.current) return;
-    viewportRef.current.scrollTop = Math.max(0, layout.position(shanghaiMinute(now.toISOString())) - 80);
+    const active = viewportRef.current.querySelector<HTMLElement>("[data-current=true]");
+    if (active) viewportRef.current.scrollTop = Math.max(0, active.offsetTop - viewportRef.current.offsetTop - 12);
     positioned.current = true;
   }, [now, layout.axis.startMinute]);
-  const ticks: number[] = [];
-  for (let minute = layout.axis.startMinute; minute <= layout.axis.endMinute; minute += 60) ticks.push(minute);
 
   return (
     <section className={styles.timeline} aria-labelledby="today-fixed-heading">
@@ -68,38 +64,29 @@ export function TodayFixedTimeline({ items, includesTasks = false, onTaskSelect,
         </div>
         {headerAction ?? <span><LockKeyhole size={13} /> 只读</span>}
       </header>
-      <p className={styles.hint}>{includesTasks ? "点击任务查看时间、记录进展或安排后续。" : "只显示确有起止时间的课程、会议和个人安排。"}</p>
-      <p className={styles.mobileHint}>上下滚动查看全天 · 短任务已放大显示</p>
+      <p className={styles.hint}>{items.length} 项安排<span>{now ? `现在 ${minuteLabel(shanghaiMinute(now.toISOString()))}` : "按时间顺序"}</span></p>
       <div ref={viewportRef} className={styles.viewport} role="region" aria-label="全天时间轴" tabIndex={0}>
-      <div className={styles.canvas} style={{ "--timeline-height": `${height}px` } as TimelineStyle}>
-        <div className={styles.axis} aria-hidden="true">
-          {ticks.map((minute) => <span key={minute} style={{ top: `${layout.position(minute)}px` }}>{minuteLabel(minute)}</span>)}
-        </div>
-        <div className={styles.grid}>
-          {ticks.map((minute) => <span key={minute} style={{ top: `${layout.position(minute)}px` }} aria-hidden="true" />)}
-          {layout.items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`${styles.block} ${item.height < 60 ? styles.compact : ""} ${item.conflict ? styles.conflict : ""} ${item.kind === "task" ? styles.task : ""} ${completedTaskIds.includes(item.id) ? styles.done : ""}`}
-              style={{
-                "--block-top": `${layout.position(item.startMinute)}px`,
-                "--block-height": `${layout.position(item.endMinute)-layout.position(item.startMinute)}px`,
-                "--lane-left": `${(item.lane / item.laneCount) * 100}%`,
-                "--lane-width": `${100 / item.laneCount}%`,
-              } as TimelineStyle}
-              onClick={() => item.kind === "task" && onTaskSelect && !completedTaskIds.includes(item.id) ? onTaskSelect(item.id) : setSelected(item)}
-              aria-label={`${redactPrivateTitle(item.title)}，${minuteLabel(item.startMinute)} 至 ${minuteLabel(item.endMinute)}${item.conflict ? "，存在冲突" : ""}`}
-            >
-              <strong>{completedTaskIds.includes(item.id) ? <Check size={13} aria-hidden="true" /> : item.kind === "task" && item.protected ? <LockKeyhole size={13} aria-hidden="true" /> : null}{redactPrivateTitle(item.title)}</strong>
-              <span>{minuteLabel(item.startMinute)}{(item.height >= 60 || item.kind === "task") ? `–${minuteLabel(item.endMinute)}` : ""}</span>
-              {item.conflict ? <AlertTriangle size={13} aria-hidden="true" /> : null}
-            </button>
-          ))}
-          {now && shanghaiMinute(now.toISOString()) >= layout.axis.startMinute && shanghaiMinute(now.toISOString()) <= layout.axis.endMinute ? <div className={styles.now} style={{ top: `${layout.position(shanghaiMinute(now.toISOString()))}px` }} aria-label="当前时间"><span>现在</span></div> : null}
-          {layout.items.length === 0 ? <p className={styles.empty}>今天没有固定安排，空白时间不会自动填入任务。</p> : null}
-        </div>
-      </div>
+        <ol className={styles.agenda}>
+          {layout.items.map((item) => {
+            const done = completedTaskIds.includes(item.id);
+            const active = Boolean(now && !done && Date.parse(item.startsAt) <= now.getTime() && Date.parse(item.endsAt) > now.getTime());
+            const past = Boolean(now && Date.parse(item.endsAt) <= now.getTime());
+            const needsCloseout = past && item.kind === "task" && !done;
+            return <li key={item.id} data-current={active} className={`${styles.row} ${active ? styles.active : ""} ${done ? styles.done : ""} ${past && !needsCloseout ? styles.past : ""}`}>
+              <div className={styles.time}><strong>{minuteLabel(item.startMinute)}</strong><span>{minuteLabel(item.endMinute)}</span></div>
+              <div className={styles.rail}><span /></div>
+              <button type="button" className={`${styles.card} ${item.conflict ? styles.conflict : ""}`}
+                onClick={() => item.kind === "task" && onTaskSelect && !done ? onTaskSelect(item.id) : setSelected(item)}
+                aria-label={`${redactPrivateTitle(item.title)}，${minuteLabel(item.startMinute)} 至 ${minuteLabel(item.endMinute)}${item.conflict ? "，存在冲突" : ""}`}>
+                <span className={styles.meta}><span className={styles.tag}>{done ? <Check size={12} /> : item.protected ? <LockKeyhole size={12} /> : <Clock3 size={12} />}{active ? "进行中" : done ? "已完成" : needsCloseout ? "待收尾" : kindLabels[item.kind]}</span><span>{item.minutes} 分钟</span></span>
+                <strong className={styles.title}>{redactPrivateTitle(item.title)}</strong>
+                {active && item.kind === "task" ? <span className={styles.action}>查看进展／收尾 <span aria-hidden="true">→</span></span> : null}
+                {item.conflict ? <span className={styles.warning}><AlertTriangle size={12} /> 与其他安排重叠</span> : null}
+              </button>
+            </li>;
+          })}
+        </ol>
+        {items.length === 0 ? <p className={styles.empty}>还没有具体时段。安排后会显示在这里。</p> : <p className={styles.end}>今日安排到这里</p>}
       </div>
       <DialogSheet
         open={Boolean(selected)}

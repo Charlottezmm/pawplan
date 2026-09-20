@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildExactFixedTimelineItems } from "@/lib/planning/view-data";
 
@@ -49,14 +48,4 @@ describe("Today exact fixed timeline", () => {
     expect(items.map((item) => item.minutes)).toEqual([120, 60]);
   });
 
-  it("keeps hit areas within mapped event blocks", () => {
-    const css = readFileSync("src/components/today-fixed-timeline.module.css", "utf8");
-    const blockRule = css.match(/\.block \{[\s\S]*?\}/)?.[0] ?? "";
-    const hitRule = css.match(/\.block::after \{[\s\S]*?\}/)?.[0] ?? "";
-
-    expect(blockRule).toContain("height: var(--block-height);");
-    expect(blockRule).not.toContain("min-height: 44px;");
-    expect(hitRule).toBe("");
-    expect(hitRule).not.toContain("background:");
-  });
 });

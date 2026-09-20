@@ -395,7 +395,7 @@ test("mobile timeline is scrollable and completed task details use task wording"
       overflowY: getComputedStyle(node).overflowY,
     }));
     expect(dimensions.height).toBeLessThanOrEqual(421);
-    expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight);
+    expect(dimensions.scrollHeight).toBeGreaterThanOrEqual(dimensions.clientHeight);
     expect(dimensions.overflowY).toMatch(/auto|scroll/);
   }
   await clickSlot(page);

@@ -722,22 +722,6 @@ export function TodayTaskTimeline({
         ...taskItems,
       ]
     : fixedItems;
-  const pending = scheduled
-    .filter((t) => t.status === "todo")
-    .sort((a, b) => a.scheduledStart!.localeCompare(b.scheduledStart!));
-  const current = now
-    ? pending.find(
-        (t) =>
-          Date.parse(t.scheduledStart!) <= now.getTime() &&
-          Date.parse(t.scheduledEnd!) > now.getTime(),
-      )
-    : undefined;
-  const due = now
-    ? pending.find((t) => Date.parse(t.scheduledEnd!) <= now.getTime())
-    : undefined;
-  const next = now
-    ? pending.find((t) => Date.parse(t.scheduledStart!) > now.getTime())
-    : undefined;
   const activate = (id?: string) => {
     setSelected(id);
     setOpen(true);
@@ -747,34 +731,6 @@ export function TodayTaskTimeline({
       {error ? (
         <p role="alert" className={styles.error}>
           {error}
-        </p>
-      ) : null}
-      {current ? (
-        <button
-          type="button"
-          className={styles.focusCard}
-          onClick={() => activate(current.id)}
-        >
-          <small>
-            现在 · {localClock(current.scheduledStart!)}–
-            {localClock(current.scheduledEnd!)}
-          </small>
-          <strong>{current.title}</strong>
-          <span>查看／收尾 →</span>
-        </button>
-      ) : null}
-      {due ? (
-        <button
-          type="button"
-          className={styles.dueCard}
-          onClick={() => activate(due.id)}
-        >
-          {due.title} 的时段已结束 · 记录进展
-        </button>
-      ) : null}
-      {next ? (
-        <p className={styles.next}>
-          下一项 {localClock(next.scheduledStart!)} · {next.title}
         </p>
       ) : null}
       <TodayFixedTimeline
