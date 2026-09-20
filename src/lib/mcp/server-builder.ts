@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { TimelineError } from "@/lib/planning/daily-timeline";
 import { getDb } from "@/lib/db/client";
 import {
   allowedPawPlanToolNames,
@@ -82,6 +83,7 @@ export function createPawPlanMcpServer(input: { workspaceId: string; permission:
         } catch (error) {
           if (error instanceof McpTaskBatchError) return jsonToolError(error, args);
           if (
+            error instanceof TimelineError ||
             error instanceof McpTaskArchiveError ||
             error instanceof ReplacePlanWindowError ||
             error instanceof TimeBlockSeriesError ||

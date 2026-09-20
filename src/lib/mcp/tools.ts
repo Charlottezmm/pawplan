@@ -1,5 +1,7 @@
 import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
+import { buildDailyTimeline, validateLearningHandoff, type TimelineSource, type TimelineTask } from "@/lib/planning/daily-timeline";
+import { dailyTimelineArgsSchema, validateLearningHandoffArgsSchema } from "@/lib/planning/timeline-schema";
 import { checkins, courses, routines, tasks } from "@/lib/db/schema";
 import { loadEffectiveTimeBlocks } from "@/lib/planning/effective-time-blocks";
 import {
@@ -399,6 +401,8 @@ const monthlySummarySchema = z
   .strict();
 
 export const pawPlanToolSchemas = {
+  get_daily_timeline: dailyTimelineArgsSchema,
+  validate_learning_handoff: validateLearningHandoffArgsSchema,
   get_agent_guidance: emptyArgsSchema,
   get_mcp_usage: emptyArgsSchema,
   get_today: emptyArgsSchema,
@@ -674,6 +678,7 @@ export { isPawPlanWriteTool, pawPlanWriteToolNames };
 export const pawPlanToolNames = Object.keys(pawPlanToolSchemas) as PawPlanToolName[];
 
 export const pawPlanAgentGuidance = {
+  timelineWorkflow: "Use get_daily_timeline for a read-only preview from live tasks and effective fixed blocks. Supply actual Shanghai day bounds, now, protected meal/commute/rest/buffer windows, explicit selected backlog slots, scope and stopping conditions. Preserve every unallocated scope item. Confirm exam/assignment/mentor preparation deadlines through task_options; never infer them from a task date. On started/stuck/partial/completed/paused/timeout feedback, carry cumulative session feedback with stable ids, actual times, task versions, remaining estimates and checkpoints. The same session id is a retry only; replace its open started entry with its final report before the next call. Refresh changed snapshots and reconcile rather than blindly retrying stale data. No automatic rollover, completion, mastery or notifications. Validate portable learning handoffs against the original source and live task; store evidence in the existing academic outline, only links/summary in PawPlan. Schedule/status/notes persistence still uses the existing authorized Review, user approval, Apply and readback workflow.",
   purpose: "Use PawPlan MCP as a review-first planning interface. PawPlan owns validation, persistence, Review, audit, and readback.",
   planningPrompt: `Use this workflow only when the user explicitly asks to review or rebalance their PawPlan schedule. Do not run a recurring daily cleanup or create a Review merely because tasks are overdue.
 
@@ -724,6 +729,8 @@ export const pawPlanServerInstructions =
   "PawPlan is review-first. Rebalance tools create a Review draft only and must be used only after an explicit user request or concrete user-provided event, never as recurring daily cleanup. AI Project Portfolio changes must use propose_project_portfolio_update to create a pending approval, then wait for the user to approve the exact Preview in PawPlan Review before apply_project_portfolio_update with approval_id. Multiple task-notes edits must use propose_task_notes_batch, wait for the single exact Review approval, then use apply_task_notes_batch; approval alone is authorization, not proof of persistence. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
+  get_daily_timeline: "Build a read-only daily timeline from live PawPlan tasks and effective fixed blocks, with protected life windows, bounded backlog slots and actual-time feedback. Returns unallocated scope and conflicts, never writes or schedules reminders. date is Shanghai local day; now is an explicit actual or simulation timestamp. Supply confirmed deadline reasons and original source scope; do not infer deadlines from task dates.",
+  validate_learning_handoff: "Validate a portable learning handoff against the current active-plan task version. Links point to the original learning evidence; no second progress store, no source-file fetching, no mastery inference. Receiving assistant must read canonical source and optionally provide its observed revision.",
   get_agent_guidance: "Read PawPlan on-demand planning guidance and Review-first safety rules.",
   get_mcp_usage: "Read the current workspace Hosted MCP daily write quota and Shanghai-midnight reset time.",
   get_today: "Read today's PawPlan planning context for the configured workspace.",
@@ -1121,6 +1128,38 @@ export async function runPawPlanTool(
   if (toolName === "get_today") {
     pawPlanToolSchemas.get_today.parse(args);
     return readToday(db, workspaceId);
+  }
+  if (toolName === "get_daily_timeline") {
+    const parsed = dailyTimelineArgsSchema.parse(args);
+    const start = parseDateBoundary(parsed.date);
+    const end = addDays(start, 1);
+    const [taskContext, constraints] = await Promise.all([
+      readTasks(db, workspaceId, { archive_state: "active" }),
+      readConstraints(db, workspaceId, { date_from: parsed.date, date_to: toDateKey(end) }),
+    ]);
+    const source: TimelineSource = {
+      tasks: taskContext.tasks as TimelineTask[],
+      blocks: constraints.timeBlocks.map((b) => ({ id: String(b.id), title: String(b.title), kind: String(b.kind), startsAt: String(b.startsAt), endsAt: String(b.endsAt) })),
+      warnings: [],
+    };
+    const weekday = String(new Date(start.getTime() + 12 * 3600000).getUTCDay());
+    const name = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][Number(weekday)];
+    for (const routine of constraints.routines) {
+      const pattern = String(routine.weekdayPattern ?? "daily").trim().toLowerCase();
+      if (pattern && !["daily", "*"].includes(pattern) && !pattern.split(/[\s,，/|]+/).some(p => p === weekday || p === name || (weekday === "0" && p === "7"))) continue;
+      if (routine.defaultStartTime && routine.defaultEndTime) {
+        const startsAt = new Date(`${parsed.date}T${routine.defaultStartTime}+08:00`);
+        let endsAt = new Date(`${parsed.date}T${routine.defaultEndTime}+08:00`);
+        if (endsAt <= startsAt) endsAt = addDays(endsAt, 1);
+        source.blocks.push({ id: String(routine.id), title: String(routine.title), kind: "protected_routine", startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() });
+      } else source.warnings!.push(`untimed_routine: ${routine.title} (${routine.estimatedMinutes}m); assign a protected window before accepting the timeline`);
+    }
+    return buildDailyTimeline(source, parsed);
+  }
+  if (toolName === "validate_learning_handoff") {
+    const parsed = validateLearningHandoffArgsSchema.parse(args);
+    const context = await readTasks(db, workspaceId, { archive_state: "active" });
+    return validateLearningHandoff({ tasks: context.tasks as TimelineTask[], blocks: [] }, parsed);
   }
   if (toolName === "get_week") {
     pawPlanToolSchemas.get_week.parse(args);

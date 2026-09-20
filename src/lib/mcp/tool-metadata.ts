@@ -18,6 +18,8 @@ export class McpPermissionError extends Error {
 }
 
 export const pawPlanToolPermissions = {
+  get_daily_timeline: "read",
+  validate_learning_handoff: "read",
   get_agent_guidance: "read",
   get_mcp_usage: "read",
   get_today: "read",

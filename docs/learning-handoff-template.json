@@ -1,0 +1,21 @@
+{
+  "handoff": {
+    "schema_version": 1,
+    "task_id": "replace-with-live-task-id",
+    "expected_updated_at": "2026-09-20T00:00:00.000Z",
+    "source_ref": "courses/2026-fall/COURSE/README.md",
+    "source_revision": "replace-with-hash-of-the-canonical-record",
+    "branch": "Quiz preparation OR classroom catchup: choose one existing branch",
+    "material_refs": ["courses/2026-fall/COURSE/_private/materials/original.pdf"],
+    "outline_ref": "courses/2026-fall/COURSE/learning-records/existing-outline.md",
+    "position": "Exact page, exercise, current outline step",
+    "independent_attempt_refs": ["courses/2026-fall/COURSE/_private/first-answer.md#attempt"],
+    "prompt_dependency": "State what was independently answered and which hint was required; unknown stays unknown",
+    "open_error_refs": ["courses/2026-fall/COURSE/learning-records/existing-outline.md#open-errors"],
+    "uncovered_scope": ["Every unfinished part or a link to the complete coverage map"],
+    "actual_minutes": 0,
+    "next_step": "Exactly one learner-owned action, with source and passing condition",
+    "stop_condition": "Actual end time and scope boundary; elapsed time does not prove completion",
+    "recorded_at": "2026-09-20T00:00:00.000Z"
+  }
+}

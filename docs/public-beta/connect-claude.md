@@ -54,3 +54,21 @@ Open PawPlan `/review` to approve or reject each operation.
 ## Revoke Access
 
 If Claude access should stop, open PawPlan `/settings` and revoke the Claude authorization. After revocation, Claude should no longer be able to call the hosted MCP endpoint for that workspace.
+
+## Daily Timeline And Learning Handoff
+
+After a deployment containing the timeline tools, Claude and Codex use the same
+`get_daily_timeline` and `validate_learning_handoff` read-only tools. No OAuth
+permission expansion is needed. Reconnect/refresh the connector tool list if it
+still shows an older deployment.
+
+Follow [the shared workflow](../2026-09-20-daily-timeline.md) and
+[portable handoff template](../learning-handoff-template.json). Read the current
+canonical academic outline before resuming; PawPlan cannot fetch a local/private
+file merely because the handoff contains its path. Preserve independent first
+answers, prompt dependence, open errors and uncovered scope. An assistant's
+explanation is not independent mastery.
+
+Timeline/feedback output is a preview, not persisted status. Save authorized
+learning evidence in its existing source and send only necessary links/summary
+through the existing Review workflow. Neither tool starts timers or notifications.

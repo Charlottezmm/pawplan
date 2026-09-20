@@ -96,6 +96,7 @@ checks are separate gates; none authorizes deployment or production writes.
 ## 📦 What's Included
 
 - Web + PWA planning surface (Next.js App Router frontend and API routes).
+- Daily execution timeline at `/timeline`: live fixed blocks, protected life windows, bounded backlog allocation, actual-time feedback and portable Claude/Codex handoff validation. See [workflow and contracts](docs/2026-09-20-daily-timeline.md). Previews never apply schedule/status changes or send reminders.
 - Postgres data layer with Drizzle migrations.
 - Invite-link workspace creation + password login for existing workspaces.
 - Owner-only invite admin for creating links and viewing workspace signups.

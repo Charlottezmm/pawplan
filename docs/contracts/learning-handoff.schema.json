@@ -1,0 +1,112 @@
+{
+  "type": "object",
+  "properties": {
+    "handoff": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "expected_updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_ref": {
+          "$ref": "#/properties/handoff/properties/task_id"
+        },
+        "source_revision": {
+          "$ref": "#/properties/handoff/properties/task_id"
+        },
+        "branch": {
+          "$ref": "#/properties/handoff/properties/task_id"
+        },
+        "material_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/properties/handoff/properties/task_id"
+          },
+          "minItems": 1,
+          "maxItems": 30
+        },
+        "outline_ref": {
+          "$ref": "#/properties/handoff/properties/task_id"
+        },
+        "position": {
+          "$ref": "#/properties/handoff/properties/task_id"
+        },
+        "independent_attempt_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/properties/handoff/properties/task_id"
+          },
+          "maxItems": 30
+        },
+        "prompt_dependency": {
+          "$ref": "#/properties/handoff/properties/task_id"
+        },
+        "open_error_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/properties/handoff/properties/task_id"
+          },
+          "maxItems": 30
+        },
+        "uncovered_scope": {
+          "type": "array",
+          "items": {
+            "$ref": "#/properties/handoff/properties/task_id"
+          },
+          "maxItems": 30
+        },
+        "actual_minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1440
+        },
+        "next_step": {
+          "$ref": "#/properties/handoff/properties/task_id"
+        },
+        "stop_condition": {
+          "$ref": "#/properties/handoff/properties/task_id"
+        },
+        "recorded_at": {
+          "$ref": "#/properties/handoff/properties/expected_updated_at"
+        }
+      },
+      "required": [
+        "schema_version",
+        "task_id",
+        "expected_updated_at",
+        "source_ref",
+        "source_revision",
+        "branch",
+        "material_refs",
+        "outline_ref",
+        "position",
+        "independent_attempt_refs",
+        "prompt_dependency",
+        "open_error_refs",
+        "uncovered_scope",
+        "actual_minutes",
+        "next_step",
+        "stop_condition",
+        "recorded_at"
+      ],
+      "additionalProperties": false
+    },
+    "observed_source_revision": {
+      "$ref": "#/properties/handoff/properties/task_id"
+    }
+  },
+  "required": [
+    "handoff"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

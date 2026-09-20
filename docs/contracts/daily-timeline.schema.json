@@ -1,0 +1,214 @@
+{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "start": {
+      "type": "string",
+      "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+    },
+    "end": {
+      "$ref": "#/properties/start"
+    },
+    "now": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expected_snapshot": {
+      "type": "string"
+    },
+    "protected_windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "$ref": "#/properties/start"
+          },
+          "end": {
+            "$ref": "#/properties/start"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "meal",
+              "commute",
+              "rest",
+              "buffer",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "title",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50
+    },
+    "backlog_windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "$ref": "#/properties/start"
+          },
+          "end": {
+            "$ref": "#/properties/start"
+          },
+          "task_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/properties/protected_windows/items/properties/title"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "task_ids"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 10,
+      "default": []
+    },
+    "task_options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          },
+          "budget_minutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440
+          },
+          "scope": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          },
+          "stop_condition": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          },
+          "must_finish_by": {
+            "$ref": "#/properties/now"
+          },
+          "deadline_reason": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "$ref": "#/properties/protected_windows/items/properties/title"
+            },
+            "maxItems": 20,
+            "default": []
+          }
+        },
+        "required": [
+          "task_id",
+          "scope",
+          "stop_condition"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100,
+      "default": []
+    },
+    "feedback": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          },
+          "task_id": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          },
+          "expected_updated_at": {
+            "$ref": "#/properties/now"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "started",
+              "stuck",
+              "completed",
+              "partial",
+              "paused",
+              "timeout"
+            ]
+          },
+          "started_at": {
+            "$ref": "#/properties/now"
+          },
+          "ended_at": {
+            "$ref": "#/properties/now"
+          },
+          "remaining_minutes": {
+            "$ref": "#/properties/task_options/items/properties/budget_minutes"
+          },
+          "checkpoint": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          },
+          "next_step": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          },
+          "evidence_ref": {
+            "$ref": "#/properties/protected_windows/items/properties/title"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "expected_updated_at",
+          "state",
+          "started_at",
+          "remaining_minutes",
+          "checkpoint",
+          "next_step"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100,
+      "default": []
+    },
+    "max_focus_minutes": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 120,
+      "default": 50
+    },
+    "break_minutes": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 30,
+      "default": 10
+    }
+  },
+  "required": [
+    "date",
+    "start",
+    "end",
+    "now",
+    "protected_windows"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

@@ -200,8 +200,26 @@ describe("MCP planning tools", () => {
     expect(publishedOperationSchema.anyOf).toBeUndefined();
   });
 
+  it("builds a read-only timeline from live scoped tasks and expands the full local day", async () => {
+    const db = createFakeDb({ selectRows: {
+      tasks: [{ id: "task-1", title: "Current scope", notes: "Original scope", date: new Date("2026-09-19T16:00:00Z"),
+        status: "todo", estimatedMinutes: 60, priority: "normal", updatedAt: new Date("2026-09-19T10:00:00Z") }],
+      time_blocks: [{ id: "class-1", workspaceId: "workspace-1", title: "Class", kind: "course", startsAt: new Date("2026-09-20T03:30:00Z"), endsAt: new Date("2026-09-20T04:45:00Z"), recurrenceWeekdayMask: null }],
+    } });
+    const result = await runPawPlanTool(db, "workspace-1", "get_daily_timeline", {
+      date: "2026-09-20", start: "08:15", end: "21:30", now: "2026-09-20T08:15:00+08:00", protected_windows: [],
+    }, "read_only");
+    expect(result.timeline.some((slot: any) => slot.title === "Class")).toBe(true);
+    expect(result.outcomes[0].task_id).toBe("task-1");
+    expect(result.persisted).toBe(false);
+    expect(db.inserts).toHaveLength(0); expect(db.updates).toHaveLength(0); expect(db.deletes).toHaveLength(0);
+    expect(db.selects.filter(s => s.table === "tasks").every(s => containsDeepValue(s.predicate, "workspace-1") && containsDeepValue(s.predicate, "plan-1"))).toBe(true);
+  });
+
   it("filters write tools out for read-only MCP tokens", () => {
     expect(allowedPawPlanToolNames("read_only")).toEqual([
+      "get_daily_timeline",
+      "validate_learning_handoff",
       "get_agent_guidance",
       "get_mcp_usage",
       "get_today",
@@ -238,6 +256,8 @@ describe("MCP planning tools", () => {
     const reviewOnlyTools = allowedPawPlanToolNames("review_only");
 
     expect(reviewOnlyTools).toEqual([
+      "get_daily_timeline",
+      "validate_learning_handoff",
       "get_agent_guidance",
       "get_mcp_usage",
       "get_today",
