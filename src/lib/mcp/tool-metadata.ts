@@ -18,6 +18,9 @@ export class McpPermissionError extends Error {
 }
 
 export const pawPlanToolPermissions = {
+  get_task_timing: "read",
+  propose_task_timing: "review",
+  apply_task_timing: "write",
   get_agent_guidance: "read",
   get_mcp_usage: "read",
   get_today: "read",

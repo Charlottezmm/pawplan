@@ -5,6 +5,9 @@ export type CapacityTaskStatus = "todo" | "done" | "skipped" | "backlog";
 export type ProtectedBlockKind = "course" | "exam" | "meeting" | "unavailable" | "routine" | "recovery";
 
 export type CapacityTaskInput = {
+  scheduledStart?: Date | null;
+  scheduledEnd?: Date | null;
+  movable?: boolean;
   id: string;
   title: string;
   date: Date;
@@ -244,6 +247,14 @@ export function buildCapacityModel(input: CapacityModelInput): CapacityModelResu
     if (task.status === "done" && taskDateKey > nowKey) continue;
     const day = dayByKey.get(taskDateKey);
     if (!day) continue;
+    if (task.scheduledStart && task.scheduledEnd) {
+      const windows = segmentWindows(task.date);
+      for (const segment of segments) {
+        const minutes = minutesInSegment(task.scheduledStart, task.scheduledEnd, windows[segment]);
+        if (minutes > 0) addBlock(day, segment, { id: task.id, title: task.title, kind: "task", minutes, protected: task.movable === false }, "task");
+      }
+      continue;
+    }
     addBlock(
       day,
       task.daySegment,

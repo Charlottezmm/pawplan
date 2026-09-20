@@ -1,3 +1,4 @@
+import type { TimingChange } from "@/lib/planning/task-timing";
 import React from "react";
 import { redirect } from "next/navigation";
 import { ReviewOpenedRecorder } from "@/components/review-opened-recorder";
@@ -26,7 +27,9 @@ export default async function ReviewPage() {
     return {
       id: approval.id,
       operationKind: approval.operationKind,
+      ...(approval.operationKind === "task_timing" ? {status: approval.status === "approved" ? "approved" as const : "pending" as const} : {}),
       summary: {
+        ...(approval.operationKind === "task_timing" ? { changes: Array.isArray(raw.changes) ? raw.changes as TimingChange[] : undefined, warnings: Array.isArray(raw.warnings) ? raw.warnings as string[] : undefined } : {}),
         title: typeof raw.title === "string" ? raw.title : undefined,
         description: typeof raw.description === "string" ? raw.description : undefined,
         count: typeof raw.count === "number" ? raw.count : undefined,

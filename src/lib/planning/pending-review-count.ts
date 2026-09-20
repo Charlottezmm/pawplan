@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, or, eq, gt } from "drizzle-orm";
 import { operationApprovals, agentPatches } from "@/lib/db/schema";
 import { getDb } from "@/lib/db/client";
 import { getActivePlanId } from "@/lib/planning/active-plan";
@@ -31,7 +31,7 @@ export async function readPendingReviewCount(
       .from(operationApprovals)
       .where(and(
         eq(operationApprovals.workspaceId, workspaceId),
-        eq(operationApprovals.status, "pending"),
+        or(eq(operationApprovals.status, "pending"),and(eq(operationApprovals.operationKind,"task_timing"),eq(operationApprovals.status,"approved"))),
         gt(operationApprovals.expiresAt, now),
       )),
   ]);

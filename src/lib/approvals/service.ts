@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt, gte, inArray, lte } from "drizzle-orm";
+import { and, or, desc, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import { operationApprovals } from "@/lib/db/schema";
 
 type ApprovalDb = {
@@ -85,7 +85,7 @@ export async function listPendingOperationApprovals(
     .where(
       and(
         eq(operationApprovals.workspaceId, workspaceId),
-        eq(operationApprovals.status, "pending"),
+        or(eq(operationApprovals.status, "pending"), and(eq(operationApprovals.operationKind,"task_timing"),eq(operationApprovals.status,"approved"))),
         gt(operationApprovals.expiresAt, now),
       ),
     )

@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { CatIcon } from "./cat-icon";
 import { DailyCheckin } from "./daily-checkin";
 import { TaskDetailContent } from "./task-detail-content";
-import { TodayFixedTimeline } from "./today-fixed-timeline";
+import { TodayTaskTimeline, TaskTimingButton } from "./task-timing-controls";
 import { DialogSheet } from "./ui/dialog-sheet";
 import { ConfirmDialog } from "./ui/confirm-dialog";
 import { Notice } from "./ui/notice";
@@ -107,6 +107,7 @@ export async function persistTodayTaskUpdate(
   if (savedTask.id !== id || !statusMatches || !blockedMatches || !dateMatches) {
     throw new Error("Task update response did not confirm the requested state");
   }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("pawplan:timing-changed"));
 }
 
 export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTasks?: ReactNode }) {
@@ -118,6 +119,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       }))
       .sort((a, b) => Number(a.displayStatus === "done" || a.displayStatus === "backlog") - Number(b.displayStatus === "done" || b.displayStatus === "backlog")),
   );
+  useEffect(() => {
+    setTasks(data.tasks.map(task => ({ ...task, displayStatus: task.blocked && task.status === "todo" ? "blocked" as const : task.status })));
+  }, [data.tasks]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
   const [postponeTask, setPostponeTask] = useState<Task | null>(null);
@@ -261,9 +265,10 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   }
 
   return (
-    <div className="paw-page paw-today-page">
+    <div className="paw-page paw-today-page" id="today-tasks">
       <div className="paw-today-main">
       <section className="paw-today-header">
+        <a href="#today-timeline" className="paw-today-timeline-jump paw-secondary-btn">查看今天的时间轴 ↓</a>
         <div className="paw-today-hero">
           <div className="paw-today-hero-text">
             <p className="paw-today-greeting">{greeting}</p>
@@ -301,7 +306,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                 <dd>{unresolvedTasks.length}</dd>
               </div>
               <div>
-                <dt>剩余任务时长</dt>
+                <dt>待办任务估时</dt>
                 <dd>{minutesLabel(unresolvedMinutes)}</dd>
               </div>
             </dl>
@@ -394,7 +399,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   </span>
                   <span className="paw-task-headmeta">
                     <Clock3 size={12} aria-hidden="true" />
-                    {segmentLabel[task.segment]} · {minutesLabel(task.minutes)}
+                    {task.timeLabel ? `${task.timeProtected ? "🔒 " : ""}${task.timeLabel}` : `${segmentLabel[task.segment]} · ${minutesLabel(task.minutes)}`}
                     <ChevronDown size={16} className="paw-task-chevron" />
                   </span>
                 </button>
@@ -404,11 +409,14 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   <div className="paw-task-meta">
                     <span className="paw-task-tag">{task.context}</span>
                     <span>{task.track}</span>
+                    {task.timeLabel ? <span>{task.timeProtected ? "🔒 " : ""}{task.timeLabel}</span> : null}
                     <span>能量 {task.energy}</span>
                     <span>优先级 {priorityLabel[task.priority]}</span>
                   </div>
+                  {task.checkpoint ? <p className="paw-row-meta">接着做：{task.checkpoint}</p> : null}
                   <TaskDetailContent detail={task.detail} notes={task.notes} />
                   <div className="paw-task-copy-row">
+                    {task.status !== "done" ? <TaskTimingButton taskId={task.id} /> : null}
                     <button type="button" onClick={() => void copyTaskDetails(task)} className="paw-secondary-btn paw-task-copy-button">
                       <Copy size={14} />
                       复制资料
@@ -477,8 +485,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       />
       </div>
 
-      <aside className="paw-today-desktop-timeline">
-        <TodayFixedTimeline items={data.exactFixedItems} />
+      <aside className="paw-today-desktop-timeline" id="today-timeline">
+        <a href="#today-tasks" className="paw-today-timeline-jump paw-secondary-btn">↑ 回到任务</a>
+        <TodayTaskTimeline fixedItems={data.exactFixedItems} />
       </aside>
 
       <DialogSheet

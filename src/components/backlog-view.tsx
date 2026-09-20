@@ -1,3 +1,4 @@
+import { TaskTimingButton } from "./task-timing-controls";
 import { Archive, Clock3, FolderKanban } from "lucide-react";
 import { PlanSectionNav } from "@/components/plan-section-nav";
 import { BacklogRescheduleControl } from "@/components/task-transition-controls";
@@ -60,7 +61,7 @@ export function BacklogView({ data, legacySkipped }: { data: BacklogViewData; le
                       <span>优先级 {priorityLabels[task.priority]}</span>
                       <span>最近更新 {task.updatedLabel}</span>
                     </div>
-                    <BacklogRescheduleControl taskId={task.id} />
+                    <div className="flex flex-wrap gap-2"><TaskTimingButton taskId={task.id} label="找一个时间段" /><BacklogRescheduleControl taskId={task.id} /></div>
                   </article>
                 ))}
               </div>

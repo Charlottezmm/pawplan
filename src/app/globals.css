@@ -506,6 +506,8 @@ a {
   gap: 48px;
 }
 
+.paw-today-timeline-jump { display: none; }
+
 .paw-today-main {
   min-width: 0;
 }
@@ -5293,7 +5295,17 @@ input.paw-input[type="time"] {
   }
 
   .paw-today-desktop-timeline {
-    display: none;
+    display: block;
+    position: static;
+    max-height: none;
+    overflow: visible;
+    margin-top: 28px;
+    scroll-margin-top: 80px;
+  }
+
+  .paw-today-timeline-jump {
+    display: inline-flex;
+    margin-bottom: 16px;
   }
 
   .app-topnav-inner {

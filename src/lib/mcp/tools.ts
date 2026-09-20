@@ -1,3 +1,5 @@
+import { timingRequestSchema, localDateSchema } from "@/lib/planning/task-timing";
+import { readTaskTiming, proposeTaskTiming, applyTaskTiming } from "@/lib/planning/task-timing-service";
 import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import { checkins, courses, routines, tasks } from "@/lib/db/schema";
@@ -399,6 +401,9 @@ const monthlySummarySchema = z
   .strict();
 
 export const pawPlanToolSchemas = {
+  get_task_timing: z.object({ date_from: localDateSchema, date_to: localDateSchema.optional() }),
+  propose_task_timing: z.object({ request: timingRequestSchema, idempotency_key: z.string().min(1).max(180) }),
+  apply_task_timing: z.object({ approval_id: z.string().uuid() }),
   get_agent_guidance: emptyArgsSchema,
   get_mcp_usage: emptyArgsSchema,
   get_today: emptyArgsSchema,
@@ -724,6 +729,9 @@ export const pawPlanServerInstructions =
   "PawPlan is review-first. Rebalance tools create a Review draft only and must be used only after an explicit user request or concrete user-provided event, never as recurring daily cleanup. AI Project Portfolio changes must use propose_project_portfolio_update to create a pending approval, then wait for the user to approve the exact Preview in PawPlan Review before apply_project_portfolio_update with approval_id. Multiple task-notes edits must use propose_task_notes_batch, wait for the single exact Review approval, then use apply_task_notes_batch; approval alone is authorization, not proof of persistence. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
+  get_task_timing: "Read persisted task time windows, protection, deadlines, desired dates and checkpoints, plus fixed arrangements in Asia/Shanghai. No mutation.",
+  propose_task_timing: "Preview exact task slots, extensions, deferred remaining work, completion or backlog placement. Creates one Review, does not change tasks. Use only after user requests planning. schedule.edits are explicit times; arrange preserves day segments. Date range is explicit and at most 31 days. Locked tasks must be explicitly unlocked before moving. Wait for the user to approve the exact preview.",
+  apply_task_timing: "Apply a user-approved task timing Review atomically and read back exact IDs. Cannot approve. Retry with the same approval_id; stale previews require regeneration and approval.",
   get_agent_guidance: "Read PawPlan on-demand planning guidance and Review-first safety rules.",
   get_mcp_usage: "Read the current workspace Hosted MCP daily write quota and Shanghai-midnight reset time.",
   get_today: "Read today's PawPlan planning context for the configured workspace.",
@@ -1118,6 +1126,18 @@ export async function runPawPlanTool(
     };
   }
 
+  if (toolName === "get_task_timing") {
+    const p = pawPlanToolSchemas.get_task_timing.parse(args);
+    return readTaskTiming(db, workspaceId, p.date_from, p.date_to);
+  }
+  if (toolName === "propose_task_timing") {
+    const p = pawPlanToolSchemas.propose_task_timing.parse(args);
+    return proposeTaskTiming(db, workspaceId, p.request, p.idempotency_key);
+  }
+  if (toolName === "apply_task_timing") {
+    const p = pawPlanToolSchemas.apply_task_timing.parse(args);
+    return applyTaskTiming(db, workspaceId, p.approval_id);
+  }
   if (toolName === "get_today") {
     pawPlanToolSchemas.get_today.parse(args);
     return readToday(db, workspaceId);

@@ -47,6 +47,9 @@ export type CheckinView = {
 };
 
 export type TodayTaskView = {
+  timeLabel?: string | null;
+  timeProtected?: boolean;
+  checkpoint?: string | null;
   id: string;
   segment: Segment;
   title: string;
@@ -593,16 +596,16 @@ export function buildDayTimelineItems(input: {
     if (task.status !== "todo" && task.status !== "done") continue;
     if (capacityDateKey(task.date) !== dateKey) continue;
 
-    const startsAt = segmentStart(dayStart, task.daySegment);
+    const startsAt = task.scheduledStart ?? segmentStart(dayStart, task.daySegment);
     items.push(
       timelineItem({
         id: task.id,
         kind: "task",
         title: task.title,
         startsAt,
-        endsAt: new Date(startsAt.getTime() + task.estimatedMinutes * 60_000),
+        endsAt: task.scheduledEnd ?? new Date(startsAt.getTime() + task.estimatedMinutes * 60_000),
         segment: task.daySegment,
-        protected: false,
+        protected: task.movable === false,
       }),
     );
   }
@@ -865,6 +868,7 @@ async function loadReferenceMaps(workspaceId: string) {
 type ReferenceMaps = Awaited<ReturnType<typeof loadReferenceMaps>>;
 
 type TaskRowForView = CapacityTaskInput & {
+  checkpoint?: string | null;
   notes?: string | null;
   blocked?: boolean;
   priority?: Priority;
@@ -902,6 +906,9 @@ function buildTodayTaskSummary(task: TaskRowForView, refs: ReferenceMaps): Today
   const view = buildPlanTaskView(task, refs);
   return {
     id: view.id,
+    timeLabel: task.scheduledStart && task.scheduledEnd ? `${timeLabel(task.scheduledStart)}–${timeLabel(task.scheduledEnd)}` : null,
+    timeProtected: task.movable === false,
+    checkpoint: task.checkpoint ?? null,
     segment: view.segment,
     title: view.title,
     context: view.context,
