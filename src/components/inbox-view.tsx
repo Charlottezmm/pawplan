@@ -316,14 +316,13 @@ export function InboxView({
     <div className="paw-page">
       <section className="paw-page-header">
         <BackLink />
-        <h1 className="paw-page-date">收集</h1>
+        <div className="paw-inbox-title-row">
+          <h1 className="paw-page-date">收集</h1>
+          <span className="paw-inbox-count">{items.length} 条未处理</span>
+        </div>
         <div className="paw-agent-row">
           <CatIcon size={40} mood="think" />
-          <p className="paw-agent-msg">想到什么先记进暂存区；不会自动排进计划。攒着的 {items.length} 条想处理时再处理。</p>
-        </div>
-        <div className="paw-status-pills">
-          <span className="paw-status-pill">未处理 {items.length}</span>
-          <span className="paw-status-pill">暂未安排</span>
+          <p className="paw-agent-msg">想到什么先记下来，不会自动排进计划。</p>
         </div>
       </section>
 
@@ -354,13 +353,12 @@ export function InboxView({
 
       <QuickCapture />
 
-      <section className="paw-list-card">
+      <section className="paw-list-card paw-inbox-list-card">
         <div className="paw-list-header">
           <div>
             <h2 className="paw-list-title">未处理条目</h2>
-            <p className="paw-list-subtitle">捕获只保存标题；提升时再明确日期、时段、估时或重复规则。</p>
+            <p className="paw-list-subtitle">捕获只保存标题；安排时再明确日期、时段、估时或重复规则。</p>
           </div>
-          <span className="paw-status-pill">不打扰计划</span>
         </div>
 
         {items.length === 0 ? (
@@ -388,25 +386,25 @@ export function InboxView({
                       type="button"
                       disabled={pendingId === item.id}
                       onClick={() => void act(item.id, { action: "quick_chore_task" })}
-                      className="paw-secondary-btn paw-inbox-control"
+                      className="paw-secondary-btn paw-inbox-control paw-inbox-quick-action"
                     >
                       <ArrowUpRight size={13} />
-                      今日杂事
+                      加入今日杂事
                     </button>
                     <button
                       type="button"
                       onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                      className="paw-secondary-btn paw-inbox-control"
+                      className="paw-secondary-btn paw-inbox-control paw-inbox-arrange-action"
                       aria-expanded={expandedId === item.id}
                     >
-                      提升…
+                      安排…
                       <ChevronDown size={13} className={`paw-inbox-chevron ${expandedId === item.id ? "open" : ""}`} />
                     </button>
                     <button
                       type="button"
                       disabled={pendingId === item.id}
                       onClick={() => setDeleteTarget({ id: item.id, title: item.title })}
-                      className="paw-secondary-btn paw-inbox-control paw-inbox-delete"
+                      className="paw-secondary-btn paw-inbox-control paw-inbox-delete paw-inbox-icon-action"
                       aria-label="删除"
                     >
                       <Trash2 size={13} />

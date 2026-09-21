@@ -19,7 +19,7 @@ async function addWorkspaceSession(context: BrowserContext) {
   ]);
 }
 
-test("captures a chore in Inbox and promotes it with visible scheduling metadata", async ({ context, page }) => {
+test("captures a chore in Inbox and promotes it with visible scheduling metadata", async ({ context, page }, info) => {
   await addWorkspaceSession(context);
   const inboxPatchBodies: unknown[] = [];
 
@@ -57,7 +57,15 @@ test("captures a chore in Inbox and promotes it with visible scheduling metadata
   await expect(page.getByText("刚刚捕获")).toBeVisible();
 
   const row = page.locator(".paw-inbox-item", { hasText: "倒垃圾" });
-  await row.getByRole("button", { name: /提升/ }).click();
+  await expect(row.getByRole("button", { name: "加入今日杂事" })).toBeVisible();
+  await expect(row.getByRole("button", { name: "安排…" })).toBeVisible();
+  expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  if (info.project.name === "mobile-safari") {
+    await page.screenshot({ path: info.outputPath("inbox-mobile.png"), fullPage: true });
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.screenshot({ path: info.outputPath("inbox-mobile-actions.png") });
+  }
+  await row.getByRole("button", { name: "安排…" }).click();
   await expect(row.getByLabel("任务日期")).not.toBeVisible();
   await expect(row.getByRole("button", { name: "每天" })).not.toBeVisible();
   await row.getByRole("button", { name: "任务", exact: true }).click();
@@ -114,7 +122,7 @@ test("chooses a routine destination with weekday controls instead of raw recurre
   await page.getByRole("button", { name: "添加" }).click();
 
   const row = page.locator(".paw-inbox-item", { hasText: "整理桌面" });
-  await row.getByRole("button", { name: /提升/ }).click();
+  await row.getByRole("button", { name: "安排…" }).click();
   await row.getByRole("button", { name: "日常", exact: true }).click();
   await expect(row.getByRole("button", { name: "每天" })).toHaveAttribute("aria-pressed", "true");
   await expect(row.getByLabel("任务日期")).not.toBeVisible();
@@ -170,7 +178,7 @@ test("shows field errors beside invalid promotion values and confirms permanent 
   await page.getByRole("button", { name: "添加" }).click();
 
   const row = page.locator(".paw-inbox-item", { hasText: "重复记录" });
-  await row.getByRole("button", { name: /提升/ }).click();
+  await row.getByRole("button", { name: "安排…" }).click();
   await row.getByRole("button", { name: "任务", exact: true }).click();
   await row.getByLabel("任务日期").fill("");
   await row.getByLabel("估时（分钟）").fill("4");
@@ -230,7 +238,7 @@ test("quick chore promotion sends no hidden browser-local date", async ({ contex
   await page.getByRole("button", { name: "添加" }).click();
 
   const row = page.locator(".paw-inbox-item", { hasText: "买纸巾" });
-  await row.getByRole("button", { name: "今日杂事" }).click();
+  await row.getByRole("button", { name: "加入今日杂事" }).click();
 
   expect(inboxPatchBodies).toEqual([
     {

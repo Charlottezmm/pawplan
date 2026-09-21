@@ -214,11 +214,69 @@ test("Review shows the full preview and applies a proposal after confirmation", 
     .getByRole("dialog")
     .getByRole("button", { name: "确认并应用", exact: true })
     .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("时间安排已应用并核对。", { exact: true })).toBeVisible();
   await expect(page.getByText("任务时间安排", { exact: true })).toHaveCount(0);
   expect(
     (await pool.query("select movable from tasks where id=$1", [taskId]))
       .rows[0].movable,
   ).toBe(false);
+});
+
+test("Review closes a stale timing dialog and removes the unusable approval", async ({
+  page,
+}) => {
+  const proposal = await page.request.post("/api/task-timing", {
+    data: {
+      request: {
+        action: "schedule",
+        edits: [
+          {
+            taskId,
+            date: today(),
+            startTime: "20:00",
+            minutes: 30,
+            locked: true,
+            deadlineAt: null,
+            targetDate: null,
+          },
+        ],
+      },
+      idempotencyKey: randomUUID(),
+    },
+  });
+  const { approvalId } = await proposal.json();
+  expect(proposal.ok()).toBe(true);
+
+  await pool.query(
+    "update tasks set checkpoint='外部更新保留', updated_at=now() where id=$1",
+    [taskId],
+  );
+
+  await page.goto("/review");
+  await page.getByRole("button", { name: "确认并应用", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "确认并应用", exact: true })
+    .click();
+
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("计划已变化，这份旧预览没有应用。请让助手重新生成。", { exact: true })).toBeVisible();
+  await expect(page.getByText("任务时间安排", { exact: true })).toHaveCount(0);
+
+  const approval = await pool.query(
+    "select status from operation_approvals where id=$1",
+    [approvalId],
+  );
+  expect(approval.rows[0].status).toBe("stale");
+  const task = await pool.query(
+    "select movable,checkpoint from tasks where id=$1",
+    [taskId],
+  );
+  expect(task.rows[0]).toMatchObject({
+    movable: true,
+    checkpoint: "外部更新保留",
+  });
 });
 
 test("closing an unconfirmed preview rejects it without changing the task", async ({

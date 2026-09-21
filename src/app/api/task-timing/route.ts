@@ -12,7 +12,10 @@ import { TimingError } from "@/lib/planning/task-timing";
 import { shanghaiDateKey } from "@/lib/planning/task-actions";
 function failure(e: unknown) {
   if (e instanceof TimingError)
-    return NextResponse.json({ error: e.message }, { status: e.status });
+    return NextResponse.json(
+      { error: e.message, ...(e.code ? { code: e.code } : {}) },
+      { status: e.status },
+    );
   if (e instanceof z.ZodError)
     return NextResponse.json(
       { error: "日期、时间或任务信息不完整，请检查输入。" },

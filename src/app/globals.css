@@ -1981,6 +1981,23 @@ input.paw-input[type="time"] {
   padding: 22px;
 }
 
+.paw-dialog-panel-detail {
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+}
+
+.paw-dialog-panel-detail .paw-dialog-header {
+  flex: none;
+}
+
+.paw-dialog-panel-detail .paw-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .paw-dialog-header {
   display: flex;
   align-items: flex-start;
@@ -2013,6 +2030,24 @@ input.paw-input[type="time"] {
 
 .paw-dialog-body {
   margin-top: 18px;
+}
+
+.paw-dialog-panel-detail .paw-confirm-status {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 8px 18px rgba(46, 42, 36, 0.08);
+}
+
+.paw-dialog-panel-detail .paw-modal-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 18px -2px -2px;
+  border-top: 1px solid var(--app-line);
+  background: color-mix(in srgb, var(--app-surface) 96%, transparent);
+  padding: 14px 2px 2px;
+  backdrop-filter: blur(10px);
 }
 
 .paw-dialog-account {
@@ -4786,6 +4821,18 @@ input.paw-input[type="time"] {
   padding: 14px 0;
 }
 
+.paw-inbox-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.paw-inbox-count {
+  color: var(--app-ink-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .paw-inbox-item:last-child {
   border-bottom: 0;
   padding-bottom: 0;
@@ -5620,13 +5667,38 @@ input.paw-input[type="time"] {
 
   .paw-inbox-head-actions {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) var(--app-control-min);
     width: 100%;
+  }
+
+  .paw-inbox-list-card {
+    padding: 16px;
+  }
+
+  .paw-inbox-list-card .paw-list-header {
+    align-items: center;
+    padding-bottom: 12px;
+  }
+
+  .paw-inbox-list-card .paw-list-subtitle {
+    max-width: 24rem;
   }
 
   .paw-inbox-control {
     min-height: var(--app-control-min);
     justify-content: center;
+  }
+
+  .paw-inbox-head-actions .paw-inbox-control {
+    min-width: 0;
+    padding-right: 10px;
+    padding-left: 10px;
+    white-space: nowrap;
+  }
+
+  .paw-inbox-head-actions .paw-inbox-icon-action {
+    width: var(--app-control-min);
+    padding: 0;
   }
 
   .paw-inbox-fields {

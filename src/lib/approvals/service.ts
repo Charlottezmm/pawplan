@@ -8,7 +8,7 @@ type ApprovalDb = {
   update: (...args: any[]) => any;
 };
 
-export type OperationApprovalStatus = "pending" | "approved" | "rejected" | "consumed";
+export type OperationApprovalStatus = "pending" | "approved" | "rejected" | "consumed" | "stale";
 
 export class OperationApprovalError extends Error {
   constructor(

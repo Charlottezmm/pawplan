@@ -88,4 +88,13 @@ describe("mobile Plan layout", () => {
     expect(mobileBlock).toContain(".paw-dialog-backdrop");
     expect(css).toContain("position: fixed;");
   });
+
+  it("keeps confirmation status and actions visible while long previews scroll", () => {
+    const css = readFileSync("src/app/globals.css", "utf8");
+
+    expect(css).toContain(".paw-dialog-panel-detail .paw-dialog-body");
+    expect(css).toContain("overscroll-behavior: contain;");
+    expect(css).toContain(".paw-dialog-panel-detail .paw-confirm-status");
+    expect(css).toContain(".paw-dialog-panel-detail .paw-modal-actions");
+  });
 });

@@ -312,6 +312,14 @@ export async function applyTaskTiming(
   workspaceId: string,
   approvalId: string,
 ) {
+  async function stale(tx: any, message: string) {
+    await tx
+      .update(operationApprovals)
+      .set({ status: "stale", updatedAt: new Date() })
+      .where(eq(operationApprovals.id, approvalId));
+    return { kind: "stale" as const, message };
+  }
+
   const applied = await db.transaction(async (tx) => {
     await tx
       .select({ id: workspaces.id })
@@ -332,18 +340,18 @@ export async function applyTaskTiming(
     if (!approval) throw new TimingError("找不到这份时间安排预览", 404);
     const s = approval.summaryJson as SavedPreview;
     if (approval.status === "consumed")
-      return { changes: s.changes, replayed: true };
+      return { kind: "ready" as const, changes: s.changes, replayed: true };
     if (approval.status !== "approved")
       throw new TimingError("请先确认这份预览");
     if (approval.expiresAt <= new Date())
-      throw new TimingError("预览已过期，请重新生成");
+      return stale(tx, "预览已过期，请重新生成");
     const data = await snapshot(tx, workspaceId, s.range, true);
     if (data.hash !== s.snapshotHash || data.planId !== s.planId)
-      throw new TimingError("任务或固定安排已经变化，请重新预览后确认");
+      return stale(tx, "任务或固定安排已经变化，请重新预览后确认");
     // Revalidate against current time as well as the persisted snapshot.
     const computed = calculateProposal(s.request, data);
     if (hash(computed) !== hash({ changes: s.changes, warnings: s.warnings }))
-      throw new TimingError("时间已变化，请重新生成预览");
+      return stale(tx, "时间已变化，请重新生成预览");
     for (const c of s.changes) {
       const a = c.after;
       await tx
@@ -393,8 +401,10 @@ export async function applyTaskTiming(
         summary: "Applied reviewed task time slots",
         detailsJson: { approvalId, changes: s.changes, warnings: s.warnings },
       });
-    return { changes: s.changes, replayed: false };
+    return { kind: "ready" as const, changes: s.changes, replayed: false };
   });
+  if (applied.kind === "stale")
+    throw new TimingError(applied.message, 409, "preview_stale");
   const after = await readTasks(db, workspaceId);
   const readback = applied.changes.map((c) =>
     after.tasks.find((t) => t.id === c.taskId),

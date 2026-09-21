@@ -326,6 +326,7 @@ describe("inbox UI promotion payloads", () => {
 
   it("uses destination-first forms and friendly recurrence controls", () => {
     const source = readFileSync("src/components/inbox-view.tsx", "utf8");
+    const css = readFileSync("src/app/globals.css", "utf8");
 
     expect(source).toContain('type PromotionDestination = "task" | "routine"');
     expect(source).toContain('role="group" aria-label="选择条目去向"');
@@ -335,6 +336,11 @@ describe("inbox UI promotion payloads", () => {
     expect(source).toContain("刚刚捕获");
     expect(source).toContain('title="删除收集条目？"');
     expect(source).toContain("将从收集区永久删除");
+    expect(source).toContain("加入今日杂事");
+    expect(source).toContain("安排…");
+    expect(source).not.toContain("暂未安排");
+    expect(css).toContain("grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) var(--app-control-min);");
+    expect(css).toContain(".paw-inbox-icon-action");
   });
 });
 

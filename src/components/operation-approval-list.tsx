@@ -34,6 +34,11 @@ export type ExpiredOperationApproval = PendingOperationApproval & {
   status: "pending" | "approved";
 };
 
+type ApprovalFeedback = {
+  tone: "success" | "warning" | "danger";
+  message: string;
+};
+
 const staleApprovalMessage = "这份预览已过期或已经处理，请刷新后让助手重新生成。";
 
 export function operationApprovalIsExpired(expiresAt: string, now = Date.now()) {
@@ -78,7 +83,7 @@ export function OperationApprovalList({
   const router = useRouter();
   const approvedIds = useRef(new Set<string>());
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<ApprovalFeedback | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [approvalToConfirm, setApprovalToConfirm] = useState<PendingOperationApproval | null>(null);
   const [nowMs, setNowMs] = useState<number | null>(null);
@@ -93,7 +98,7 @@ export function OperationApprovalList({
     if (!approvalToConfirm || nowMs === null || !operationApprovalIsExpired(approvalToConfirm.expiresAt, nowMs)) return;
     setApprovalToConfirm(null);
     setDialogError(null);
-    setError(staleApprovalMessage);
+    setFeedback({ tone: "warning", message: staleApprovalMessage });
     router.refresh();
   }, [approvalToConfirm, nowMs, router]);
 
@@ -101,12 +106,12 @@ export function OperationApprovalList({
     if (operationApprovalIsExpired(approval.expiresAt)) {
       setApprovalToConfirm(null);
       setDialogError(null);
-      setError(staleApprovalMessage);
+      setFeedback({ tone: "warning", message: staleApprovalMessage });
       router.refresh();
       return;
     }
     setPendingId(approval.id);
-    setError(null);
+    setFeedback(null);
     setDialogError(null);
     try {
       if (!(decision === "approved" && (approval.status === "approved" || approvedIds.current.has(approval.id)))) {
@@ -120,7 +125,7 @@ export function OperationApprovalList({
           const message = operationApprovalErrorMessage(body);
           if (body?.code === "approval_already_decided" || body?.code === "approval_expired" || body?.code === "approval_not_found") {
             setApprovalToConfirm(null);
-            setError(message);
+            setFeedback({ tone: "warning", message });
             router.refresh();
             return;
           }
@@ -130,24 +135,45 @@ export function OperationApprovalList({
       }
       if (decision === "approved" && approval.operationKind === "task_timing") {
         const applied = await fetch("/api/task-timing", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approvalId: approval.id }) });
-        const result = await applied.json();
+        const result = await applied.json() as { code?: string; error?: string; verified?: boolean };
+        if (result.code === "preview_stale") {
+          approvedIds.current.delete(approval.id);
+          setApprovalToConfirm(null);
+          setDialogError(null);
+          setFeedback({
+            tone: "warning",
+            message: "计划已变化，这份旧预览没有应用。请让助手重新生成。",
+          });
+          router.refresh();
+          return;
+        }
         if (!applied.ok || !result.verified) throw new Error(result.error ?? "应用结果未确认，请刷新核对。");
         window.dispatchEvent(new Event("pawplan:timing-changed"));
+        setFeedback({ tone: "success", message: "时间安排已应用并核对。" });
       }
       if (decision === "approved") setApprovalToConfirm(null);
       router.refresh();
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "审核失败，请稍后重试。";
       if (decision === "approved") setDialogError(message);
-      else setError(message);
+      else setFeedback({ tone: "danger", message });
     } finally {
       setPendingId(null);
     }
   }
 
-  if (approvals.length === 0 && expiredApprovals.length === 0) return null;
+  if (approvals.length === 0 && expiredApprovals.length === 0 && !feedback) return null;
   return (
     <>
+      {feedback ? (
+        <Notice
+          tone={feedback.tone}
+          title={feedback.message}
+          dismissible
+          onDismiss={() => setFeedback(null)}
+          className="mb-4"
+        />
+      ) : null}
       {approvals.length > 0 ? (
         <section className="paw-list-card mb-4">
           <div className="paw-list-header">
@@ -157,7 +183,6 @@ export function OperationApprovalList({
             </div>
             <span className="paw-status-pill"><ShieldCheck size={13} /> {approvals.length} 项</span>
           </div>
-          {error ? <p className="paw-status-pill warn mt-3" role="status">{error}</p> : null}
           <div className="paw-suggestion-list mt-4">
             {approvals.map((approval) => (
               <article className="paw-suggestion-card" key={approval.id}>
@@ -202,11 +227,11 @@ export function OperationApprovalList({
                     disabled={pendingId !== null || (nowMs !== null && operationApprovalIsExpired(approval.expiresAt, nowMs))}
                     onClick={() => {
                       if (operationApprovalIsExpired(approval.expiresAt)) {
-                        setError(staleApprovalMessage);
+                        setFeedback({ tone: "warning", message: staleApprovalMessage });
                         router.refresh();
                         return;
                       }
-                      setError(null);
+                      setFeedback(null);
                       setDialogError(null);
                       setApprovalToConfirm(approval);
                     }}
@@ -246,7 +271,7 @@ export function OperationApprovalList({
       >
         {approvalToConfirm ? (
           <>
-            {dialogError ? <Notice tone="danger" title={dialogError} /> : null}
+            {dialogError ? <Notice tone="danger" title={dialogError} className="paw-confirm-status" /> : null}
             {approvalToConfirm.summary.description ? <p>{approvalToConfirm.summary.description}</p> : null}
             {typeof approvalToConfirm.summary.count === "number" ? <p>影响 {approvalToConfirm.summary.count} 项。</p> : null}
             {approvalToConfirm.operationKind === "task_timing" && approvalToConfirm.summary.changes ? <TimingChanges preview={{changes:approvalToConfirm.summary.changes,warnings:approvalToConfirm.summary.warnings ?? []}}/> : <p>批准只授权这一份精确预览，助手不能扩大范围。</p>}

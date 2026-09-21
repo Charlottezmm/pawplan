@@ -125,12 +125,19 @@ describe.runIf(run)("task timing persistence and approval", () => {
         startsAt: new Date("2035-09-20T09:00:00+08:00"),
         endsAt: new Date("2035-09-20T10:00:00+08:00"),
       });
-    await expect(applyTaskTiming(db, w.id, p.approvalId!)).rejects.toThrow(
-      "已经变化",
-    );
+    await expect(applyTaskTiming(db, w.id, p.approvalId!)).rejects.toMatchObject({
+      code: "preview_stale",
+      message: expect.stringContaining("已经变化"),
+    });
     expect(
       (await readTaskTiming(db, w.id, "2035-09-20")).tasks[0].scheduledStart,
     ).toBeNull();
+    expect(
+      (await db
+        .select({ status: schema.operationApprovals.status })
+        .from(schema.operationApprovals)
+        .where(eq(schema.operationApprovals.id, p.approvalId!)))[0].status,
+    ).toBe("stale");
   });
   it("expired, rejected and cross-workspace approvals cannot apply", async () => {
     const { w, t } = await seed();
@@ -144,9 +151,10 @@ describe.runIf(run)("task timing persistence and approval", () => {
       .update(schema.operationApprovals)
       .set({ expiresAt: new Date(0) })
       .where(eq(schema.operationApprovals.id, p.approvalId!));
-    await expect(applyTaskTiming(db, w.id, p.approvalId!)).rejects.toThrow(
-      "过期",
-    );
+    await expect(applyTaskTiming(db, w.id, p.approvalId!)).rejects.toMatchObject({
+      code: "preview_stale",
+      message: expect.stringContaining("过期"),
+    });
     await expect(
       proposeTaskTiming(db, other.w.id, request(t.id), randomUUID()),
     ).rejects.toThrow("任务不存在");

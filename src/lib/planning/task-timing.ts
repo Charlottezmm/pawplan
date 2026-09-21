@@ -127,6 +127,7 @@ export class TimingError extends Error {
   constructor(
     message: string,
     public status = 409,
+    public code?: "preview_stale",
   ) {
     super(message);
   }
