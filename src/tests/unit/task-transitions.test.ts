@@ -1,6 +1,7 @@
 import { getTableName } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
+  archiveTaskDirect,
   moveLegacySkippedTaskToBacklog,
   rescheduleBacklogTask,
   restoreArchivedTaskToBacklog,
@@ -141,6 +142,24 @@ function createDb(task: Partial<Row> = {}) {
 }
 
 describe("single-task state transitions", () => {
+  it("archives one confirmed task directly and keeps it recoverable", async () => {
+    const db = createDb({ status: "todo" });
+    const result = await archiveTaskDirect(db, {
+      workspaceId: "workspace-1",
+      taskId: "11111111-1111-4111-8111-111111111111",
+      expectedArchived: false,
+      idempotencyKey: "archive-direct-1",
+      now: new Date("2026-08-16T01:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      task: { id: "11111111-1111-4111-8111-111111111111", status: "todo", archivedAt: "2026-08-16T01:00:00.000Z" },
+      readback: { verification: "succeeded", counts: { todo: 0, backlog: 0, archived: 1 } },
+    });
+    expect(db.state.changeLogs[0].summary).toBe("Archived user-confirmed task directly");
+  });
+
   it("reschedules a backlog task to todo with audit, readback, and idempotent retry", async () => {
     const db = createDb();
     const input = {

@@ -1677,6 +1677,18 @@ a {
   background: var(--app-bg);
 }
 
+.paw-act-btn.delete,
+.paw-delete-task-btn {
+  border-color: color-mix(in srgb, var(--app-danger) 28%, var(--app-line));
+  color: var(--app-danger);
+}
+
+.paw-act-btn.delete:hover,
+.paw-delete-task-btn:hover {
+  border-color: color-mix(in srgb, var(--app-danger) 48%, var(--app-line));
+  background: var(--app-danger-soft);
+}
+
 .paw-act-btn.done.selected {
   border-color: var(--app-positive);
   background: var(--app-positive-soft);
@@ -4639,6 +4651,22 @@ input.paw-input[type="time"] {
   background: var(--app-surface);
   box-shadow: var(--app-shadow-card);
   padding: 20px;
+}
+
+.paw-approval-summary {
+  min-width: 0;
+}
+
+.paw-approval-details {
+  margin-top: 10px;
+}
+
+.paw-approval-details > summary {
+  width: fit-content;
+  color: var(--app-accent-dark);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .paw-list-header {

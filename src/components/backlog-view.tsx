@@ -1,7 +1,7 @@
 import { TaskTimingButton } from "./task-timing-controls";
 import { Archive, Clock3, FolderKanban } from "lucide-react";
 import { PlanSectionNav } from "@/components/plan-section-nav";
-import { BacklogRescheduleControl } from "@/components/task-transition-controls";
+import { BacklogRescheduleControl, TaskDeleteControl } from "@/components/task-transition-controls";
 import { LegacyTaskTriage } from "@/components/legacy-task-triage";
 import type { LegacySkippedViewData } from "@/lib/planning/legacy-skipped";
 import type { BacklogViewData } from "@/lib/planning/project-view-data";
@@ -61,7 +61,11 @@ export function BacklogView({ data, legacySkipped }: { data: BacklogViewData; le
                       <span>优先级 {priorityLabels[task.priority]}</span>
                       <span>最近更新 {task.updatedLabel}</span>
                     </div>
-                    <div className="paw-backlog-scheduling-actions"><TaskTimingButton taskId={task.id} label="找一个时间段" /><BacklogRescheduleControl taskId={task.id} /></div>
+                    <div className="paw-backlog-scheduling-actions">
+                      <TaskTimingButton taskId={task.id} label="找一个时间段" />
+                      <BacklogRescheduleControl taskId={task.id} />
+                      <TaskDeleteControl taskId={task.id} title={task.title} />
+                    </div>
                   </article>
                 ))}
               </div>

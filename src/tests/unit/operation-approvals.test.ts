@@ -3,6 +3,7 @@ import {
   approvalPreviewHash,
   consumeOperationApproval,
   createOperationApproval,
+  decideOperationApproval,
   listRecentExpiredTaskNotesApprovals,
   OperationApprovalError,
   verifyOperationApproval,
@@ -116,6 +117,20 @@ describe("operation approval service", () => {
     });
 
     expect(update).toMatchObject({ status: "consumed", consumedAt: now });
+  });
+
+  it("allows the user to reject an approved or expired unconsumed preview", async () => {
+    let update: Record<string, unknown> | undefined;
+    const expiredApproved = { ...approved, expiresAt: new Date("2026-08-15T23:00:00.000Z") };
+
+    await decideOperationApproval(selectDb([expiredApproved], (values) => { update = values; }), {
+      workspaceId: "workspace-1",
+      approvalId: approved.id,
+      decision: "rejected",
+      now,
+    });
+
+    expect(update).toMatchObject({ status: "rejected", approvedAt: null, rejectedAt: now });
   });
 
   it("limits the recent expired task-notes history", async () => {

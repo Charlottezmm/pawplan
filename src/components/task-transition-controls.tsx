@@ -1,8 +1,9 @@
 "use client";
 
-import { CalendarPlus, RotateCcw } from "lucide-react";
+import { CalendarPlus, RotateCcw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 
 type ApiError = { error?: { message?: string } };
 
@@ -150,5 +151,84 @@ export function LegacySkippedRestoreControl({ taskId }: { taskId: string }) {
       </button>
       {message ? <span className="paw-task-transition-message" role="status">{message}</span> : null}
     </div>
+  );
+}
+
+export function TaskDeleteControl({
+  taskId,
+  title,
+  compact = false,
+  onDeleted,
+}: {
+  taskId: string;
+  title: string;
+  compact?: boolean;
+  onDeleted?: () => void;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const attempt = useRef<{ idempotencyKey: string; operationId: string } | null>(null);
+
+  async function permanentlyDelete() {
+    setPending(true);
+    setMessage(null);
+    attempt.current ??= {
+      idempotencyKey: operationKey("task-delete"),
+      operationId: crypto.randomUUID(),
+    };
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: taskId,
+          confirmation: "PERMANENT_DELETE",
+          ...attempt.current,
+        }),
+      });
+      const result = await response.json().catch(() => null) as { error?: string; verified?: boolean } | null;
+      if (!response.ok || !result?.verified) throw new Error(result?.error ?? "删除结果无法确认");
+      attempt.current = null;
+      setOpen(false);
+      onDeleted?.();
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "删除失败，卡片仍保持原状");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        className={compact ? "paw-act-btn delete" : "paw-secondary-btn paw-delete-task-btn"}
+        type="button"
+        onClick={() => {
+          setMessage(null);
+          setOpen(true);
+        }}
+        disabled={pending}
+      >
+        <Trash2 size={14} /> 永久删除
+      </button>
+      <ConfirmDialog
+        open={open}
+        onClose={() => {
+          if (!pending) setOpen(false);
+        }}
+        onConfirm={() => void permanentlyDelete()}
+        title="永久删除这张卡片？"
+        description={`“${title}”会从 PawPlan 永久删除。`}
+        confirmLabel="确认永久删除"
+        pending={pending}
+        destructive
+      >
+        <p>这是不可恢复操作；普通的“移出排期”仍会把任务保留在稍后处理。</p>
+        {message ? <p className="paw-danger-text mt-2" role="alert">{message}</p> : null}
+      </ConfirmDialog>
+    </>
   );
 }

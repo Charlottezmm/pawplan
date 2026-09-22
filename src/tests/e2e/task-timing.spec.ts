@@ -183,6 +183,21 @@ test("backlog next week creates a persisted slot through confirmation", async ({
   expect(row.status).toBe("todo");
   expect(row.scheduled_start).not.toBeNull();
 });
+
+test("a task card can be permanently deleted through one explicit confirmation", async ({ page }) => {
+  await page.goto("/backlog");
+  const card = page.locator("article").filter({ hasText: "nanoGPT · 最后一课" });
+  await card.getByRole("button", { name: "永久删除", exact: true }).click();
+  await expect(page.getByRole("dialog").getByText("永久删除这张卡片？", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "确认永久删除", exact: true }).click();
+
+  await expect(page.getByRole("heading", { name: "nanoGPT · 最后一课" })).toHaveCount(0);
+  expect((await pool.query("select id from tasks where id=$1", [backlogId])).rowCount).toBe(0);
+  expect((await pool.query(
+    "select status from operation_approvals where workspace_id=$1 and operation_kind='delete_tasks_batch'",
+    [workspaceId],
+  )).rows).toEqual([{ status: "consumed" }]);
+});
 test("Review shows the full preview and applies a proposal after confirmation", async ({
   page,
 }) => {

@@ -24,7 +24,7 @@ describe("OperationApprovalList expired task-notes history", () => {
     expect(formatApprovalExpiry("invalid")).toBe("时间无效");
   });
 
-  it("renders an expired-only notice without approval controls", () => {
+  it("renders an expired-only notice with a cleanup control but no approval action", () => {
     const html = renderToStaticMarkup(React.createElement(OperationApprovalList, {
       approvals: [],
       expiredApprovals: [{
@@ -43,6 +43,7 @@ describe("OperationApprovalList expired task-notes history", () => {
     expect(html).toContain("最近过期的任务详情审核");
     expect(html).toContain("这些预览已失效，不能再批准");
     expect(html).toContain("已批准，尚未应用");
-    expect(html).not.toContain("<button");
+    expect(html).toContain("清除这条记录");
+    expect(html).not.toContain("确认并应用");
   });
 });

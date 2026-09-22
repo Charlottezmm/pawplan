@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { CatIcon } from "./cat-icon";
 import { DailyCheckin } from "./daily-checkin";
 import { TaskDetailContent } from "./task-detail-content";
+import { TaskDeleteControl } from "./task-transition-controls";
 import { TodayTaskTimeline, TaskTimingButton } from "./task-timing-controls";
 import { DialogSheet } from "./ui/dialog-sheet";
 import { ConfirmDialog } from "./ui/confirm-dialog";
@@ -456,6 +457,15 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                       <Archive size={13} />
                       移出排期
                     </button>
+                    <TaskDeleteControl
+                      taskId={task.id}
+                      title={task.title}
+                      compact
+                      onDeleted={() => {
+                        setTasks((current) => current.filter((item) => item.id !== task.id));
+                        setExpandedId(null);
+                      }}
+                    />
                   </div>
                   {task.displayStatus === "blocked" ? (
                     <p className="paw-task-blocked-note">

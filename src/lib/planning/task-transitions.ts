@@ -8,7 +8,7 @@ type TransitionDb = {
 };
 
 type DaySegment = "morning" | "afternoon" | "evening";
-type TransitionAction = "reschedule_backlog" | "restore_archived_to_backlog" | "move_legacy_skipped_to_backlog";
+type TransitionAction = "archive_task" | "reschedule_backlog" | "restore_archived_to_backlog" | "move_legacy_skipped_to_backlog";
 
 type TaskReadback = {
   id: string;
@@ -54,6 +54,7 @@ export class TaskTransitionError extends Error {
 }
 
 function operationKind(action: TransitionAction) {
+  if (action === "archive_task") return "archive_task_direct";
   if (action === "reschedule_backlog") return "reschedule_backlog_task";
   if (action === "restore_archived_to_backlog") return "restore_archived_task";
   return "restore_legacy_skipped_task";
@@ -156,6 +157,7 @@ async function runTransition(
     idempotencyKey: string;
     request: Record<string, unknown>;
     apply: (tx: any, task: any, now: Date) => Promise<void>;
+    source?: "manual" | "mcp";
     now?: Date;
   },
 ): Promise<TaskTransitionResult> {
@@ -257,9 +259,11 @@ async function runTransition(
     await tx.insert(changeLogs).values({
       workspaceId: input.workspaceId,
       planId: plan.id,
-      source: "manual",
+      source: input.source ?? "manual",
       summary: input.action === "reschedule_backlog"
         ? "Rescheduled backlog task"
+        : input.action === "archive_task"
+          ? "Archived user-confirmed task directly"
         : input.action === "restore_archived_to_backlog"
           ? "Restored archived task to backlog"
           : "Moved legacy skipped task to backlog",
@@ -278,6 +282,46 @@ async function runTransition(
       .where(and(eq(planOperations.id, claimed.id), eq(planOperations.workspaceId, input.workspaceId)));
 
     return result;
+  });
+}
+
+export async function archiveTaskDirect(
+  db: TransitionDb,
+  input: {
+    workspaceId: string;
+    taskId: string;
+    expectedArchived: false;
+    idempotencyKey: string;
+    source?: "manual" | "mcp";
+    now?: Date;
+  },
+) {
+  return runTransition(db, {
+    ...input,
+    action: "archive_task",
+    request: { expectedArchived: input.expectedArchived },
+    source: input.source,
+    apply: async (tx, task, now) => {
+      if (input.expectedArchived !== false || task.archivedAt !== null) {
+        throw new TaskTransitionError(
+          "task_state_conflict",
+          "Task is not in the expected active state",
+          409,
+          { expectedArchived: false, actualArchived: task.archivedAt !== null },
+        );
+      }
+      const [updated] = await tx
+        .update(tasks)
+        .set({ archivedAt: now, updatedAt: now })
+        .where(and(
+          eq(tasks.id, input.taskId),
+          eq(tasks.workspaceId, input.workspaceId),
+          eq(tasks.planId, task.planId),
+          isNull(tasks.archivedAt),
+        ))
+        .returning({ id: tasks.id });
+      if (!updated) throw new TaskTransitionError("task_state_conflict", "Task changed before archival", 409);
+    },
   });
 }
 

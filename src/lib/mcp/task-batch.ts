@@ -12,11 +12,13 @@ export type TaskBatchOperation = {
   daySegment?: DaySegment;
   blocked?: boolean;
   estimatedMinutes?: number;
+  notes?: string;
   expectedStatus?: TaskStatus;
   expectedDate?: string;
   expectedDaySegment?: DaySegment;
   expectedBlocked?: boolean;
   expectedEstimatedMinutes?: number;
+  expectedNotes?: string | null;
 };
 
 export type TaskBatchResult = {
@@ -32,6 +34,7 @@ export type TaskBatchResult = {
     daySegment: DaySegment;
     blocked: boolean;
     estimatedMinutes: number;
+    notes: string | null;
   }>;
 };
 
@@ -80,11 +83,13 @@ function requestHash(operations: TaskBatchOperation[]) {
     daySegment: operation.daySegment,
     blocked: operation.blocked,
     estimatedMinutes: operation.estimatedMinutes,
+    notes: operation.notes,
     expectedStatus: operation.expectedStatus,
     expectedDate: operation.expectedDate,
     expectedDaySegment: operation.expectedDaySegment,
     expectedBlocked: operation.expectedBlocked,
     expectedEstimatedMinutes: operation.expectedEstimatedMinutes,
+    expectedNotes: operation.expectedNotes,
   }));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
@@ -97,6 +102,7 @@ function serializeTask(task: Record<string, any>) {
     daySegment: task.daySegment as DaySegment,
     blocked: Boolean(task.blocked),
     estimatedMinutes: Number(task.estimatedMinutes),
+    notes: typeof task.notes === "string" ? task.notes : null,
   };
 }
 
@@ -110,6 +116,7 @@ async function readTasks(tx: any, workspaceId: string, taskIds: string[], lock =
       daySegment: tasks.daySegment,
       blocked: tasks.blocked,
       estimatedMinutes: tasks.estimatedMinutes,
+      notes: tasks.notes,
     })
     .from(tasks)
     .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, taskIds), isNull(tasks.archivedAt)));
@@ -142,6 +149,9 @@ function stateConflicts(task: Record<string, any>, operation: TaskBatchOperation
       actual: task.estimatedMinutes,
     });
   }
+  if (operation.expectedNotes !== undefined && (task.notes ?? null) !== operation.expectedNotes) {
+    conflicts.push({ field: "notes", expected: operation.expectedNotes, actual: task.notes ?? null });
+  }
   return conflicts;
 }
 
@@ -154,6 +164,7 @@ function updateValues(task: Record<string, any>, operation: TaskBatchOperation) 
   if (operation.estimatedMinutes !== undefined && task.estimatedMinutes !== operation.estimatedMinutes) {
     values.estimatedMinutes = operation.estimatedMinutes;
   }
+  if (operation.notes !== undefined && (task.notes ?? null) !== operation.notes) values.notes = operation.notes;
   return values;
 }
 
@@ -176,11 +187,12 @@ export async function updateTasksBatch(
       operation.date === undefined &&
       operation.daySegment === undefined &&
       operation.blocked === undefined &&
-      operation.estimatedMinutes === undefined
+      operation.estimatedMinutes === undefined &&
+      operation.notes === undefined
     ) {
       throw new McpTaskBatchError(
         "invalid_batch",
-        "Each batch operation must update status, date, daySegment, blocked, or estimatedMinutes",
+        "Each batch operation must update status, date, daySegment, blocked, estimatedMinutes, or notes",
         400,
       );
     }
@@ -201,6 +213,9 @@ export async function updateTasksBatch(
           operation.expectedEstimatedMinutes > 480))
     ) {
       throw new McpTaskBatchError("invalid_batch", "Task estimates must be integers from 5 to 480 minutes", 400);
+    }
+    if (operation.notes !== undefined && (!operation.notes.trim() || operation.notes.length > 2000)) {
+      throw new McpTaskBatchError("invalid_batch", "Task notes must contain 1 to 2000 characters", 400);
     }
   }
 
@@ -306,6 +321,7 @@ export async function updateTasksBatch(
             daySegment: operation.daySegment,
             blocked: operation.blocked,
             estimatedMinutes: operation.estimatedMinutes,
+            notes: operation.notes,
           },
         },
       });

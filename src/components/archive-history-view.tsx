@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Archive, ChevronDown, Clock3, Filter, RotateCcw, Search } from "lucide-react";
 import { PlanSectionNav } from "@/components/plan-section-nav";
 import type { ArchiveHistoryViewData } from "@/lib/planning/project-view-data";
-import { ArchiveRestoreControl } from "@/components/task-transition-controls";
+import { ArchiveRestoreControl, TaskDeleteControl } from "@/components/task-transition-controls";
 
 const statusLabels = {
   todo: "计划中（归档前）",
@@ -128,7 +128,10 @@ export function ArchiveHistoryView({ data }: { data: ArchiveHistoryViewData }) {
                         <span><Clock3 size={12} /> {minutesLabel(task.estimatedMinutes)}</span>
                         <span>归档于 {task.archivedLabel}</span>
                       </div>
-                      <ArchiveRestoreControl taskId={task.id} />
+                      <div className="paw-backlog-scheduling-actions">
+                        <ArchiveRestoreControl taskId={task.id} />
+                        <TaskDeleteControl taskId={task.id} title={task.title} />
+                      </div>
                     </article>
                   ))}
                 </div>

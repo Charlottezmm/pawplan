@@ -1,5 +1,5 @@
 import { timingRequestSchema, localDateSchema } from "@/lib/planning/task-timing";
-import { readTaskTiming, proposeTaskTiming, applyTaskTiming } from "@/lib/planning/task-timing-service";
+import { readTaskTiming, proposeTaskTiming, applyTaskTiming, applyConfirmedTaskTiming } from "@/lib/planning/task-timing-service";
 import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import { checkins, courses, routines, tasks } from "@/lib/db/schema";
@@ -29,6 +29,7 @@ import {
 } from "@/lib/mcp/conversation-tools";
 import { proposeTimetableImport, proposeTimetableImportArgsSchema } from "@/lib/mcp/timetable-import";
 import { updateTasksBatch } from "@/lib/mcp/task-batch";
+import { archiveTaskDirect } from "@/lib/planning/task-transitions";
 import { applyTaskNotesBatch, proposeTaskNotesBatch } from "@/lib/mcp/task-notes-batch";
 import {
   applyTaskArchiveBatch,
@@ -149,11 +150,13 @@ const taskBatchOperationSchema = z
     day_segment: daySegmentSchema.optional(),
     blocked: z.boolean().optional(),
     estimated_minutes: z.number().int().min(5).max(480).optional(),
+    notes: z.string().trim().min(1).max(2000).optional(),
     expected_status: taskStatusSchema.optional(),
     expected_date: dateStringSchema.optional(),
     expected_day_segment: daySegmentSchema.optional(),
     expected_blocked: z.boolean().optional(),
     expected_estimated_minutes: z.number().int().min(5).max(480).optional(),
+    expected_notes: z.string().max(2000).nullable().optional(),
   })
   .strict()
   .refine(
@@ -162,8 +165,9 @@ const taskBatchOperationSchema = z
       operation.date !== undefined ||
       operation.day_segment !== undefined ||
       operation.blocked !== undefined ||
-      operation.estimated_minutes !== undefined,
-    { message: "Each batch operation must update status, date, day_segment, blocked, or estimated_minutes" },
+      operation.estimated_minutes !== undefined ||
+      operation.notes !== undefined,
+    { message: "Each batch operation must update status, date, day_segment, blocked, estimated_minutes, or notes" },
   );
 
 const taskBatchFiltersSchema = z
@@ -402,6 +406,7 @@ const monthlySummarySchema = z
 
 export const pawPlanToolSchemas = {
   get_task_timing: z.object({ date_from: localDateSchema, date_to: localDateSchema.optional() }),
+  update_task_timing: z.object({ request: timingRequestSchema, idempotency_key: z.string().min(8).max(180) }),
   propose_task_timing: z.object({ request: timingRequestSchema, idempotency_key: z.string().min(1).max(180) }),
   apply_task_timing: z.object({ approval_id: z.string().uuid() }),
   get_agent_guidance: emptyArgsSchema,
@@ -586,6 +591,11 @@ export const pawPlanToolSchemas = {
       operations: z.array(taskBatchOperationSchema).min(1).max(50),
     })
     .strict(),
+  archive_task: z.object({
+    task_id: z.string().uuid(),
+    expected_archived: z.literal(false),
+    idempotency_key: z.string().trim().min(8).max(200),
+  }).strict(),
   save_conversation_summary: z
     .object({
       topic: z.string().trim().min(1).max(240),
@@ -681,9 +691,10 @@ export const pawPlanToolNames = Object.keys(pawPlanToolSchemas) as PawPlanToolNa
 export const pawPlanAgentGuidance = {
   taskTiming: {
     read: "get_task_timing",
+    direct: "update_task_timing",
     propose: "propose_task_timing",
     apply: "apply_task_timing",
-    workflow: "Exact task times use get_task_timing -> propose_task_timing -> user approval -> apply_task_timing -> persisted readback. arrange treats morning/afternoon/evening as preferences, with fallback inside the requested clock window. Fixed/protected slots and formal deadlines remain hard constraints.",
+    workflow: "For exact times already confirmed by the user, use get_task_timing -> update_task_timing -> ID-level readback. Use propose_task_timing -> user approval -> apply_task_timing only for unconfirmed planning choices or protected moves. arrange treats morning/afternoon/evening as preferences, with fallback inside the requested clock window. Fixed/protected slots and formal deadlines remain hard constraints.",
     discovery: "These tools are served by /api/mcp. If this connection does not list them, refresh/reconnect the MCP connection and its tool catalog; do not claim exact scheduling is unsupported or applied through a date-only tool. apply_task_timing requires write permission.",
   },
   purpose: "Use PawPlan MCP as a review-first planning interface. PawPlan owns validation, persistence, Review, audit, and readback.",
@@ -721,7 +732,7 @@ Required workflow:
     "Do not apply changes automatically.",
     "Do not edit constraints through MCP.",
     "Use create_checkin, update_task_status, update_task_schedule, or update_task_notes only when the user explicitly asks to record a fact or make a trusted direct edit.",
-    "For multiple trusted direct status/schedule edits, use one update_tasks_batch call; do not loop low-level writes. Multiple notes edits must use propose_task_notes_batch, one user approval, then apply_task_notes_batch. Routine planning still uses Review-first rebalance tools.",
+    "For multiple user-confirmed task status, schedule, estimate, or notes edits, use one update_tasks_batch call and verify its ID-level readback; do not create an extra Review or loop low-level writes. Routine planning still uses Review-first rebalance tools.",
   ],
   reviewStatusMeanings: {
     draft_created: "A new Review draft was created.",
@@ -733,10 +744,11 @@ Required workflow:
 };
 
 export const pawPlanServerInstructions =
-  "PawPlan is review-first. Rebalance tools create a Review draft only and must be used only after an explicit user request or concrete user-provided event, never as recurring daily cleanup. AI Project Portfolio changes must use propose_project_portfolio_update to create a pending approval, then wait for the user to approve the exact Preview in PawPlan Review before apply_project_portfolio_update with approval_id. Multiple task-notes edits must use propose_task_notes_batch, wait for the single exact Review approval, then use apply_task_notes_batch; approval alone is authorization, not proof of persistence. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
+  "User-confirmed ordinary task edits are direct writes: use update_task_status, update_task_schedule, update_task_notes, update_task_timing, archive_task, or one update_tasks_batch call, then verify the returned task IDs. Do not create a second Review for facts the user already confirmed. Rebalance tools create a Review draft only for unconfirmed planning choices and must never run as recurring cleanup. Permanent deletion and moves of protected course or fixed items require an exact pending approval; apply tools must use its approval_id. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_task_timing: "Read persisted task time windows, protection, deadlines, desired dates and checkpoints, plus fixed arrangements in Asia/Shanghai. No mutation.",
+  update_task_timing: "Directly apply exact task times, completion, pause, or checkpoint changes that the user already confirmed, with idempotency and ID-level readback. Protected moves still require Review.",
   propose_task_timing: "Preview exact task slots, extensions, deferred remaining work, completion or backlog placement. Creates one Review, does not change tasks. Use only after user requests planning. schedule.edits are explicit times; arrange tries day-segment preferences first, then uses the explicitly selected clock window and warns about preference changes. Date range is explicit and at most 31 days. Locked tasks must be explicitly unlocked before moving. Wait for the user to approve the exact preview.",
   apply_task_timing: "Apply a user-approved task timing Review atomically and read back exact IDs. Cannot approve. Retry with the same approval_id; stale previews require regeneration and approval.",
   get_agent_guidance: "Read PawPlan on-demand planning guidance and Review-first safety rules.",
@@ -781,7 +793,8 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   apply_task_notes_batch:
     "Atomically apply one user-approved task-notes batch using only its approval_id, signed Preview token, and idempotency key, then verify every note by readback.",
   update_tasks_batch:
-    "Atomically apply up to 50 trusted direct task status, schedule, or estimate edits with optimistic preconditions, idempotency, audit, and final readback. Routine planning must use Review-first tools.",
+    "Atomically apply up to 50 user-confirmed task status, schedule, estimate, or notes edits with optimistic preconditions, idempotency, audit, and ID-level readback. Do not create an extra Review for these confirmed edits.",
+  archive_task: "Directly archive one exact user-confirmed task with optimistic state, idempotency, audit, and persisted readback. The task remains recoverable from archive history.",
   save_conversation_summary: "Save a structured conversation summary without storing raw transcript, with MCP provenance.",
   record_decision: "Record a structured workspace decision with MCP provenance.",
   propose_patch: "Create a preview-only agent patch draft; this never applies the patch.",
@@ -1137,6 +1150,10 @@ export async function runPawPlanTool(
     const p = pawPlanToolSchemas.get_task_timing.parse(args);
     return readTaskTiming(db, workspaceId, p.date_from, p.date_to);
   }
+  if (toolName === "update_task_timing") {
+    const p = pawPlanToolSchemas.update_task_timing.parse(args);
+    return applyConfirmedTaskTiming(db, workspaceId, p.request, p.idempotency_key);
+  }
   if (toolName === "propose_task_timing") {
     const p = pawPlanToolSchemas.propose_task_timing.parse(args);
     return proposeTaskTiming(db, workspaceId, p.request, p.idempotency_key);
@@ -1355,12 +1372,25 @@ export async function runPawPlanTool(
         daySegment: operation.day_segment,
         blocked: operation.blocked,
         estimatedMinutes: operation.estimated_minutes,
+        notes: operation.notes,
         expectedStatus: operation.expected_status,
         expectedDate: operation.expected_date,
         expectedDaySegment: operation.expected_day_segment,
         expectedBlocked: operation.expected_blocked,
         expectedEstimatedMinutes: operation.expected_estimated_minutes,
+        expectedNotes: operation.expected_notes,
       })),
+    });
+  }
+
+  if (toolName === "archive_task") {
+    const parsed = pawPlanToolSchemas.archive_task.parse(args);
+    return archiveTaskDirect(db, {
+      workspaceId,
+      taskId: parsed.task_id,
+      expectedArchived: parsed.expected_archived,
+      idempotencyKey: parsed.idempotency_key,
+      source: "mcp",
     });
   }
 

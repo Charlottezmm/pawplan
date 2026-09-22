@@ -7,6 +7,7 @@ import * as schema from "@/lib/db/schema";
 import {
   proposeTaskTiming,
   applyTaskTiming,
+  applyConfirmedTaskTiming,
   readTaskTiming,
 } from "@/lib/planning/task-timing-service";
 import { decideOperationApproval } from "@/lib/approvals/service";
@@ -112,6 +113,36 @@ describe.runIf(run)("task timing persistence and approval", () => {
         .where(eq(schema.changeLogs.workspaceId, w.id)),
     ).toHaveLength(1);
   });
+  it("directly applies a user-confirmed exact time once without creating Review", async () => {
+    const { w, t } = await seed();
+    const key = randomUUID();
+    const saved = await applyConfirmedTaskTiming(db, w.id, request(t.id), key);
+
+    expect(saved).toMatchObject({
+      status: "applied",
+      changedTaskIds: [t.id],
+      verified: true,
+      replayed: false,
+      readback: [expect.objectContaining({ id: t.id, scheduledStart: "2035-09-20T01:00:00.000Z" })],
+    });
+    expect((await applyConfirmedTaskTiming(db, w.id, request(t.id), key)).replayed).toBe(true);
+    expect(await db.select().from(schema.operationApprovals).where(eq(schema.operationApprovals.workspaceId, w.id))).toEqual([]);
+  });
+  it("keeps a protected task unchanged when direct timing tries to move it", async () => {
+    const { w, t } = await seed();
+    await db.update(schema.tasks).set({
+      movable: false,
+      scheduledStart: new Date("2035-09-20T08:00:00+08:00"),
+      scheduledEnd: new Date("2035-09-20T08:45:00+08:00"),
+    }).where(eq(schema.tasks.id, t.id));
+
+    await expect(applyConfirmedTaskTiming(db, w.id, request(t.id, { startTime: "09:00" }), randomUUID()))
+      .rejects.toThrow("请改用 Review");
+    expect((await readTaskTiming(db, w.id, "2035-09-20")).tasks[0]).toMatchObject({
+      movable: false,
+      scheduledStart: "2035-09-20T00:00:00.000Z",
+    });
+  });
   it("stale task and new fixed block prevent all writes", async () => {
     const { w, t } = await seed();
     const p = await proposeTaskTiming(db, w.id, request(t.id), randomUUID());
@@ -158,6 +189,33 @@ describe.runIf(run)("task timing persistence and approval", () => {
     await expect(
       proposeTaskTiming(db, other.w.id, request(t.id), randomUUID()),
     ).rejects.toThrow("任务不存在");
+  });
+  it("lets the user reject an approved or expired unconsumed Review", async () => {
+    const { w, t } = await seed();
+    const approvedPreview = await proposeTaskTiming(db, w.id, request(t.id), randomUUID());
+    await approve(w.id, approvedPreview.approvalId!);
+    await decideOperationApproval(db, {
+      workspaceId: w.id,
+      approvalId: approvedPreview.approvalId!,
+      decision: "rejected",
+    });
+
+    const expiredPreview = await proposeTaskTiming(db, w.id, request(t.id, { startTime: "10:00" }), randomUUID());
+    await db.update(schema.operationApprovals).set({ expiresAt: new Date(0) })
+      .where(eq(schema.operationApprovals.id, expiredPreview.approvalId!));
+    await decideOperationApproval(db, {
+      workspaceId: w.id,
+      approvalId: expiredPreview.approvalId!,
+      decision: "rejected",
+    });
+
+    const statuses = await db.select({ id: schema.operationApprovals.id, status: schema.operationApprovals.status })
+      .from(schema.operationApprovals)
+      .where(eq(schema.operationApprovals.workspaceId, w.id));
+    expect(statuses).toEqual(expect.arrayContaining([
+      { id: approvedPreview.approvalId, status: "rejected" },
+      { id: expiredPreview.approvalId, status: "rejected" },
+    ]));
   });
   it("backlog becomes planned; pause preserves todo and remaining work; complete requires its own review", async () => {
     const { w, t } = await seed();
@@ -288,6 +346,19 @@ describe.runIf(run)("task timing persistence and approval", () => {
     await expect(
       proposeTaskTiming(db, w.id, request(t.id, { minutes: 60 }), key),
     ).rejects.toThrow("同一请求标识");
+  });
+  it("automatically stales an older timing Review for the same task", async () => {
+    const { w, t } = await seed();
+    const first = await proposeTaskTiming(db, w.id, request(t.id), randomUUID());
+    const second = await proposeTaskTiming(db, w.id, request(t.id, { startTime: "10:00" }), randomUUID());
+    const rows = await db.select({ id: schema.operationApprovals.id, status: schema.operationApprovals.status })
+      .from(schema.operationApprovals)
+      .where(eq(schema.operationApprovals.workspaceId, w.id));
+
+    expect(rows).toEqual(expect.arrayContaining([
+      { id: first.approvalId, status: "stale" },
+      { id: second.approvalId, status: "pending" },
+    ]));
   });
   it("protecting a slot normalizes the date without losing the window", async () => {
     const { w, t } = await seed();

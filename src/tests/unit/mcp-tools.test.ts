@@ -223,6 +223,8 @@ describe("MCP planning tools", () => {
     expect(allowedPawPlanToolNames("read_write")).toContain("propose_week_rebalance");
     expect(allowedPawPlanToolNames("read_write")).not.toContain("propose_overdue_replan");
     expect(allowedPawPlanToolNames("read_write")).toContain("update_tasks_batch");
+    expect(allowedPawPlanToolNames("read_write")).toContain("update_task_timing");
+    expect(allowedPawPlanToolNames("read_write")).toContain("archive_task");
     expect(allowedPawPlanToolNames("read_write")).toContain("archive_tasks_batch");
     expect(allowedPawPlanToolNames("read_write")).toContain("restore_tasks_batch");
     expect(allowedPawPlanToolNames("read_write")).toContain("delete_tasks_batch");
@@ -261,6 +263,8 @@ describe("MCP planning tools", () => {
     ]);
     for (const directWriteTool of [
       "apply_project_portfolio_update",
+      "update_task_timing",
+      "archive_task",
       "apply_task_notes_batch",
       "preview_task_batch",
       "update_task_schedule",
@@ -321,6 +325,7 @@ describe("MCP planning tools", () => {
     expect(JSON.stringify(result)).toContain("get_tasks");
     expect(JSON.stringify(result)).toContain("draft_created");
     expect(JSON.stringify(result)).toContain("update_tasks_batch");
+    expect(JSON.stringify(result)).toContain("update_task_timing");
     expect(JSON.stringify(result)).not.toContain("propose_overdue_replan");
   });
 
@@ -340,6 +345,7 @@ describe("MCP planning tools", () => {
         day_segment: { type: "string", enum: ["morning", "afternoon", "evening"] },
         estimated_minutes: { type: "integer", minimum: 5, maximum: 480 },
         expected_estimated_minutes: { type: "integer", minimum: 5, maximum: 480 },
+        notes: { type: "string", minLength: 1, maxLength: 2000 },
       },
       additionalProperties: false,
     });

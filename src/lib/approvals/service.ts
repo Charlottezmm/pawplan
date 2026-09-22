@@ -119,6 +119,9 @@ export async function decideOperationApproval(
   input: { workspaceId: string; approvalId: string; decision: "approved" | "rejected"; now?: Date },
 ) {
   const now = input.now ?? new Date();
+  const decisionGuard = input.decision === "approved"
+    ? and(eq(operationApprovals.status, "pending"), gt(operationApprovals.expiresAt, now))
+    : inArray(operationApprovals.status, ["pending", "approved"]);
   const rows = await db
     .update(operationApprovals)
     .set({
@@ -131,8 +134,7 @@ export async function decideOperationApproval(
       and(
         eq(operationApprovals.id, input.approvalId),
         eq(operationApprovals.workspaceId, input.workspaceId),
-        eq(operationApprovals.status, "pending"),
-        gt(operationApprovals.expiresAt, now),
+        decisionGuard,
       ),
     )
     .returning();

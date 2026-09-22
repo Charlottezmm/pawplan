@@ -4,11 +4,20 @@ import { z } from "zod";
 import { getWorkspaceIdFromSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { tasks } from "@/lib/db/schema";
+import { decideOperationApproval, OperationApprovalError } from "@/lib/approvals/service";
+import { applyTaskArchiveBatch, McpTaskArchiveError, previewTaskBatch } from "@/lib/mcp/task-archive";
 import { getActivePlanId } from "@/lib/planning/active-plan";
 import { createChoreTask, PlanningServiceError, updateTaskNotes, updateTaskSchedule, updateTaskStatus } from "@/lib/planning/service";
 import { readJsonBody } from "@/lib/validation/common";
 
 const choreSchema = z.object({ title: z.string().trim().min(1).max(240) });
+
+const taskDeleteSchema = z.object({
+  id: z.string().uuid(),
+  confirmation: z.literal("PERMANENT_DELETE"),
+  idempotencyKey: z.string().trim().min(8).max(200),
+  operationId: z.string().uuid(),
+}).strict();
 
 const taskUpdateSchema = z
   .object({
@@ -158,6 +167,60 @@ export async function PATCH(request: Request) {
   } catch (error) {
     if (error instanceof PlanningServiceError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
+}
+
+export async function DELETE(request: Request) {
+  const workspaceId = await getWorkspaceIdFromSession();
+  if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const parsed = taskDeleteSchema.safeParse(await readJsonBody(request));
+  if (!parsed.success) return NextResponse.json({ error: "Invalid permanent delete request" }, { status: 400 });
+
+  const db = getDb();
+  let approvalId: string | undefined;
+  try {
+    const preview = await previewTaskBatch(db, {
+      workspaceId,
+      action: "delete",
+      filters: { taskIds: [parsed.data.id] },
+      includeDone: true,
+      allowDeleteUnarchived: true,
+    });
+    if (!preview.previewToken || !preview.approvalId || preview.count !== 1) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+    approvalId = preview.approvalId;
+    await decideOperationApproval(db, {
+      workspaceId,
+      approvalId,
+      decision: "approved",
+    });
+    const result = await applyTaskArchiveBatch(db, {
+      workspaceId,
+      action: "delete",
+      previewToken: preview.previewToken,
+      approvalId,
+      confirmTaskCount: 1,
+      confirmation: parsed.data.confirmation,
+      idempotencyKey: parsed.data.idempotencyKey,
+      groupId: parsed.data.operationId,
+    });
+    const verified = result.processedCount === 1 && result.taskIds.includes(parsed.data.id);
+    if (!verified) return NextResponse.json({ error: "Delete readback was incomplete" }, { status: 500 });
+    return NextResponse.json({ status: result.status, taskId: parsed.data.id, verified: true });
+  } catch (error) {
+    if (approvalId) {
+      try {
+        await decideOperationApproval(db, { workspaceId, approvalId, decision: "rejected" });
+      } catch {
+        // A consumed or already-final approval needs no further cleanup.
+      }
+    }
+    if (error instanceof McpTaskArchiveError || error instanceof OperationApprovalError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
     throw error;
   }

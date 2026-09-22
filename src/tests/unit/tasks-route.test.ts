@@ -27,6 +27,28 @@ vi.mock("@/lib/planning/service", () => {
   };
 });
 
+vi.mock("@/lib/approvals/service", () => {
+  class OperationApprovalError extends Error {
+    constructor(message: string, public code = "approval_error", public status = 409) {
+      super(message);
+    }
+  }
+  return { OperationApprovalError, decideOperationApproval: vi.fn() };
+});
+
+vi.mock("@/lib/mcp/task-archive", () => {
+  class McpTaskArchiveError extends Error {
+    constructor(message: string, public code = "task_archive_error", public status = 409) {
+      super(message);
+    }
+  }
+  return {
+    McpTaskArchiveError,
+    previewTaskBatch: vi.fn(),
+    applyTaskArchiveBatch: vi.fn(),
+  };
+});
+
 const taskId = "11111111-1111-4111-8111-111111111111";
 
 function patchRequest(body: Record<string, unknown>) {
@@ -39,6 +61,14 @@ function patchRequest(body: Record<string, unknown>) {
 
 function getRequest(path = "/api/tasks") {
   return new Request(`http://localhost${path}`);
+}
+
+function deleteRequest(body: Record<string, unknown>) {
+  return new Request("http://localhost/api/tasks", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 function sqlParamValues(value: unknown): unknown[] {
@@ -326,5 +356,73 @@ describe("tasks route", () => {
       source: "manual",
     });
     expect(updateTaskStatus).not.toHaveBeenCalled();
+  });
+
+  it("permanently deletes one exact card only after the user confirmation and ID readback", async () => {
+    const db = { id: "db" };
+    const operationId = "22222222-2222-4222-8222-222222222222";
+    const approvalId = "33333333-3333-4333-8333-333333333333";
+    const { getWorkspaceIdFromSession } = await import("@/lib/auth/session");
+    const { getDb } = await import("@/lib/db/client");
+    const { decideOperationApproval } = await import("@/lib/approvals/service");
+    const { previewTaskBatch, applyTaskArchiveBatch } = await import("@/lib/mcp/task-archive");
+    vi.mocked(getWorkspaceIdFromSession).mockResolvedValue("workspace-1");
+    vi.mocked(getDb).mockReturnValue(db);
+    vi.mocked(previewTaskBatch).mockResolvedValue({
+      count: 1,
+      previewToken: "signed-preview-token",
+      approvalId,
+    } as never);
+    vi.mocked(decideOperationApproval).mockResolvedValue({ id: approvalId, status: "approved" } as never);
+    vi.mocked(applyTaskArchiveBatch).mockResolvedValue({
+      status: "succeeded",
+      processedCount: 1,
+      taskIds: [taskId],
+    } as never);
+    const { DELETE } = await import("@/app/api/tasks/route");
+
+    const response = await DELETE(deleteRequest({
+      id: taskId,
+      confirmation: "PERMANENT_DELETE",
+      idempotencyKey: "delete-card-once",
+      operationId,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "succeeded", taskId, verified: true });
+    expect(previewTaskBatch).toHaveBeenCalledWith(db, expect.objectContaining({
+      workspaceId: "workspace-1",
+      action: "delete",
+      filters: { taskIds: [taskId] },
+      allowDeleteUnarchived: true,
+    }));
+    expect(decideOperationApproval).toHaveBeenCalledWith(db, {
+      workspaceId: "workspace-1",
+      approvalId,
+      decision: "approved",
+    });
+    expect(applyTaskArchiveBatch).toHaveBeenCalledWith(db, expect.objectContaining({
+      action: "delete",
+      approvalId,
+      confirmation: "PERMANENT_DELETE",
+      groupId: operationId,
+    }));
+  });
+
+  it("rejects a delete request that lacks the irreversible confirmation", async () => {
+    const { getWorkspaceIdFromSession } = await import("@/lib/auth/session");
+    const { getDb } = await import("@/lib/db/client");
+    vi.mocked(getWorkspaceIdFromSession).mockResolvedValue("workspace-1");
+    const { DELETE } = await import("@/app/api/tasks/route");
+
+    const response = await DELETE(deleteRequest({
+      id: taskId,
+      confirmation: "DELETE",
+      idempotencyKey: "delete-card-once",
+      operationId: "22222222-2222-4222-8222-222222222222",
+    }));
+
+    expect(response.status).toBe(400);
+    expect(getDb).not.toHaveBeenCalled();
   });
 });

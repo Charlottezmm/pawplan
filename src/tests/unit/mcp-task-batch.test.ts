@@ -292,6 +292,36 @@ describe("atomic MCP task batch", () => {
     expect(db.state.tasks.map((task) => task.estimatedMinutes)).toEqual([20, 45]);
   });
 
+  it("writes multiple user-confirmed notes directly with optimistic readback", async () => {
+    const db = createBatchDb();
+    const result = await updateTasksBatch(db, {
+      workspaceId: "workspace-1",
+      idempotencyKey: "batch-notes-direct-1",
+      operations: [
+        { taskId: "task-1", notes: "合并后的 Dialogue 备注", expectedNotes: "keep task 1 notes" },
+        { taskId: "task-2", notes: "Ross 新断点", expectedNotes: "keep task 2 notes" },
+      ],
+    });
+
+    expect(result.readback).toEqual([
+      expect.objectContaining({ id: "task-1", notes: "合并后的 Dialogue 备注" }),
+      expect.objectContaining({ id: "task-2", notes: "Ross 新断点" }),
+    ]);
+    expect(db.state.changeLogs.map((log) => log.detailsJson.values.notes)).toEqual([
+      "合并后的 Dialogue 备注",
+      "Ross 新断点",
+    ]);
+
+    await expect(updateTasksBatch(db, {
+      workspaceId: "workspace-1",
+      idempotencyKey: "batch-notes-direct-stale",
+      operations: [{ taskId: "task-1", notes: "不应写入", expectedNotes: "旧备注" }],
+    })).rejects.toMatchObject({
+      code: "task_state_conflict",
+      details: { conflicts: [expect.objectContaining({ taskId: "task-1", field: "notes" })] },
+    });
+  });
+
   it("defends batch size, unique task IDs, and required update fields in the service", async () => {
     const db = createBatchDb();
     await expect(

@@ -87,6 +87,10 @@ export function OperationApprovalList({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [approvalToConfirm, setApprovalToConfirm] = useState<PendingOperationApproval | null>(null);
   const [nowMs, setNowMs] = useState<number | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
+
+  const visibleApprovals = approvals.filter((approval) => !hiddenIds.has(approval.id));
+  const visibleExpiredApprovals = expiredApprovals.filter((approval) => !hiddenIds.has(approval.id));
 
   useEffect(() => {
     setNowMs(Date.now());
@@ -103,7 +107,7 @@ export function OperationApprovalList({
   }, [approvalToConfirm, nowMs, router]);
 
   async function decide(approval: PendingOperationApproval, decision: "approved" | "rejected") {
-    if (operationApprovalIsExpired(approval.expiresAt)) {
+    if (decision === "approved" && operationApprovalIsExpired(approval.expiresAt)) {
       setApprovalToConfirm(null);
       setDialogError(null);
       setFeedback({ tone: "warning", message: staleApprovalMessage });
@@ -125,6 +129,7 @@ export function OperationApprovalList({
           const message = operationApprovalErrorMessage(body);
           if (body?.code === "approval_already_decided" || body?.code === "approval_expired" || body?.code === "approval_not_found") {
             setApprovalToConfirm(null);
+            setHiddenIds((current) => new Set(current).add(approval.id));
             setFeedback({ tone: "warning", message });
             router.refresh();
             return;
@@ -132,6 +137,11 @@ export function OperationApprovalList({
           throw new Error(message);
         }
         if (decision === "approved") approvedIds.current.add(approval.id);
+        else {
+          setApprovalToConfirm(null);
+          setHiddenIds((current) => new Set(current).add(approval.id));
+          setFeedback({ tone: "success", message: "已拒绝并移出待处理列表。" });
+        }
       }
       if (decision === "approved" && approval.operationKind === "task_timing") {
         const applied = await fetch("/api/task-timing", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approvalId: approval.id }) });
@@ -162,7 +172,7 @@ export function OperationApprovalList({
     }
   }
 
-  if (approvals.length === 0 && expiredApprovals.length === 0 && !feedback) return null;
+  if (visibleApprovals.length === 0 && visibleExpiredApprovals.length === 0 && !feedback) return null;
   return (
     <>
       {feedback ? (
@@ -174,26 +184,31 @@ export function OperationApprovalList({
           className="mb-4"
         />
       ) : null}
-      {approvals.length > 0 ? (
+      {visibleApprovals.length > 0 ? (
         <section className="paw-list-card mb-4">
           <div className="paw-list-header">
             <div>
               <h2 className="paw-list-title">操作待确认</h2>
               <p className="paw-list-subtitle">只有你在这里批准后，助手才能执行对应的精确预览。</p>
             </div>
-            <span className="paw-status-pill"><ShieldCheck size={13} /> {approvals.length} 项</span>
+            <span className="paw-status-pill"><ShieldCheck size={13} /> {visibleApprovals.length} 项</span>
           </div>
           <div className="paw-suggestion-list mt-4">
-            {approvals.map((approval) => (
+            {visibleApprovals.map((approval) => (
               <article className="paw-suggestion-card" key={approval.id}>
-                <div>
+                <div className="paw-approval-summary">
                   <h3 className="paw-row-title">{approval.summary.title ?? "计划操作"}</h3>
                   {approval.summary.description ? <p className="paw-row-meta">{approval.summary.description}</p> : null}
                   {typeof approval.summary.count === "number" ? <p className="paw-row-meta">共 {approval.summary.count} 项</p> : null}
                   {typeof approval.summary.totalMinutes === "number" ? (
                     <p className="paw-row-meta">预计总时长 {approval.summary.totalMinutes} 分钟</p>
                   ) : null}
-                  {approval.operationKind === "task_timing" && approval.summary.changes ? <TimingChanges preview={{changes:approval.summary.changes,warnings:approval.summary.warnings ?? []}} /> : null}
+                  {approval.operationKind === "task_timing" && approval.summary.changes ? (
+                    <details className="paw-approval-details">
+                      <summary>查看 {approval.summary.changes.length} 项具体变更</summary>
+                      <TimingChanges preview={{changes:approval.summary.changes,warnings:approval.summary.warnings ?? []}} />
+                    </details>
+                  ) : null}
                   {approval.summary.items?.length && !approval.summary.noteChanges?.length && approval.operationKind !== "task_timing" ? (
                     <details className="paw-row-meta mt-2">
                       <summary>查看全部 {approval.summary.items.length} 个标题</summary>
@@ -279,17 +294,17 @@ export function OperationApprovalList({
         ) : null}
       </ConfirmDialog>
 
-      {expiredApprovals.length > 0 ? (
+      {visibleExpiredApprovals.length > 0 ? (
         <section className="paw-list-card mb-4">
           <div className="paw-list-header">
             <div>
               <h2 className="paw-list-title">最近过期的任务详情审核</h2>
               <p className="paw-list-subtitle">这些预览已失效，不能再批准；如仍需执行，请让助手重新提交。</p>
             </div>
-            <span className="paw-status-pill warn">{expiredApprovals.length} 项已过期</span>
+            <span className="paw-status-pill warn">{visibleExpiredApprovals.length} 项已过期</span>
           </div>
           <div className="paw-suggestion-list mt-4">
-            {expiredApprovals.map((approval) => (
+            {visibleExpiredApprovals.map((approval) => (
               <article className="paw-suggestion-card expired" key={approval.id}>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="paw-status-pill warn">已过期</span>
@@ -301,6 +316,14 @@ export function OperationApprovalList({
                 {approval.summary.description ? <p className="paw-row-meta">{approval.summary.description}</p> : null}
                 {typeof approval.summary.count === "number" ? <p className="paw-row-meta">共 {approval.summary.count} 项</p> : null}
                 <p className="paw-row-meta">过期于 {formatApprovalExpiry(approval.expiresAt)}</p>
+                <button
+                  type="button"
+                  className="paw-secondary-btn mt-3"
+                  disabled={pendingId !== null}
+                  onClick={() => void decide(approval, "rejected")}
+                >
+                  <X size={14} /> {pendingId === approval.id ? "清除中…" : "清除这条记录"}
+                </button>
               </article>
             ))}
           </div>
