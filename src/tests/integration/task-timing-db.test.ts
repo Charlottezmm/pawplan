@@ -86,6 +86,93 @@ describe.runIf(run)("task timing persistence and approval", () => {
       decision: "approved",
     });
   }
+  it("filters task dates inclusively in Shanghai while retaining the fixed-block range", async () => {
+    const { w, p } = await seed();
+    const dates = [
+      ["June", "2026-06-01T00:00:00+08:00"],
+      ["before", "2026-09-27T15:59:59.999Z"],
+      ["start", "2026-09-27T16:00:00.000Z"],
+      ["middle", "2026-09-28T16:00:00.000Z"],
+      ["end", "2026-09-30T15:59:59.999Z"],
+      ["after", "2026-09-30T16:00:00.000Z"],
+    ];
+    await db.insert(schema.tasks).values(dates.map(([title, date]) => ({
+      workspaceId: w.id,
+      planId: p.id,
+      title,
+      date: new Date(date),
+      daySegment: "morning" as const,
+      status: title === "middle" ? "backlog" as const : "todo" as const,
+    })));
+    await db.insert(schema.timeBlocks).values(["2026-09-27", "2026-09-28", "2026-09-30", "2026-10-01"].map((date) => ({
+      workspaceId: w.id,
+      title: date,
+      kind: "course" as const,
+      startsAt: new Date(`${date}T09:00:00+08:00`),
+      endsAt: new Date(`${date}T10:00:00+08:00`),
+    })));
+
+    const result = await readTaskTiming(db, w.id, "2026-09-28", "2026-09-30");
+    expect(result.tasks.map((task) => [task.title, task.date]).sort()).toEqual([
+      ["end", "2026-09-30"],
+      ["middle", "2026-09-29"],
+      ["start", "2026-09-28"],
+    ]);
+    expect(result.fixed.map((block) => block.title)).toEqual(["2026-09-28", "2026-09-30"]);
+    expect(result).toMatchObject({ date: "2026-09-28", dateTo: "2026-09-30" });
+    expect((await readTaskTiming(db, w.id, "2026-09-30", "2026-10-01")).tasks.map((task) => task.title).sort())
+      .toEqual(["after", "end"]);
+  });
+  it("defaults to one Shanghai day and returns no tasks for an empty date", async () => {
+    const { w, p, t } = await seed();
+    await db.insert(schema.tasks).values(["2035-09-19T23:59:59+08:00", "2035-09-21T00:00:00+08:00"].map((date) => ({
+      workspaceId: w.id,
+      planId: p.id,
+      title: date,
+      date: new Date(date),
+      daySegment: "morning" as const,
+    })));
+
+    const result = await readTaskTiming(db, w.id, "2035-09-20");
+    expect(result.tasks.map((task) => task.id)).toEqual([t.id]);
+    expect(result.dateTo).toBe("2035-09-20");
+    expect((await readTaskTiming(db, w.id, "2035-09-22")).tasks).toEqual([]);
+  });
+  it.each(["direct", "review"] as const)("%s timing can still move a task from outside the requested read range", async (mode) => {
+    const { w, t } = await seed();
+    await db.update(schema.tasks).set({ date: new Date("2035-06-01T00:00:00+08:00") })
+      .where(eq(schema.tasks.id, t.id));
+    expect((await readTaskTiming(db, w.id, "2035-09-20")).tasks).toEqual([]);
+
+    if (mode === "direct") {
+      expect((await applyConfirmedTaskTiming(db, w.id, request(t.id), randomUUID())).verified).toBe(true);
+    } else {
+      const preview = await proposeTaskTiming(db, w.id, request(t.id), randomUUID());
+      await approve(w.id, preview.approvalId!);
+      expect((await applyTaskTiming(db, w.id, preview.approvalId!)).verified).toBe(true);
+    }
+    expect((await readTaskTiming(db, w.id, "2035-09-20")).tasks).toEqual([
+      expect.objectContaining({ id: t.id, date: "2035-09-20", scheduledStart: "2035-09-20T01:00:00.000Z" }),
+    ]);
+  });
+  it("still invalidates a preview when an out-of-range task changes", async () => {
+    const { w, p, t } = await seed();
+    const [old] = await db.insert(schema.tasks).values({
+      workspaceId: w.id,
+      planId: p.id,
+      title: "old task",
+      date: new Date("2035-06-01T00:00:00+08:00"),
+      daySegment: "morning",
+    }).returning();
+    const preview = await proposeTaskTiming(db, w.id, request(t.id), randomUUID());
+    await approve(w.id, preview.approvalId!);
+    await db.update(schema.tasks).set({ title: "changed old task" }).where(eq(schema.tasks.id, old.id));
+
+    await expect(applyTaskTiming(db, w.id, preview.approvalId!)).rejects.toMatchObject({ code: "preview_stale" });
+    expect((await readTaskTiming(db, w.id, "2035-09-20")).tasks).toEqual([
+      expect.objectContaining({ id: t.id, scheduledStart: null }),
+    ]);
+  });
   it("preview is read-only; approval is required; Apply reads persisted IDs; retries do not duplicate", async () => {
     const { w, t } = await seed();
     const key = randomUUID();

@@ -207,7 +207,14 @@ export async function readTaskTiming(
   if (to < from || Date.parse(to) - Date.parse(from) > 31 * 86400000)
     throw new TimingError("请选择 31 天以内的日期范围", 400);
   const data = await snapshot(db, workspaceId, { from, to });
-  return { tasks: data.tasks, fixed: data.fixed, date: from, dateTo: to };
+  // Serialized dates are Asia/Shanghai calendar days. Keep the shared snapshot
+  // complete for write validation and only narrow the read response.
+  return {
+    tasks: data.tasks.filter((task) => task.date >= from && task.date <= to),
+    fixed: data.fixed,
+    date: from,
+    dateTo: to,
+  };
 }
 
 function timingRequestTaskIds(request: TimingRequest) {
