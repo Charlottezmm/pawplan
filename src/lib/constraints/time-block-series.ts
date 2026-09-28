@@ -833,9 +833,7 @@ export async function attachTimeBlockSeriesPostCommitReadback(
   return result;
 }
 
-export async function applyTimeBlockSeriesMutation(
-  db: DbLike,
-  input: {
+type TimeBlockApplyInput = {
     workspaceId: string;
     action: TimeBlockSeriesAction;
     request: TimeBlockSeriesRequest;
@@ -844,8 +842,49 @@ export async function applyTimeBlockSeriesMutation(
     idempotencyKey: string;
     source?: "manual" | "mcp";
     now?: Date;
+  };
+
+export function applyTimeBlockSeriesMutation(db: DbLike, input: TimeBlockApplyInput) {
+  return applyTimeBlockMutation(db, input);
+}
+
+/** Trusted direct edits still require a signed, current snapshot and explicit caller authorization. */
+export function updateConfirmedTimeBlock(
+  db: DbLike,
+  input: Omit<TimeBlockApplyInput, "action" | "approvalId" | "source"> & {
+    confirmation: "USER_CONFIRMED";
+    userInstruction: string;
   },
 ) {
+  if (input.confirmation !== "USER_CONFIRMED" || !input.userInstruction?.trim()) {
+    throw new TimeBlockSeriesError("invalid_request", "Explicit user confirmation is required");
+  }
+  const allowed = new Set(["title", "startTime", "endTime", "location"]);
+  const changes = input.request.changes ?? {};
+  if (!Object.keys(changes).length || Object.keys(changes).some((key) => !allowed.has(key))) {
+    throw new TimeBlockSeriesError("invalid_request", "Only title, time and location may be edited directly");
+  }
+  return applyTimeBlockMutation(db, { ...input, action: "update", source: "mcp" }, input.userInstruction.trim());
+}
+
+export async function previewConfirmedTimeBlock(
+  db: DbLike,
+  input: { workspaceId: string; request: TimeBlockSeriesRequest; now?: Date },
+) {
+  const built = await buildPreview(db, { ...input, action: "update" });
+  return {
+    ...built.preview,
+    previewToken: createTimeBlockSeriesPreviewToken({
+      workspaceId: input.workspaceId,
+      action: "update",
+      requestHash: built.requestHash,
+      snapshotHash: built.snapshotHash,
+      now: input.now,
+    }),
+  };
+}
+
+async function applyTimeBlockMutation(db: DbLike, input: TimeBlockApplyInput, userInstruction?: string) {
   validateRequest(input.action, input.request);
   const now = input.now ?? new Date();
   const requestHash = timeBlockSeriesHash(requestPayload(input.action, input.request));
@@ -889,7 +928,7 @@ export async function applyTimeBlockSeriesMutation(
       };
     }
   }
-  await verifyOperationApproval(db, {
+  if (!userInstruction) await verifyOperationApproval(db, {
     workspaceId: input.workspaceId,
     approvalId: input.approvalId,
     operationKind: `${input.action}_time_block_series`,
@@ -930,7 +969,7 @@ export async function applyTimeBlockSeriesMutation(
       if (currentSnapshotHash !== verified.payload.snapshotHash) {
         throw new TimeBlockSeriesError("preview_stale", "Time block series changed after preview", 409);
       }
-      await consumeOperationApproval(tx, {
+      if (!userInstruction) await consumeOperationApproval(tx, {
         workspaceId: input.workspaceId,
         approvalId: input.approvalId,
         operationKind: `${input.action}_time_block_series`,
@@ -972,6 +1011,10 @@ export async function applyTimeBlockSeriesMutation(
           operationId: claim.operation.id,
           idempotencyKey: input.idempotencyKey,
           seriesId: input.request.seriesId,
+          authorization: userInstruction ? "chat_confirmation" : "review",
+          userInstruction,
+          before: snapshotPayload(snapshot.series, snapshot.exceptions),
+          changes: input.request.changes,
           requestedScope: input.request.scope,
           effectiveScope: plan.effectiveScope,
           occurrenceDate: input.request.occurrenceDate,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { CatIcon } from "./cat-icon";
 import { Notice } from "./ui/notice";
@@ -11,6 +11,7 @@ type LoginResponse = {
 };
 
 const loginErrorMessages: Record<string, string> = {
+  "Invalid login payload": "请检查计划空间名称和密码格式（密码为 8–128 个字符）",
   "Workspace not found": "未找到这个计划空间",
   "Invalid workspace password": "计划空间密码不正确",
   "Workspace name is unavailable; try again": "这个计划空间名称不可用，请换一个",
@@ -44,12 +45,24 @@ export function LoginForm({
   const [inviteCode, setInviteCode] = useState(initialInviteCode);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [errorField, setErrorField] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (errorField && !pending) document.getElementById(errorField)?.focus();
+  }, [errorField, pending]);
+
+  function clearError() {
+    setMessage(null);
+    setErrorField(null);
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    setMessage(null);
+    if (pending) return;
+    clearError();
 
     if (mode === "create" && password !== passwordConfirmation) {
+      setErrorField("workspace-password-confirmation");
       setMessage("两次输入的密码不一致");
       return;
     }
@@ -70,6 +83,9 @@ export function LoginForm({
 
       if (!response.ok) {
         const fallbackMessage = mode === "login" ? "登录失败，请稍后重试" : "创建失败，请稍后重试";
+        setErrorField(data.error === "Invalid workspace password" ? "workspace-password"
+          : data.error === "Workspace not found" || data.error === "Workspace name is unavailable; try again" ? "workspace-name"
+          : data.error?.startsWith("Invite code") && !inviteCodeLocked ? "invite-code" : null);
         setMessage(data.error ? (loginErrorMessages[data.error] ?? fallbackMessage) : fallbackMessage);
         return;
       }
@@ -83,7 +99,7 @@ export function LoginForm({
   }
 
   return (
-    <form onSubmit={submit} className="paw-login">
+    <form onSubmit={submit} className="paw-login" aria-busy={pending}>
       <div className="paw-login-card">
         <div>
           <h1 className="paw-login-brand">
@@ -101,22 +117,24 @@ export function LoginForm({
             <div className="paw-login-mode" aria-label="登录模式">
               <button
                 type="button"
+                disabled={pending}
                 className={mode === "login" ? "paw-login-mode-btn is-active" : "paw-login-mode-btn"}
                 aria-pressed={mode === "login"}
                 onClick={() => {
                   setMode("login");
-                  setMessage(null);
+                  clearError();
                 }}
               >
                 登录已有计划空间
               </button>
               <button
                 type="button"
+                disabled={pending}
                 className={mode === "create" ? "paw-login-mode-btn is-active" : "paw-login-mode-btn"}
                 aria-pressed={mode === "create"}
                 onClick={() => {
                   setMode("create");
-                  setMessage(null);
+                  clearError();
                 }}
               >
                 邀请创建计划空间
@@ -129,12 +147,16 @@ export function LoginForm({
             </label>
             <input
               id="workspace-name"
+              disabled={pending}
+              aria-invalid={errorField === "workspace-name" || undefined}
+              aria-describedby={errorField === "workspace-name" ? "login-error" : undefined}
               name="workspaceName"
               value={workspaceName}
-              onChange={(event) => setWorkspaceName(event.target.value)}
+              onChange={(event) => { setWorkspaceName(event.target.value); clearError(); }}
               placeholder="例如：学习计划"
               className="paw-input"
               autoCapitalize="none"
+              spellCheck={false}
               autoComplete="username"
               required
             />
@@ -145,9 +167,12 @@ export function LoginForm({
             </label>
             <input
               id="workspace-password"
+              disabled={pending}
+              aria-invalid={errorField === "workspace-password" || undefined}
+              aria-describedby={errorField === "workspace-password" ? "login-error" : undefined}
               name="password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => { setPassword(event.target.value); clearError(); }}
               placeholder="输入密码"
               type={showPassword ? "text" : "password"}
               className="paw-input"
@@ -163,9 +188,12 @@ export function LoginForm({
               </label>
               <input
                 id="workspace-password-confirmation"
+                disabled={pending}
+                aria-invalid={errorField === "workspace-password-confirmation" || undefined}
+                aria-describedby={errorField === "workspace-password-confirmation" ? "login-error" : undefined}
                 name="passwordConfirmation"
                 value={passwordConfirmation}
-                onChange={(event) => setPasswordConfirmation(event.target.value)}
+                onChange={(event) => { setPasswordConfirmation(event.target.value); clearError(); }}
                 placeholder="再次输入密码"
                 type={showPassword ? "text" : "password"}
                 className="paw-input"
@@ -191,9 +219,12 @@ export function LoginForm({
               </label>
               <input
                 id="invite-code"
+                disabled={pending}
+                aria-invalid={errorField === "invite-code" || undefined}
+                aria-describedby={errorField === "invite-code" ? "login-error" : undefined}
                 name="inviteCode"
                 value={inviteCode}
-                onChange={(event) => setInviteCode(event.target.value)}
+                onChange={(event) => { setInviteCode(event.target.value); clearError(); }}
                 placeholder="输入邀请码"
                 className="paw-input"
                 autoCapitalize="none"
@@ -205,10 +236,14 @@ export function LoginForm({
           <p className="paw-login-recovery-note">
             请保存好计划空间名称和密码；目前没有自助找回或重置入口。
           </p>
+          {message ? (
+            <div id="login-error">
+              <Notice tone="danger" title={message} />
+            </div>
+          ) : null}
           <button disabled={pending} className="paw-primary-btn">
             {pending ? "处理中…" : mode === "login" ? "进入" : "创建并进入"}
           </button>
-          {message ? <Notice tone="danger" title={message} dismissible onDismiss={() => setMessage(null)} /> : null}
         </div>
       </div>
     </form>

@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { CatIcon } from "./cat-icon";
-import { DailyCheckin } from "./daily-checkin";
+import { ActualRecordsSection, ActualRecordEditor, useActualRecords, actualRecordsChanged, type RecordEditorTarget } from "./actual-records";
+import { recordDate } from "@/lib/actual-records/display";
 import { TaskDetailContent } from "./task-detail-content";
 import { TaskDeleteControl } from "./task-transition-controls";
 import { TodayTaskTimeline, TaskTimingButton } from "./task-timing-controls";
@@ -125,6 +126,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       }
     }
   }, [data.tasks]);
+  const today = data.timingData?.date ?? recordDate();
+  const actualState = useActualRecords(today);
+  const [recordEditor, setRecordEditor] = useState<RecordEditorTarget | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
   const [postponeTask, setPostponeTask] = useState<Task | null>(null);
@@ -246,6 +250,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     setTasks((current) => sortTodayTasks(current.map((task) => task.id === id ? optimisticTask : task)));
     try {
       const saved = await persistTodayTaskUpdate(id, patch);
+      window.dispatchEvent(new Event(actualRecordsChanged));
       statusOverrides.current.set(id, { status: optimisticTask.status, blocked: optimisticTask.blocked, updatedAt: typeof saved.updatedAt === "string" ? saved.updatedAt : undefined });
     } catch {
       statusOverrides.current.delete(id);
@@ -330,7 +335,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         ) : null}
 
         {data.warnings
-          .filter((warning) => warning.id !== "over_capacity" && warning.id !== "capacity_overload")
+          .filter((warning) => warning.id !== "over_capacity" && warning.id !== "capacity_overload" && warning.id !== "missing_checkin")
           .slice(0, 1)
           .map((warning) => (
             <p key={warning.id} className="paw-today-warn">
@@ -423,6 +428,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   {task.checkpoint ? <p className="paw-row-meta">接着做：{task.checkpoint}</p> : null}
                   <TaskDetailContent detail={task.detail} notes={task.notes} />
                   <div className="paw-task-copy-row">
+                    <button type="button" className="paw-secondary-btn" onClick={() => setRecordEditor({ task: { id: task.id, title: task.title } })}><Clock3 size={14} />记录用时</button>
                     {task.status !== "done" ? <TaskTimingButton taskId={task.id} /> : null}
                     <button type="button" onClick={() => void copyTaskDetails(task)} className="paw-secondary-btn paw-task-copy-button">
                       <Copy size={14} />
@@ -492,19 +498,15 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         </Link>
       ) : null}
 
-      <DailyCheckin
-        initialCompletedText={data.checkin?.completedText}
-        initialBlockerText={data.checkin?.blockerText}
-        initialNextText={data.checkin?.nextText}
-        initialStreakDays={data.streakDays}
-        dataUnavailable={data.dataUnavailable}
-      />
+      <ActualRecordsSection today={today} todayState={actualState} onOpen={setRecordEditor} />
       </div>
 
       <aside className="paw-today-desktop-timeline" id="today-timeline">
         <a href="#today-tasks" className="paw-today-timeline-jump">↑ 回到任务</a>
-        <TodayTaskTimeline fixedItems={data.exactFixedItems} initialData={data.timingData} />
+        <TodayTaskTimeline fixedItems={data.exactFixedItems} initialData={data.timingData} actualRecords={actualState.data.records} onRecordSelect={(record) => setRecordEditor({ record })} actualError={actualState.error} />
       </aside>
+
+      {recordEditor ? <ActualRecordEditor target={recordEditor} tasks={tasks} onClose={() => setRecordEditor(null)} /> : null}
 
       <DialogSheet
         open={Boolean(postponeTask)}

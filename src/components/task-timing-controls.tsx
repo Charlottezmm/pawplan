@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarClock, LockKeyhole } from "lucide-react";
 import { DialogSheet } from "./ui/dialog-sheet";
+import type { ActualRecord } from "@/lib/actual-records/schema";
 import { TodayFixedTimeline } from "./today-fixed-timeline";
 import { addDaysToDateKey, shanghaiDateKey } from "@/lib/planning/task-actions";
 import {
@@ -655,9 +656,13 @@ export function TaskTimingButton({
 export function TodayTaskTimeline({
   fixedItems,
   initialData,
+  actualRecords = [], onRecordSelect, actualError,
 }: {
   fixedItems: TimelineItemView[];
   initialData?: TimingData;
+  actualRecords?: ActualRecord[];
+  onRecordSelect?: (record: ActualRecord) => void;
+  actualError?: string | null;
 }) {
   const [data, setData] = useState<TimingData | null>(initialData ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -733,8 +738,11 @@ export function TodayTaskTimeline({
           {error}
         </p>
       ) : null}
+      {actualError ? <p role="alert" className={styles.error}>实际记录暂时无法读取，时间轴目前仅显示计划。</p> : null}
       <TodayFixedTimeline
         items={items}
+        actualRecords={actualRecords}
+        onRecordSelect={onRecordSelect}
         includesTasks
         headerAction={<button type="button" className="paw-secondary-btn" onClick={() => activate()}><CalendarClock size={15} />安排任务时段</button>}
         onTaskSelect={activate}

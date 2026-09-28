@@ -1,3 +1,4 @@
+import { ActualRecordError } from "@/lib/actual-records/service";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getDb } from "@/lib/db/client";
 import {
@@ -85,6 +86,7 @@ export function createPawPlanMcpServer(input: { workspaceId: string; permission:
             error instanceof McpTaskArchiveError ||
             error instanceof ReplacePlanWindowError ||
             error instanceof TimeBlockSeriesError ||
+            error instanceof ActualRecordError ||
             error instanceof ActivePlanError ||
             error instanceof OperationApprovalError ||
             error instanceof McpPermissionError ||

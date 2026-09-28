@@ -184,6 +184,13 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox?.width ?? 999).toBeLessThanOrEqual(390);
     await expectNoPageOverflow(page, 390);
+    const titleTextRight = await dialog.getByRole("heading").evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return Math.max(...Array.from(range.getClientRects()).map((rect) => rect.right));
+    });
+    const closeBox = await dialog.getByRole("button", { name: "关闭日程详情" }).boundingBox();
+    expect(titleTextRight).toBeLessThanOrEqual(closeBox!.x);
     await attachScreenshot(page, testInfo, "constraints-390-detail");
 
     await dialog.getByRole("button", { name: "关闭日程详情" }).click();

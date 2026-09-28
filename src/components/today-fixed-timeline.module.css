@@ -36,3 +36,8 @@
 .detail { display:grid; gap:10px; }
 .detail p { display:flex; align-items:center; gap:8px; margin:0; font-size:14px; color:var(--app-ink-soft); }
 @media(max-width:760px) { .timeline { padding:18px 12px 8px; } .viewport { max-height:min(420px,60dvh); } .row { grid-template-columns:40px 12px minmax(0,1fr); gap:6px; } .card { padding:12px; } .header h2 { font-size:18px; } }
+.actual .card { border-left:3px solid var(--app-positive); background:var(--app-surface); }
+.actual .tag,.actual .rail > span { color:var(--app-positive); }
+.actual .rail > span { background:var(--app-positive); }
+.recordStatus { display:block; margin-top:6px; font-size:12px; color:var(--app-ink-soft); }
+@media(max-width:400px) { .header { flex-wrap:wrap; align-items:flex-start; } .header > button { min-height:44px; } .meta { flex-wrap:wrap; font-size:11px; } }

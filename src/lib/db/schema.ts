@@ -688,3 +688,35 @@ export const workspaceRelations = relations(workspaces, ({ many }) => ({
   plans: many(plans),
   tasks: many(tasks),
 }));
+
+// Actual activity is independent of scheduling and completion. Keep snapshots on edits.
+export const actualRecords = pgTable("actual_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 240 }).notNull(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  approximate: boolean("approximate").notNull().default(false),
+  planSnapshot: jsonb("plan_snapshot").notNull().default({}),
+  revision: integer("revision").notNull().default(1),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  workspaceStart: index("actual_records_workspace_start_idx").on(table.workspaceId, table.startsAt),
+  workspaceTask: index("actual_records_workspace_task_idx").on(table.workspaceId, table.taskId),
+}));
+
+// Immutable mutation receipts provide retry safety and correction history, without a plan dependency.
+export const actualRecordWrites = pgTable("actual_record_writes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),
+  source: varchar("source", { length: 16 }).notNull(),
+  result: jsonb("result").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  workspaceKey: uniqueIndex("actual_record_writes_workspace_key_unique").on(table.workspaceId, table.idempotencyKey),
+}));

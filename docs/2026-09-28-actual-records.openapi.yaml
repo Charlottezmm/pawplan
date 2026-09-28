@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: PawPlan actual activity records
+  version: 1.0.0
+paths:
+  /api/actual-records:
+    get:
+      summary: Read recorded activity overlapping an inclusive Shanghai date range (1–31 days)
+      parameters:
+        - {in: query, name: date_from, required: true, schema: {type: string, format: date}}
+        - {in: query, name: date_to, required: true, schema: {type: string, format: date}}
+        - {in: query, name: task_id, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: At most 1000 records, including capture-time planSnapshot and current linked task; truncated is explicit
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [records, truncated]
+                properties:
+                  records: {type: array, items: {$ref: '#/components/schemas/Record'}}
+                  truncated: {type: boolean}
+        '400': {description: Invalid date range}
+        '401': {description: No workspace session}
+        '500': {description: Read unavailable, not an empty day}
+    post:
+      summary: Create or correct one user-reported record; never mutate a task or its schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key, record]
+              properties:
+                id: {type: string, format: uuid, description: Required with expected_revision for corrections; omit both for creation}
+                expected_revision: {type: integer, minimum: 1}
+                idempotency_key: {type: string, minLength: 8, maxLength: 200}
+                record:
+                  type: object
+                  additionalProperties: false
+                  required: [title, starts_at, ends_at]
+                  properties:
+                    title: {type: string, minLength: 1, maxLength: 240}
+                    starts_at: {type: string, format: date-time}
+                    ends_at: {type: string, format: date-time, description: After starts_at, not in the future, duration at most 48 hours}
+                    task_id: {type: [string, 'null'], format: uuid, default: null}
+                    approximate: {type: boolean, default: false}
+      responses:
+        '200': {$ref: '#/components/responses/Mutation'}
+        '400': {description: Invalid fields or future timestamp}
+        '401': {description: No workspace session}
+        '404': {description: Missing record or invalid workspace task association}
+        '409': {description: Stale revision or idempotency payload mismatch}
+        '500': {description: Uncertain server error; retry the same payload and key}
+    delete:
+      summary: Soft-remove an exact record, retaining correction history
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id, expected_revision, idempotency_key]
+              properties:
+                id: {type: string, format: uuid}
+                expected_revision: {type: integer, minimum: 1}
+                idempotency_key: {type: string, minLength: 8, maxLength: 200}
+      responses:
+        '200': {$ref: '#/components/responses/Mutation'}
+        '400': {description: Invalid request}
+        '401': {description: No workspace session}
+        '404': {description: Missing or removed record}
+        '409': {description: Stale revision or idempotency mismatch}
+        '500': {description: Uncertain server error; retry same payload and key}
+security:
+  - workspaceSession: []
+components:
+  securitySchemes:
+    workspaceSession: {type: apiKey, in: cookie, name: daily_progress_workspace}
+  schemas:
+    Record:
+      type: object
+      required: [id, taskId, title, startsAt, endsAt, approximate, revision, planSnapshot, deletedAt, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        taskId: {type: [string, 'null'], format: uuid}
+        title: {type: string}
+        startsAt: {type: string, format: date-time}
+        endsAt: {type: string, format: date-time}
+        approximate: {type: boolean}
+        revision: {type: integer}
+        planSnapshot: {type: object, description: Plan when task was linked to this record; not inferred earliest historical plan}
+        task: {type: [object, 'null'], description: Current linked task status and timing, included in list reads}
+        deletedAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+  responses:
+    Mutation:
+      description: Inspect status and readback, not just HTTP success. Retry duplicate may return a newer current revision.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status, mutationApplied, record, mutationRevision, readback]
+            properties:
+              status: {enum: [succeeded, duplicate, applied_with_readback_error]}
+              mutationApplied: {const: true}
+              record: {$ref: '#/components/schemas/Record'}
+              mutationRevision: {type: integer}
+              readback:
+                type: object
+                properties:
+                  verification: {enum: [succeeded, failed]}
+                  matchesMutation: {type: boolean}

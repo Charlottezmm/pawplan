@@ -627,6 +627,11 @@
   padding: 30px 26px;
 }
 
+.detailPanel > h3 {
+  padding-right: 44px;
+  overflow-wrap: anywhere;
+}
+
 .detailClose {
   position: absolute;
   top: 14px;

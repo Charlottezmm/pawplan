@@ -321,3 +321,29 @@ test("shows a visible onboarding error when state fetch fails", async ({ context
   await expect(page.getByRole("heading", { name: "v1 formal checklist" })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "无法读取 onboarding 状态" })).toBeVisible();
 });
+
+
+test("wrong password feedback stays readable and returns focus to the field", async ({ page }, testInfo) => {
+  await page.route("**/api/auth/login", (route) => route.fulfill({
+    status: 401, json: { error: "Invalid workspace password" },
+  }));
+  await page.goto("/login");
+  await page.getByLabel("计划空间名称").fill("Focus Lab");
+  const password = page.getByLabel("密码", { exact: true });
+  await password.fill("wrong password");
+  const submit = page.getByRole("button", { name: "进入", exact: true });
+  await submit.click();
+  await expect(page.locator("#login-error").getByRole("alert")).toHaveText("计划空间密码不正确");
+  await expect(password).toBeFocused();
+  await expect(password).toHaveAttribute("aria-invalid", "true");
+  await expect(password).toHaveAttribute("aria-describedby", "login-error");
+  const errorBox = await page.locator("#login-error").getByRole("alert").boundingBox();
+  const submitBox = await submit.boundingBox();
+  expect(errorBox!.y + errorBox!.height).toBeLessThanOrEqual(submitBox!.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("wrong-password.png"), fullPage: true });
+  await password.fill("corrected password");
+  await expect(page.locator("#login-error").getByRole("alert")).toHaveCount(0);
+  await expect(password).not.toHaveAttribute("aria-invalid", "true");
+  await expect(submit).toBeEnabled();
+});
