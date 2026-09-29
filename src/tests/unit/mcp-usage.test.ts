@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTableName } from "drizzle-orm";
 import { mcpUsageEvents } from "@/lib/db/schema";
+import { hostedMcpUsageToolName, hostedMcpQuotaWriteToolNames, canUsePawPlanTool } from "@/lib/mcp/tool-metadata";
 import {
   HOSTED_MCP_DAILY_WRITE_LIMIT,
   McpUsageLimitError,
@@ -110,15 +111,30 @@ describe("hosted MCP usage audit", () => {
     ).rejects.toBeInstanceOf(McpUsageLimitError);
   });
 
+  it("keeps all previews outside quota without changing their permission boundary", async () => {
+    const db = createUsageDb({ writeCount: HOSTED_MCP_DAILY_WRITE_LIMIT });
+    for (const toolName of ["preview_task_batch", "preview_confirmed_time_block", "preview_confirmed_time_block_occurrences",
+      ...["update_time_block_series", "delete_time_block_series", "replace_plan_window"].map((name) => hostedMcpUsageToolName(name, { mode: "preview" }))]) {
+      expect(hostedMcpQuotaWriteToolNames).not.toContain(toolName);
+      await expect(reserveHostedMcpWrite(db, { workspaceId: "workspace-1", tokenId: null, toolName, permission: "read_write" })).resolves.toBeNull();
+    }
+    expect(db.inserts).toHaveLength(0);
+    expect(canUsePawPlanTool("read_only", "preview_task_batch")).toBe(false);
+    expect(hostedMcpUsageToolName("update_time_block_series", { mode: "apply" })).toBe("update_time_block_series");
+    expect(hostedMcpQuotaWriteToolNames).toContain("cancel_confirmed_time_block_occurrences");
+    // A stray mode argument cannot make ordinary writes free.
+    expect(hostedMcpUsageToolName("update_tasks_batch", { mode: "preview" })).toBe("update_tasks_batch");
+  });
+
   it("reports remaining quota and the next Shanghai midnight", async () => {
-    const db = createUsageDb({ writeCount: 49 });
+    const db = createUsageDb({ writeCount: HOSTED_MCP_DAILY_WRITE_LIMIT - 1 });
     const now = new Date("2026-06-12T12:00:00.000+08:00");
 
     const quota = await getHostedMcpUsageSnapshot(db, { workspaceId: "workspace-1", now });
 
     expect(quota).toEqual({
-      limit: 50,
-      used: 49,
+      limit: HOSTED_MCP_DAILY_WRITE_LIMIT,
+      used: HOSTED_MCP_DAILY_WRITE_LIMIT - 1,
       remaining: 1,
       resetAt: new Date("2026-06-12T16:00:00.000Z"),
     });
@@ -126,7 +142,7 @@ describe("hosted MCP usage audit", () => {
   });
 
   it("serializes concurrent final-slot reservations and releases failed calls", async () => {
-    let writeCount = 49;
+    let writeCount = HOSTED_MCP_DAILY_WRITE_LIMIT - 1;
     let sequence = Promise.resolve();
     const updates: Array<Record<string, unknown>> = [];
     const reservationDb: any = {

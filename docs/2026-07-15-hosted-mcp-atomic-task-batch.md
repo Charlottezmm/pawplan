@@ -2,7 +2,7 @@
 
 ## Goal
 
-Prevent Hosted MCP task maintenance from stopping at an unexplained partial state when the workspace reaches its daily write limit. Keep the existing limit of 50 successful write-tool calls per workspace per Shanghai calendar day.
+Prevent Hosted MCP task maintenance from stopping at an unexplained partial state when the workspace reaches its daily write limit. The current limit is 200 successful write/draft-tool calls per workspace per Shanghai calendar day. Previews are excluded and one batch counts once; see the [2026-09-29 quota update](2026-09-29-confirmed-occurrence-cancellation.md).
 
 The implementation adds:
 
@@ -14,7 +14,7 @@ The implementation adds:
 
 ## Non-goals
 
-- Removing or raising the daily limit.
+- Removing the daily limit.
 - Applying routine planning suggestions without Review.
 - Replacing `propose_daily_rebalance` or `propose_week_rebalance`.
 - Destructive plan replacement, task deletion, constraint editing, billing, or plan tiers.
@@ -89,7 +89,7 @@ body:
   message: Hosted MCP daily write limit reached
   retry_after: integer
   reset_at: ISO-8601 timestamp
-  limit: 50
+  limit: 200
   remaining: 0
 ```
 

@@ -1,8 +1,8 @@
 import { and, count, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { mcpUsageEvents } from "@/lib/db/schema";
-import { isPawPlanWriteTool, pawPlanWriteToolNames, type McpPermission } from "@/lib/mcp/tool-metadata";
+import { isHostedMcpQuotaWriteTool, hostedMcpQuotaWriteToolNames, type McpPermission } from "@/lib/mcp/tool-metadata";
 
-export const HOSTED_MCP_DAILY_WRITE_LIMIT = 50;
+export const HOSTED_MCP_DAILY_WRITE_LIMIT = 200;
 
 type UsageDb = {
   transaction?: <T>(callback: (tx: any) => Promise<T>) => Promise<T>;
@@ -70,7 +70,7 @@ async function countHostedMcpWrites(db: UsageDb, workspaceId: string, now: Date)
       and(
         eq(mcpUsageEvents.workspaceId, workspaceId),
         eq(mcpUsageEvents.success, true),
-        inArray(mcpUsageEvents.toolName, [...pawPlanWriteToolNames]),
+        inArray(mcpUsageEvents.toolName, [...hostedMcpQuotaWriteToolNames]),
         gte(mcpUsageEvents.createdAt, start),
         lt(mcpUsageEvents.createdAt, end),
       ),
@@ -134,7 +134,7 @@ export async function assertHostedMcpWriteAllowed(
     now?: Date;
   },
 ) {
-  if (!isPawPlanWriteTool(input.toolName)) return;
+  if (!isHostedMcpQuotaWriteTool(input.toolName)) return;
 
   const quota = await getHostedMcpUsageSnapshot(db, { workspaceId: input.workspaceId, now: input.now });
   if (quota.remaining === 0) {
@@ -152,7 +152,7 @@ export async function reserveHostedMcpWrite(
     now?: Date;
   },
 ) {
-  if (!isPawPlanWriteTool(input.toolName)) return null;
+  if (!isHostedMcpQuotaWriteTool(input.toolName)) return null;
   if (!db.transaction) throw new Error("Hosted MCP usage reservations require transactions");
   const now = input.now ?? new Date();
 

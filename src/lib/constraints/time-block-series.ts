@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import {
   changeLogs,
   planOperations,
@@ -562,6 +562,7 @@ async function claimOperation(
     workspaceId: string;
     planId: string;
     action: TimeBlockSeriesAction;
+    operationKind?: string;
     idempotencyKey: string;
     requestHash: string;
     now: Date;
@@ -577,7 +578,7 @@ async function claimOperation(
       .values({
         workspaceId: input.workspaceId,
         planId: input.planId,
-        operationKind: `${input.action}_time_block_series`,
+        operationKind: input.operationKind ?? `${input.action}_time_block_series`,
         idempotencyKey: input.idempotencyKey,
         requestHash: input.requestHash,
         status: "started",
@@ -882,6 +883,177 @@ export async function previewConfirmedTimeBlock(
       now: input.now,
     }),
   };
+}
+
+export const CONFIRMED_OCCURRENCE_CANCEL_MAX_COUNT = 20;
+export const CONFIRMED_OCCURRENCE_CANCEL_MAX_DAYS = 14;
+export type ConfirmedTimeBlockOccurrence = { seriesId: string; occurrenceDate: string };
+const cancellationOperationKind = "cancel_confirmed_time_block_occurrences";
+
+export function normalizeConfirmedTimeBlockOccurrences(occurrences: ConfirmedTimeBlockOccurrence[]) {
+  if (!Array.isArray(occurrences) || occurrences.length < 1 || occurrences.length > CONFIRMED_OCCURRENCE_CANCEL_MAX_COUNT) {
+    throw new TimeBlockSeriesError("invalid_request", "Cancel between 1 and 20 exact occurrences");
+  }
+  const normalized = occurrences.map((item) => {
+    if (!item || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(item.seriesId)) {
+      throw new TimeBlockSeriesError("invalid_request", "Invalid series ID");
+    }
+    shanghaiDate(item.occurrenceDate);
+    return { seriesId: item.seriesId.toLowerCase(), occurrenceDate: item.occurrenceDate };
+  }).sort((a, b) => a.seriesId.localeCompare(b.seriesId) || a.occurrenceDate.localeCompare(b.occurrenceDate));
+  if (new Set(normalized.map((item) => `${item.seriesId}:${item.occurrenceDate}`)).size !== normalized.length) {
+    throw new TimeBlockSeriesError("invalid_request", "Occurrence targets must be unique");
+  }
+  const dates = normalized.map((item) => shanghaiDate(item.occurrenceDate).getTime());
+  if (Math.max(...dates) - Math.min(...dates) >= CONFIRMED_OCCURRENCE_CANCEL_MAX_DAYS * 24 * 60 * 60 * 1000) {
+    throw new TimeBlockSeriesError("invalid_request", "Cancellation range must be at most 14 inclusive Shanghai dates");
+  }
+  return normalized;
+}
+
+async function cancellationPlans(db: DbLike, workspaceId: string, occurrences: ConfirmedTimeBlockOccurrence[], lock = false) {
+  const snapshots = new Map<string, Awaited<ReturnType<typeof readTargetSnapshot>>>();
+  // Stable ordering avoids deadlocks between overlapping batches.
+  for (const seriesId of [...new Set(occurrences.map((item) => item.seriesId))]) {
+    snapshots.set(seriesId, await readTargetSnapshot(db, workspaceId, seriesId, lock));
+  }
+  const plans = occurrences.map((item) => planTimeBlockSeriesMutation({
+    action: "delete", request: { ...item, scope: "occurrence" }, ...snapshots.get(item.seriesId)!,
+  }));
+  return {
+    plans,
+    snapshotHash: timeBlockSeriesHash([...snapshots.values()].map((snapshot) => snapshotPayload(snapshot.series, snapshot.exceptions))),
+  };
+}
+
+function cancellationRequestHash(occurrences: ConfirmedTimeBlockOccurrence[]) {
+  return timeBlockSeriesHash({ operationKind: cancellationOperationKind, occurrences });
+}
+
+export async function previewConfirmedTimeBlockOccurrences(
+  db: DbLike,
+  input: { workspaceId: string; occurrences: ConfirmedTimeBlockOccurrence[]; now?: Date },
+) {
+  const occurrences = normalizeConfirmedTimeBlockOccurrences(input.occurrences);
+  if (!await getActivePlanId(db, input.workspaceId)) throw new TimeBlockSeriesError("invalid_request", "No active plan", 409);
+  const built = await cancellationPlans(db, input.workspaceId, occurrences);
+  return {
+    status: "preview" as const,
+    action: "cancel_occurrences" as const,
+    count: occurrences.length,
+    noChange: built.plans.every((plan) => plan.noChange),
+    affectedDates: uniqueDates(occurrences.map((item) => item.occurrenceDate)),
+    occurrences: built.plans.map((plan) => ({
+      seriesId: plan.series.id, occurrenceDate: plan.occurrenceDate, title: plan.series.title,
+      noChange: plan.noChange,
+      before: occurrenceSummary(expandEffectiveRecurringBlocks(
+        [plan.series], plan.exceptions.map(exceptionInput), shanghaiDate(plan.occurrenceDate), addDays(shanghaiDate(plan.occurrenceDate), 1),
+      ).filter((row) => row.occurrenceDate === plan.occurrenceDate)),
+      after: [],
+    })),
+    previewToken: createTimeBlockSeriesPreviewToken({
+      workspaceId: input.workspaceId, action: "delete", requestHash: cancellationRequestHash(occurrences),
+      snapshotHash: built.snapshotHash, now: input.now,
+    }),
+  };
+}
+
+async function readCancelledOccurrences(
+  db: DbLike,
+  workspaceId: string,
+  plans: MutationPlan[],
+  exceptionIds: string[],
+) {
+  const exactExceptions = (await db.select().from(timeBlockExceptions).where(and(
+    eq(timeBlockExceptions.workspaceId, workspaceId), inArray(timeBlockExceptions.id, exceptionIds),
+  ))) as ExceptionRow[];
+  const snapshots = new Map<string, Awaited<ReturnType<typeof readTargetSnapshot>>>();
+  for (const seriesId of [...new Set(plans.map((plan) => plan.series.id))]) {
+    snapshots.set(seriesId, await readTargetSnapshot(db, workspaceId, seriesId));
+  }
+  const occurrences = plans.map((plan, index) => {
+    const snapshot = snapshots.get(plan.series.id)!;
+    const exception = exactExceptions.find((row) => row.id === exceptionIds[index]
+      && row.seriesId === plan.series.id && row.occurrenceDate === plan.occurrenceDate);
+    const expected = plannedException(plan.series, "delete", { seriesId: plan.series.id, scope: "occurrence", occurrenceDate: plan.occurrenceDate });
+    const seriesPreserved = timeBlockSeriesHash(snapshotPayload(snapshot.series, [])) === timeBlockSeriesHash(snapshotPayload(plan.series, []));
+    const active = expandEffectiveRecurringBlocks(
+      [snapshot.series], snapshot.exceptions.map(exceptionInput), shanghaiDate(plan.occurrenceDate), addDays(shanghaiDate(plan.occurrenceDate), 1),
+    ).some((row) => row.occurrenceDate === plan.occurrenceDate);
+    if (!seriesPreserved || exception?.id !== exceptionIds[index] || !sameException(exception, expected) || active) {
+      throw new Error(`Cancellation readback mismatch for ${plan.series.id}:${plan.occurrenceDate}`);
+    }
+    return { seriesId: plan.series.id, occurrenceDate: plan.occurrenceDate, exceptionId: exception.id, action: "cancel" as const, cancelled: true, seriesPreserved };
+  });
+  return { status: "succeeded" as const, constraints: [], occurrences };
+}
+
+export async function cancelConfirmedTimeBlockOccurrences(
+  db: DbLike,
+  input: {
+    workspaceId: string; occurrences: ConfirmedTimeBlockOccurrence[]; previewToken: string;
+    confirmation: "USER_CONFIRMED"; userInstruction: string; idempotencyKey: string; now?: Date;
+  },
+) {
+  if (input.confirmation !== "USER_CONFIRMED" || !input.userInstruction?.trim() || input.userInstruction.trim().length > 2000) {
+    throw new TimeBlockSeriesError("invalid_request", "Explicit user confirmation and instruction are required");
+  }
+  const occurrences = normalizeConfirmedTimeBlockOccurrences(input.occurrences);
+  const now = input.now ?? new Date();
+  const previewHash = cancellationRequestHash(occurrences);
+  const verified = verifyTimeBlockSeriesPreviewToken({
+    token: input.previewToken, workspaceId: input.workspaceId, action: "delete", requestHash: previewHash, now,
+  });
+  if (!verified.ok) throw new TimeBlockSeriesError("preview_required", verified.reason, 409);
+  const planId = await getActivePlanId(db, input.workspaceId);
+  if (!planId) throw new TimeBlockSeriesError("invalid_request", "No active plan", 409);
+  const claim = await claimOperation(db, {
+    workspaceId: input.workspaceId, planId, action: "delete", operationKind: cancellationOperationKind,
+    idempotencyKey: input.idempotencyKey, requestHash: timeBlockSeriesHash({ previewHash, userInstruction: input.userInstruction.trim() }), now,
+  });
+  if (claim.duplicate) return { status: "duplicate" as const, operationId: claim.operation.id, priorStatus: claim.operation.status, result: claim.operation.resultJson };
+
+  let committed;
+  try {
+    committed = await db.transaction(async (tx) => {
+      const built = await cancellationPlans(tx, input.workspaceId, occurrences, true);
+      if (built.snapshotHash !== verified.payload.snapshotHash) throw new TimeBlockSeriesError("preview_stale", "Time blocks changed after preview", 409);
+      const exceptionIds: string[] = [];
+      for (const plan of built.plans) {
+        if (plan.noChange) exceptionIds.push(plan.exceptions.find((row) => row.occurrenceDate === plan.occurrenceDate)!.id);
+        else exceptionIds.push(...(await executeMutation(tx, input.workspaceId, plan)).exceptionIds);
+      }
+      const result = {
+        status: built.plans.every((plan) => plan.noChange) ? "no_change" as const : "succeeded" as const,
+        operationId: claim.operation.id,
+        seriesIds: [...new Set(occurrences.map((item) => item.seriesId))], exceptionIds,
+        affectedDates: uniqueDates(occurrences.map((item) => item.occurrenceDate)),
+        transactionReadback: await readCancelledOccurrences(tx, input.workspaceId, built.plans, exceptionIds),
+      };
+      await tx.insert(changeLogs).values({
+        workspaceId: input.workspaceId, planId, source: "mcp",
+        summary: result.status === "no_change" ? "Time block occurrences already cancelled" : "Cancelled confirmed time block occurrences",
+        detailsJson: {
+          operationId: result.operationId, idempotencyKey: input.idempotencyKey, authorization: "chat_confirmation",
+          userInstruction: input.userInstruction.trim(), requestedScope: "occurrence", occurrences,
+          before: [...new Map(built.plans.map((plan) => [plan.series.id, snapshotPayload(plan.series, plan.exceptions)])).values()],
+          seriesIds: result.seriesIds, exceptionIds, affectedDates: result.affectedDates, status: result.status,
+        },
+      });
+      await tx.update(planOperations).set({ status: result.status, resultJson: result, errorJson: null, leaseExpiresAt: null, updatedAt: now })
+        .where(and(eq(planOperations.id, result.operationId), eq(planOperations.workspaceId, input.workspaceId)));
+      return { result, plans: built.plans };
+    });
+  } catch (error) {
+    await markOperationFailed(db, input.workspaceId, claim.operation.id, error);
+    throw error;
+  }
+  return attachTimeBlockSeriesPostCommitReadback(
+    committed.result,
+    () => readCancelledOccurrences(db, input.workspaceId, committed.plans, committed.result.exceptionIds),
+    (result) => db.update(planOperations).set({ resultJson: result, updatedAt: new Date() })
+      .where(and(eq(planOperations.id, committed.result.operationId), eq(planOperations.workspaceId, input.workspaceId))),
+  );
 }
 
 async function applyTimeBlockMutation(db: DbLike, input: TimeBlockApplyInput, userInstruction?: string) {

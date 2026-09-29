@@ -216,6 +216,7 @@ describe("MCP planning tools", () => {
       "get_tasks",
       "get_actual_records",
       "preview_confirmed_time_block",
+      "preview_confirmed_time_block_occurrences",
     ]);
     expect(allowedPawPlanToolNames("read_write")).toContain("import_plan_bundle");
     expect(allowedPawPlanToolNames("read_write")).toContain("save_conversation_summary");
@@ -259,6 +260,7 @@ describe("MCP planning tools", () => {
       "get_tasks",
       "get_actual_records",
       "preview_confirmed_time_block",
+      "preview_confirmed_time_block_occurrences",
       "propose_task_notes_batch",
       "propose_patch",
       "propose_daily_rebalance",

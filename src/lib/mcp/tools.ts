@@ -47,6 +47,9 @@ import {
   applyTimeBlockSeriesMutation,
   previewConfirmedTimeBlock,
   updateConfirmedTimeBlock,
+  previewConfirmedTimeBlockOccurrences,
+  cancelConfirmedTimeBlockOccurrences,
+  normalizeConfirmedTimeBlockOccurrences,
   previewTimeBlockSeriesMutation,
 } from "@/lib/constraints/time-block-series";
 import { getHostedMcpUsageSnapshot } from "@/lib/mcp/usage";
@@ -228,6 +231,17 @@ const confirmedTimeBlockRequestSchema = z.object({
   occurrence_date: dateStringSchema,
   changes: timeBlockSeriesChangesSchema.pick({ title: true, start_time: true, end_time: true, location: true })
     .refine((changes) => Object.keys(changes).length > 0, "At least one change is required"),
+}).strict();
+
+const confirmedTimeBlockOccurrencesSchema = z.object({
+  occurrences: z.array(z.object({ series_id: z.string().uuid(), occurrence_date: dateStringSchema }).strict())
+    .min(1).max(20).superRefine((items, context) => {
+      try {
+        normalizeConfirmedTimeBlockOccurrences(items.map((item) => ({ seriesId: item.series_id, occurrenceDate: item.occurrence_date })));
+      } catch (error) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : "Invalid occurrence targets" });
+      }
+    }),
 }).strict();
 
 const timeBlockSeriesBaseSchema = z
@@ -508,6 +522,13 @@ export const pawPlanToolSchemas = {
     user_instruction: z.string().trim().min(1).max(2000),
     idempotency_key: z.string().trim().min(8).max(200),
   }),
+  preview_confirmed_time_block_occurrences: confirmedTimeBlockOccurrencesSchema,
+  cancel_confirmed_time_block_occurrences: confirmedTimeBlockOccurrencesSchema.extend({
+    preview_token: z.string().min(32),
+    confirmation: z.literal("USER_CONFIRMED"),
+    user_instruction: z.string().trim().min(1).max(2000),
+    idempotency_key: z.string().trim().min(8).max(200),
+  }),
   update_time_block_series: timeBlockSeriesBaseSchema
     .extend({ changes: timeBlockSeriesChangesSchema }),
   delete_time_block_series: timeBlockSeriesBaseSchema,
@@ -756,6 +777,7 @@ Required workflow:
     "Use create_checkin, update_task_status, update_task_schedule, or update_task_notes only when the user explicitly asks to record a fact or make a trusted direct edit.",
     "For multiple user-confirmed task status, schedule, estimate, or notes edits, use one update_tasks_batch call and verify its ID-level readback; do not create an extra Review or loop low-level writes. Routine planning still uses Review-first rebalance tools.",
     "For explicit user-requested fixed-time edits, use preview_confirmed_time_block then update_confirmed_time_block with the same exact scope and content; no Review visit is needed. Never treat a proposal as user confirmation.",
+    "For explicit user-confirmed occurrence cancellations, preview_confirmed_time_block_occurrences then cancel_confirmed_time_block_occurrences cancels at most 20 exact occurrences across 14 inclusive Shanghai dates without Review. Verify each exception ID and preserve every series.",
   ],
   reviewStatusMeanings: {
     draft_created: "A new Review draft was created.",
@@ -767,7 +789,7 @@ Required workflow:
 };
 
 export const pawPlanServerInstructions =
-  "User-confirmed ordinary task edits are direct writes: use update_task_status, update_task_schedule, update_task_notes, update_task_timing, archive_task, or one update_tasks_batch call, then verify the returned task IDs. Do not create a second Review for facts the user already confirmed. Rebalance tools create a Review draft only for unconfirmed planning choices and must never run as recurring cleanup. Explicit user-requested fixed-time title/time/location edits can use preview_confirmed_time_block then update_confirmed_time_block without Review, preserving scope, confirmation and readback. Other protected moves and permanent deletion require an exact pending approval; apply tools must use its approval_id. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
+  "User-confirmed ordinary task edits are direct writes: use update_task_status, update_task_schedule, update_task_notes, update_task_timing, archive_task, or one update_tasks_batch call, then verify the returned task IDs. Do not create a second Review for facts the user already confirmed. Rebalance tools create a Review draft only for unconfirmed planning choices and must never run as recurring cleanup. Explicit user-requested fixed-time title/time/location edits can use preview_confirmed_time_block then update_confirmed_time_block without Review, preserving scope, confirmation and readback. Explicit user-confirmed occurrence cancellations use preview_confirmed_time_block_occurrences then cancel_confirmed_time_block_occurrences for at most 20 occurrences across 14 inclusive Shanghai dates; preserve series, audit and verify exception IDs. Other protected moves and permanent deletion require an exact pending approval; apply tools must use its approval_id. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
   get_task_timing: "Read persisted task time windows, protection, deadlines, desired dates and checkpoints, plus fixed arrangements in Asia/Shanghai. No mutation.",
@@ -806,6 +828,10 @@ export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
     "Read-only preview of exact fixed-time edits; returns a signed current snapshot without creating a Review item. Specify occurrence, following or series scope explicitly.",
   update_confirmed_time_block:
     "Directly apply a user-requested fixed-time title/time/location edit without opening Review. Requires read_write permission, exact scope, user instruction, signed preview and stable idempotency key. Never infer authorization from AI suggestions. Return persisted readback; preserve protected status.",
+  preview_confirmed_time_block_occurrences:
+    "Read-only signed preview of 1-20 exact fixed-time occurrence cancellations across at most 14 inclusive Shanghai dates. No Review item or planning mutation; never cancels a series.",
+  cancel_confirmed_time_block_occurrences:
+    "Atomically cancel user-confirmed exact fixed-time occurrences without Review. Requires read_write, matching signed preview, USER_CONFIRMED, user instruction and stable idempotency key. At most 20 occurrences across 14 inclusive Shanghai dates; preserve series and audit each target, then verify exception IDs. One batch costs one hosted write.",
   update_time_block_series:
     "Preview a series update for user approval in PawPlan Review, or apply it with the approved approval_id, for one occurrence, following occurrences, or the entire series.",
   delete_time_block_series:
@@ -1455,6 +1481,18 @@ export async function runPawPlanTool(
       groupId: parsed.operation_id,
     });
     return attachTaskBatchPostCommitReadback(result, () => readTaskSurfacesAfterCommit(db, workspaceId));
+  }
+
+  if (toolName === "preview_confirmed_time_block_occurrences" || toolName === "cancel_confirmed_time_block_occurrences") {
+    requireFeatureFlag("PAWPLAN_CONFIRMED_TIME_BLOCK_ENABLED", "Confirmed fixed-time editing is disabled");
+    const parsed = pawPlanToolSchemas[toolName].parse(args);
+    const occurrences = parsed.occurrences.map((item) => ({ seriesId: item.series_id, occurrenceDate: item.occurrence_date }));
+    if (toolName === "preview_confirmed_time_block_occurrences") return previewConfirmedTimeBlockOccurrences(db, { workspaceId, occurrences });
+    const confirmed = pawPlanToolSchemas.cancel_confirmed_time_block_occurrences.parse(args);
+    return cancelConfirmedTimeBlockOccurrences(db, {
+      workspaceId, occurrences, previewToken: confirmed.preview_token, confirmation: confirmed.confirmation,
+      userInstruction: confirmed.user_instruction, idempotencyKey: confirmed.idempotency_key,
+    });
   }
 
   if (toolName === "preview_confirmed_time_block" || toolName === "update_confirmed_time_block") {

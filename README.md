@@ -161,7 +161,9 @@ archive/delete tasks, replace plan windows, import live tasks, or edit time bloc
 
 **Write & draft** — `create_inbox_item` · `create_checkin` · `update_task_status` · `update_task_schedule` · `update_task_notes` · `update_tasks_batch` · `save_conversation_summary` · `record_decision` · `propose_patch` · `propose_daily_rebalance` · `propose_week_rebalance` · `propose_timetable_import` · `import_plan_bundle`
 
-Hosted clients can call `get_mcp_usage` before a trusted write to read the 50-call daily quota and Shanghai-midnight reset. Multiple user-confirmed direct status/schedule edits must use one idempotent `update_tasks_batch` call instead of looping low-level writes. Routine planning changes remain Review-first through the rebalance tools.
+Hosted clients can call `get_mcp_usage` before a trusted write to read the 200-call daily quota and Shanghai-midnight reset. Preview calls do not consume quota; one batch consumes one write regardless of its item count. Multiple user-confirmed direct status/schedule edits must use one idempotent `update_tasks_batch` call instead of looping low-level writes. Routine planning changes remain Review-first through the rebalance tools.
+
+Explicitly confirmed fixed-time occurrence cancellations use `preview_confirmed_time_block_occurrences` then `cancel_confirmed_time_block_occurrences` without Review: at most 20 exact occurrences across 14 inclusive Shanghai dates, signed preview, user instruction, idempotency, audit and exception-ID readback. Entire series cannot be cancelled through this tool. See [the cancellation and quota contract](docs/2026-09-29-confirmed-occurrence-cancellation.md).
 
 </details>
 

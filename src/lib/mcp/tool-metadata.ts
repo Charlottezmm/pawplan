@@ -53,6 +53,8 @@ export const pawPlanToolPermissions = {
   delete_actual_record: "write",
   preview_confirmed_time_block: "read",
   update_confirmed_time_block: "write",
+  preview_confirmed_time_block_occurrences: "read",
+  cancel_confirmed_time_block_occurrences: "write",
   update_time_block_series: "write",
   delete_time_block_series: "write",
   replace_plan_window: "write",
@@ -73,6 +75,23 @@ const pawPlanWriteToolNameSet = new Set<string>(pawPlanWriteToolNames);
 
 export function isPawPlanWriteTool(name: string) {
   return pawPlanWriteToolNameSet.has(name);
+}
+
+// Quota and permissions are separate: some previews persist a Review approval,
+// but never apply a planning change. Keep their existing permission boundary.
+export const hostedMcpQuotaWriteToolNames = pawPlanWriteToolNames.filter((name) => name !== "preview_task_batch");
+const hostedMcpQuotaWriteToolNameSet = new Set<string>(hostedMcpQuotaWriteToolNames);
+
+export function isHostedMcpQuotaWriteTool(name: string) {
+  return hostedMcpQuotaWriteToolNameSet.has(name);
+}
+
+export function hostedMcpUsageToolName(name: string, args: unknown) {
+  if (["update_time_block_series", "delete_time_block_series", "replace_plan_window"].includes(name)
+    && args && typeof args === "object" && (args as { mode?: unknown }).mode === "preview") {
+    return `${name}:preview`;
+  }
+  return name;
 }
 
 export function canUsePawPlanTool(permission: McpPermission, name: string) {

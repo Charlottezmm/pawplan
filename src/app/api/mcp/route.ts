@@ -11,7 +11,7 @@ import {
   retryAfterSeconds,
 } from "@/lib/mcp/usage";
 import { verifyConnectorAccessToken } from "@/lib/oauth/connector-auth";
-import { canUsePawPlanTool, isPawPlanWriteTool } from "@/lib/mcp/tool-metadata";
+import { canUsePawPlanTool, hostedMcpUsageToolName, isHostedMcpQuotaWriteTool } from "@/lib/mcp/tool-metadata";
 
 export const dynamic = "force-dynamic";
 
@@ -79,11 +79,12 @@ async function resolveMcpAuth(db: ReturnType<typeof getDb>, token: string) {
 }
 
 async function requestToolName(request: Request) {
-  if (request.method === "GET") return "GET";
+  if (request.method === "GET") return { toolName: "GET", usageToolName: "GET" };
   try {
     const payload = await request.clone().json();
     if (Array.isArray(payload)) throw new McpRequestError("JSON-RPC batch requests are not supported", 400);
-    return extractMcpUsageToolName(payload);
+    const toolName = extractMcpUsageToolName(payload);
+    return { toolName, usageToolName: hostedMcpUsageToolName(toolName, payload?.params?.arguments) };
   } catch (error) {
     if (error instanceof McpRequestError) throw error;
     throw new McpRequestError("Invalid MCP JSON request", 400);
@@ -127,17 +128,17 @@ async function handle(request: Request) {
   try {
     const auth = await resolveMcpAuth(db, bearerToken(request));
     if (!auth) throw new McpTokenError("Invalid MCP bearer token", 401);
-    const toolName = await requestToolName(request);
+    const { toolName, usageToolName } = await requestToolName(request);
     const usageInput = {
       workspaceId: auth.workspaceId,
       tokenId: auth.kind === "mcp_token" ? auth.tokenId : null,
-      toolName,
+      toolName: usageToolName,
       permission: auth.permission,
     };
 
     let reservationId: string | null = null;
     try {
-      if (canUsePawPlanTool(auth.permission, toolName) && isPawPlanWriteTool(toolName)) {
+      if (canUsePawPlanTool(auth.permission, toolName) && isHostedMcpQuotaWriteTool(usageToolName)) {
         const reservation = await reserveHostedMcpWrite(db, usageInput);
         reservationId = reservation?.reservationId ?? null;
       }

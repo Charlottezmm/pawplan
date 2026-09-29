@@ -188,6 +188,40 @@ describe("hosted MCP route", () => {
     );
   });
 
+  it.each([
+    ["preview_task_batch", {}, "preview_task_batch"],
+    ["preview_confirmed_time_block", {}, "preview_confirmed_time_block"],
+    ["preview_confirmed_time_block_occurrences", {}, "preview_confirmed_time_block_occurrences"],
+    ["update_time_block_series", { mode: "preview" }, "update_time_block_series:preview"],
+    ["delete_time_block_series", { mode: "preview" }, "delete_time_block_series:preview"],
+    ["replace_plan_window", { mode: "preview" }, "replace_plan_window:preview"],
+  ])("does not reserve quota for %s previews but audits success", async (name, args, usageName) => {
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    const { recordHostedMcpUsage } = await import("@/lib/mcp/usage");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({ workspaceId: "workspace-1", permission: "read_write", tokenId: "token-1" });
+    const { POST } = await import("@/app/api/mcp/route");
+    const result = await POST(new Request("https://pawplan.test/api/mcp", {
+      method: "POST", headers: { Authorization: "Bearer pwp_test" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+    }));
+    expect(result.status).toBe(200);
+    expect(reserveHostedMcpWriteMock).not.toHaveBeenCalled();
+    expect(recordHostedMcpUsage).toHaveBeenCalledWith({}, expect.objectContaining({ toolName: usageName, success: true }));
+  });
+
+  it("reserves one quota event for a multi-occurrence cancellation", async () => {
+    const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");
+    vi.mocked(verifyMcpBearerToken).mockResolvedValue({ workspaceId: "workspace-1", permission: "read_write", tokenId: "token-1" });
+    const { POST } = await import("@/app/api/mcp/route");
+    await POST(new Request("https://pawplan.test/api/mcp", {
+      method: "POST", headers: { Authorization: "Bearer pwp_test" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: {
+        name: "cancel_confirmed_time_block_occurrences", arguments: { occurrences: Array.from({ length: 20 }, (_, i) => ({ series_id: `series-${i}`, occurrence_date: "2026-09-29" })) },
+      } }),
+    }));
+    expect(reserveHostedMcpWriteMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does not reserve quota before a disallowed review-only direct write", async () => {
     const { reserveHostedMcpWrite } = await import("@/lib/mcp/usage");
     const { verifyMcpBearerToken } = await import("@/lib/mcp/tokens");

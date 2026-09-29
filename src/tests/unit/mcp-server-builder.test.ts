@@ -119,6 +119,30 @@ describe("PawPlan MCP server builder", () => {
     }
   });
 
+  it("publishes occurrence-only batch cancellation schemas through tools/list", async () => {
+    const { createPawPlanMcpServer } = await import("@/lib/mcp/server-builder");
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createPawPlanMcpServer({ workspaceId: "workspace-1", permission: "read_write" });
+    const client = new Client({ name: "cancellation-schema-check", version: "0.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const result = await client.listTools();
+      const apply = result.tools.find((tool) => tool.name === "cancel_confirmed_time_block_occurrences");
+      const preview = result.tools.find((tool) => tool.name === "preview_confirmed_time_block_occurrences");
+      expect(apply?.inputSchema).toMatchObject({
+        required: ["occurrences", "preview_token", "confirmation", "user_instruction", "idempotency_key"],
+        properties: { occurrences: { type: "array", minItems: 1, maxItems: 20, items: {
+          type: "object", required: ["series_id", "occurrence_date"], additionalProperties: false,
+        } } },
+      });
+      expect(preview?.inputSchema.required).toEqual(["occurrences"]);
+      expect(apply?.inputSchema.properties).not.toHaveProperty("scope");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("publishes propose_daily_rebalance schema for read-write MCP clients", async () => {
     const { createPawPlanMcpServer } = await import("@/lib/mcp/server-builder");
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
