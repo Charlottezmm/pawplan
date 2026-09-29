@@ -158,11 +158,13 @@ export function TaskDeleteControl({
   taskId,
   title,
   compact = false,
+  label = "永久删除",
   onDeleted,
 }: {
   taskId: string;
   title: string;
   compact?: boolean;
+  label?: string;
   onDeleted?: () => void;
 }) {
   const router = useRouter();
@@ -212,7 +214,7 @@ export function TaskDeleteControl({
         }}
         disabled={pending}
       >
-        <Trash2 size={14} /> 永久删除
+        <Trash2 size={14} /> {label}
       </button>
       <ConfirmDialog
         open={open}

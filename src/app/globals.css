@@ -522,7 +522,7 @@ a {
 
 .paw-today-hero {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: 14px;
 }
@@ -575,7 +575,7 @@ a {
 .paw-today-metrics {
   display: grid;
   width: 100%;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
 }
@@ -671,10 +671,40 @@ a {
   align-items: center;
   gap: 6px;
   margin-top: 12px;
+  padding: 11px 14px;
+  border: 1px solid color-mix(in srgb, var(--app-warn) 20%, var(--app-line));
+  border-radius: var(--app-radius-sm);
+  background: var(--app-warn-soft);
   color: var(--app-warn);
   font-size: 13px;
   font-weight: 600;
 }
+
+.paw-today-warn svg { flex: none; }
+
+.paw-today-group-title {
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--app-line);
+  background: var(--app-bg);
+  color: var(--app-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.paw-today-task-group + .paw-today-task-group {
+  border-top: 1px solid var(--app-line);
+}
+
+.paw-today-page .paw-task-copy-row { flex-wrap: wrap; }
+.paw-today-page .paw-task-copy-row > button { min-height: 44px; padding: 9px 12px; font-size: 13px; }
+.paw-today-page .paw-task-copy-feedback { flex-basis: 100%; }
+.paw-today-page .paw-task-actions { display: flex; align-items: center; padding-top: 8px; border-top: 1px solid var(--app-line); }
+.paw-today-page .paw-task-actions .paw-act-btn { min-height: 44px; padding: 7px 8px; border-color: transparent; background: transparent; font-weight: 500; }
+.paw-today-page .paw-task-actions .paw-act-btn:hover { background: var(--app-muted-soft); }
+.paw-today-page .paw-task-actions .paw-act-btn.selected { color: var(--app-warn); background: var(--app-warn-soft); }
+.paw-today-page .paw-task-actions .delete { margin-left: auto; }
+.paw-today-page .paw-task-actions .delete svg { display: none; }
 
 .paw-today-tasks-head {
   display: flex;

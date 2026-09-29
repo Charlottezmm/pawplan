@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Plus, Pencil, Clock3, ChevronRight, Link2 } from "lucide-react";
+import { Plus, Pencil, Clock3, ChevronRight, Link2, CalendarDays, ChevronDown } from "lucide-react";
 import { RecordTaskPicker } from "./record-task-picker";
 import { DialogSheet } from "./ui/dialog-sheet";
 import { Notice } from "./ui/notice";
@@ -35,13 +35,21 @@ export function ActualRecordsSection({ today, todayState, onOpen }: { today: str
   const [day, setDay] = useState(today);
   const other = useActualRecords(day, day !== today);
   const state = day === today ? todayState : other;
+  const dateLabel = `${Number(day.slice(5, 7))}月${Number(day.slice(8, 10))}日`;
   return <section className={styles.section} aria-labelledby="actual-records-heading">
-    <header className={styles.header}><div><h2 id="actual-records-heading">实际记录</h2><p>记下做过的事，不必先有任务。</p></div><button type="button" className="paw-primary-btn" onClick={() => onOpen({ day })}><Plus size={16} />记一段</button></header>
-    <label className={styles.date}>查看日期<input className="paw-input" aria-label="实际记录日期" type="date" value={day} max={today} onChange={(e) => { if (e.target.value) setDay(e.target.value); }} /></label>
+    <header className={styles.header}>
+      <h2 id="actual-records-heading" className="paw-today-tasks-title">实际记录</h2>
+      <div className={styles.headerActions}>
+        <label className={styles.date}><CalendarDays size={14} /><span>{dateLabel}</span><ChevronDown size={14} /><input aria-label="实际记录日期" type="date" value={day} max={today} onChange={(e) => { if (e.target.value) setDay(e.target.value); }} /></label>
+        <button type="button" className="paw-primary-btn" onClick={() => onOpen({ day })}><Plus size={16} />记一段</button>
+      </div>
+    </header>
+    <div className={styles.card}>
     {state.loading ? <p className={styles.empty} role="status">正在读取记录…</p> : state.error ? <><Notice tone="danger" title={state.error} /><button type="button" className="paw-secondary-btn" onClick={state.refresh}>重试读取</button></> : state.data.records.length === 0 ? <p className={styles.empty}>这天还没有记录。可以补记一段，也可以留白。</p> : <ul className={styles.list}>{state.data.records.map((record) => <li key={record.id}>
       <div className={styles.row}><div><p className={styles.time}><Clock3 size={13} />{recordTimeLabel(record)}{record.approximate ? " · 约" : " · "}{recordDuration(record)} 分钟</p><h3>{record.title}</h3>{record.task ? <p className={styles.meta}>{record.task.status === "done" ? "关联任务已完成" : "关联任务尚未完成"}</p> : null}</div><button type="button" className={styles.edit} aria-label={`修改记录：${record.title}`} onClick={() => onOpen({ record })}><Pencil size={15} /><span>修改</span></button></div>
     </li>)}</ul>}
     {state.data.truncated ? <Notice tone="warning" title="记录较多，当前仅显示前 1000 段。" /> : null}
+    </div>
   </section>;
 }
 export function ActualRecordEditor({ target, tasks, onClose }: { target: RecordEditorTarget; tasks: RecordTaskChoice[]; onClose: () => void }) {

@@ -105,7 +105,7 @@ function createFakeDb(options: FakeDbOptions = {}) {
 }
 
 describe("settings service", () => {
-  it("reads routines and segment energy settings with a non-editable system recovery target", async () => {
+  it("reads routines and energy settings with the legacy recovery target disabled", async () => {
     const db = createFakeDb({
       routineRows: [
         {
@@ -198,9 +198,9 @@ describe("settings service", () => {
       { segment: "evening", energyLevel: "low" },
     ]);
     expect(settings.recoveryTarget).toEqual({
-      minutes: 480,
+      minutes: 0,
       editable: false,
-      source: "system_default",
+      source: "disabled",
     });
     expect(settings.agentRuns).toEqual([
       {

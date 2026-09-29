@@ -176,13 +176,6 @@ export type WeekViewData = {
   dataUnavailable: boolean;
   days: WeekDayView[];
   tracks: TrackBalanceView[];
-  recovery: {
-    scheduledHours: string;
-    targetHours: string;
-    percent: number;
-    note: string;
-    blocks: string[];
-  };
   checkins: WeekCheckinView[];
 };
 
@@ -293,7 +286,6 @@ export type RescheduleViewData = {
   patchItems: ReschedulePatchItemView[];
 };
 
-const recoveryTargetMinutes = 8 * 60;
 const trackColors = ["bg-zinc-900", "bg-sky-700", "bg-violet-600", "bg-emerald-600", "bg-amber-600"];
 
 function isMissingDatabase(error: unknown) {
@@ -341,13 +333,6 @@ function emptyWeekData(dataUnavailable = false): WeekViewData {
       timelineItems: [],
     })),
     tracks: [],
-    recovery: {
-      scheduledHours: "0h",
-      targetHours: "8h",
-      percent: 0,
-      note: dataUnavailable ? "本地数据源未配置，无法读取恢复块。" : "本周还没有恢复块。",
-      blocks: [],
-    },
     checkins: [],
   };
 }
@@ -973,7 +958,6 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
   try {
     const db = getDb();
     const { start, end } = dateRangeForToday();
-    const { start: weekStart, end: weekEnd } = dateRangeForWeek();
     const yesterday = addDays(start, -1);
     const refs = await loadReferenceMaps(workspaceId);
     const planId = await getActivePlanId(db, workspaceId);
@@ -985,7 +969,6 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
       completionRows,
       overdueTaskRows,
       todayBlocks,
-      weekRecoveryBlocks,
       inboxRows,
       todayCheckinRows,
       yesterdayCheckinRows,
@@ -1027,12 +1010,6 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
         loadEffectiveTimeBlocks(db, { workspaceId, rangeStart: start, rangeEnd: end }).then((snapshot) =>
           snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null })),
         ),
-        loadEffectiveTimeBlocks(db, {
-          workspaceId,
-          rangeStart: weekStart,
-          rangeEnd: weekEnd,
-          kinds: ["recovery"],
-        }).then((snapshot) => snapshot.occurrences.map((block) => ({ ...block, recurrenceWeekdayMask: null }))),
         db
           .select({ id: inboxItems.id })
           .from(inboxItems)
@@ -1054,12 +1031,9 @@ export async function getTodayPageData(workspaceId: string): Promise<TodayViewDa
       ]);
 
     const completedRoutineIds = new Set(completionRows.filter((row) => row.completed).map((row) => row.routineId));
-    const recoveryMinutesThisWeek = weekRecoveryBlocks.reduce((sum, block) => sum + minutesBetween(block.startsAt, block.endsAt), 0);
     const warningRows = buildWarnings({
       inboxCount: inboxRows.length,
       hadYesterdayCheckin: yesterdayCheckinRows.length > 0,
-      recoveryMinutesThisWeek,
-      recoveryTargetMinutes,
     });
 
     const todayCheckin = todayCheckinRows[0] ?? null;
@@ -1153,18 +1127,10 @@ export async function getWeekPageData(workspaceId: string): Promise<WeekViewData
         .limit(4),
     ]);
 
-    const recoveryBlocks = blockRows.filter((block) => block.kind === "recovery");
-    const recoveryMinutes = recoveryBlocks.reduce((sum, block) => sum + minutesBetween(block.startsAt, block.endsAt), 0);
-    const balance = calculateTrackBalance([
-      ...taskRows.map((task) => ({
-        trackId: task.trackId ?? "untracked",
-        minutes: task.estimatedMinutes,
-      })),
-      ...recoveryBlocks.map((block) => ({
-        trackId: block.trackId ?? "recovery",
-        minutes: minutesBetween(block.startsAt, block.endsAt),
-      })),
-    ]);
+    const balance = calculateTrackBalance(taskRows.map((task) => ({
+      trackId: task.trackId ?? "untracked",
+      minutes: task.estimatedMinutes,
+    })));
 
     return {
       dataUnavailable: false,
@@ -1172,23 +1138,13 @@ export async function getWeekPageData(workspaceId: string): Promise<WeekViewData
       tracks: balance.map((item, index) => {
         const track = refs.tracks.get(item.trackId);
         return {
-          name: track?.name ?? (item.trackId === "recovery" ? "恢复" : "未分类"),
+          name: track?.name ?? "未分类",
           hours: hoursLabel(item.minutes),
           share: item.percent,
           color: trackColors[index % trackColors.length],
           note: track?.targetMaxPercent && item.percent > track.targetMaxPercent ? "超过目标上限" : "按本周已排",
         };
       }),
-      recovery: {
-        scheduledHours: hoursLabel(recoveryMinutes),
-        targetHours: "8h",
-        percent: Math.min(100, Math.round((recoveryMinutes / recoveryTargetMinutes) * 100)),
-        note:
-          recoveryMinutes < recoveryTargetMinutes
-            ? `低于目标 ${hoursLabel(recoveryTargetMinutes - recoveryMinutes)}。至少再保护一个免打扰块。`
-            : "已达到本周恢复目标。",
-        blocks: recoveryBlocks.map((block) => `${block.title} · ${timeLabel(block.startsAt)} - ${timeLabel(block.endsAt)}`).slice(0, 3),
-      },
       checkins: checkinRows.map((checkin) => ({
         day: `周${weekdayLabel(checkin.date)}`,
         done: checkin.completedText || "未填写",

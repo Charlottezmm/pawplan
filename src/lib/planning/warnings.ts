@@ -1,8 +1,6 @@
 type WarningInput = {
   inboxCount: number;
   hadYesterdayCheckin: boolean;
-  recoveryMinutesThisWeek: number;
-  recoveryTargetMinutes: number;
 };
 
 export function buildWarnings(input: WarningInput) {
@@ -14,10 +12,6 @@ export function buildWarnings(input: WarningInput) {
 
   if (!input.hadYesterdayCheckin) {
     warnings.push({ code: "missing_checkin", message: "昨天没复盘，今天先看 must-win 优先级。" });
-  }
-
-  if (input.recoveryMinutesThisWeek < input.recoveryTargetMinutes) {
-    warnings.push({ code: "low_recovery", message: "本周 recovery 不足，不能继续挤掉恢复时间。" });
   }
 
   return warnings;

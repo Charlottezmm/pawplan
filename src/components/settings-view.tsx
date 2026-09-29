@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, Download, KeyRound, Plus, RotateCcw, Save, ShieldCheck, Trash2, Upload, Zap } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Download, KeyRound, Plus, RotateCcw, Save, Trash2, Upload, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
 import { BackLink } from "./back-link";
 import { CatIcon } from "./cat-icon";
 
@@ -78,11 +78,6 @@ type SettingsResponse = {
   routines: Routine[];
   segmentEnergySettings: SegmentEnergySetting[];
   agentRuns: AgentRunSummary[];
-  recoveryTarget: {
-    minutes: number;
-    editable: false;
-    source: "system_default";
-  };
 };
 
 type AgentRunSummary = {
@@ -154,21 +149,11 @@ const emptyRoutineForm: RoutineForm = {
   energyLevel: "low",
 };
 
-const recoveryTarget = {
-  minutes: 480,
-  editable: false,
-  source: "system_default" as const,
-};
-
 const emptyTokenForm: TokenForm = {
   name: "Codex local",
   permission: "review_only",
   expiresInDays: null,
 };
-
-function formatHours(minutes: number) {
-  return `${Math.round(minutes / 60)} 小时`;
-}
 
 function formatDateTime(value: string | null) {
   if (!value) return "不过期";
@@ -223,7 +208,6 @@ export function SettingsView() {
   const [agentRuns, setAgentRuns] = useState<AgentRunSummary[]>([]);
 
   const isEditing = Boolean(routineForm.id);
-  const activeRecoveryTarget = useMemo(() => recoveryTarget, []);
   const trimmedWorkspaceName = workspaceName.trim();
   const expectedWorkspaceDeleteConfirmation = trimmedWorkspaceName ? `DELETE ${trimmedWorkspaceName}` : "";
   const canDeleteWorkspace =
@@ -578,7 +562,6 @@ export function SettingsView() {
           <p className="paw-agent-msg">不常改的规则放这里，Today 保持干净。</p>
         </div>
         <div className="paw-status-pills">
-          <span className="paw-status-pill">恢复时间：系统默认 {formatHours(activeRecoveryTarget.minutes)}</span>
           {dataUnavailable ? <span className="paw-status-pill warn">数据源未配置</span> : null}
           {message ? <span className="paw-status-pill link">{message}</span> : null}
         </div>
@@ -874,27 +857,6 @@ export function SettingsView() {
               </div>
             ))
           )}
-        </div>
-      </section>
-
-      <section className="paw-list-card mb-4">
-        <div className="paw-list-header">
-          <div>
-            <h2 className="paw-list-title">恢复目标</h2>
-            <p className="paw-list-subtitle">系统默认 {formatHours(activeRecoveryTarget.minutes)}，当前不可编辑。</p>
-          </div>
-          <span className="paw-more-icon">
-            <ShieldCheck size={18} />
-          </span>
-        </div>
-        <div className="paw-list-row">
-          <div>
-            <p className="paw-row-title">系统默认 {formatHours(activeRecoveryTarget.minutes)}</p>
-            <p className="paw-row-meta">来源：{activeRecoveryTarget.source} · 助手不应把恢复时间压到目标以下。</p>
-          </div>
-          <button type="button" disabled className="paw-secondary-btn">
-            暂不可配置
-          </button>
         </div>
       </section>
 

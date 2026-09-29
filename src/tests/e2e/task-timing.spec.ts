@@ -402,6 +402,30 @@ test("batch date changes only submit checked tasks from the visible date", async
   await page.getByRole("button", { name: /^关闭/ }).click();
 });
 
+test("batch date loading failure blocks preview and returning to today preserves the correct task choices", async ({ page }) => {
+  const tomorrow = new Date(`${today()}T12:00:00+08:00`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const nextDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(tomorrow);
+  await pool.query("update tasks set scheduled_start=null,scheduled_end=null where id=$1", [taskId]);
+  await page.goto("/today");
+  await page.getByRole("button", { name: "安排任务时段", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: /MATH 4710/ })).toBeChecked();
+  await page.route(`**/api/task-timing?from=${nextDate}`, (route) => route.fulfill({ status: 503, json: { error: "读取新日期失败" } }));
+  await page.getByLabel("日期", { exact: true }).fill(nextDate);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("读取新日期失败");
+  await expect(page.getByRole("button", { name: "预览安排", exact: true })).toBeDisabled();
+  await expect(page.getByText("这一天没有可安排的待办任务。", { exact: true })).toHaveCount(0);
+  await page.getByLabel("日期", { exact: true }).fill(today());
+  const currentTask = page.getByRole("checkbox", { name: /MATH 4710/ });
+  await expect(currentTask).toBeVisible();
+  await expect(currentTask).not.toBeChecked();
+  await currentTask.check();
+  await expect(page.getByRole("button", { name: "预览安排", exact: true })).toBeEnabled();
+  await expect(page.getByRole("dialog").getByRole("alert")).toHaveCount(0);
+});
+
 test("Today keeps completed tasks last after a timing save refresh", async ({
   page,
 }) => {

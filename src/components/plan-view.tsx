@@ -557,7 +557,7 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
             ))}
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_0.8fr]">
+          <div className="mt-4">
             <div className="paw-goal-card">
               <h2 className="paw-goal-title">战线占比</h2>
               <div className="mt-4 grid gap-3">
@@ -572,12 +572,6 @@ export function PlanView({ today, week, month, initialTab = "day" }: { today: To
                   </div>
                 ))}
               </div>
-            </div>
-
-            <div className="paw-goal-card bg-[var(--app-positive-soft)]">
-              <h2 className="paw-goal-title">恢复时间</h2>
-              <p className="mt-3 text-3xl font-bold text-[var(--app-ink)]">{week.recovery.scheduledHours}</p>
-              <p className="paw-goal-meta">目标 {week.recovery.targetHours}。{week.recovery.note}</p>
             </div>
           </div>
           </div>

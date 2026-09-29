@@ -110,9 +110,10 @@ export async function getSettings(db: DbLike, workspaceId: string) {
       }),
     ),
     recoveryTarget: {
-      minutes: 480,
+      // Retain the legacy read field without imposing a recovery quota.
+      minutes: 0,
       editable: false,
-      source: "system_default" as const,
+      source: "disabled" as const,
     },
   };
 }

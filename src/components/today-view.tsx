@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Archive, CalendarClock, Check, ChevronDown, Clock3, Copy, LockKeyhole, RotateCcw } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Clock3, Copy, LockKeyhole } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -143,6 +143,14 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const doneCount = tasks.filter((task) => task.displayStatus === "done").length;
   const unresolvedTasks = tasks.filter((task) => task.displayStatus !== "done");
   const unresolvedMinutes = unresolvedTasks.reduce((sum, task) => sum + task.minutes, 0);
+  const taskGroups = [
+    ...(["morning", "afternoon", "evening"] as const).map((segment) => ({
+      key: segment,
+      label: segmentLabel[segment],
+      tasks: unresolvedTasks.filter((task) => task.segment === segment),
+    })),
+    { key: "done", label: "已完成", tasks: tasks.filter((task) => task.displayStatus === "done") },
+  ].filter((group) => group.tasks.length > 0);
   // 猫的表情和台词跟随状态（小时数挂载后再取，避免 SSR 时区差异）
   const [hour, setHour] = useState<number | null>(null);
   useEffect(() => {
@@ -281,13 +289,13 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       <section className="paw-today-header">
         <a href="#today-timeline" className="paw-today-timeline-jump">查看今天的时间轴 ↓</a>
         <div className="paw-today-hero">
+          <span className="paw-today-cat">
+            <CatIcon size={40} mood={catMood} />
+          </span>
           <div className="paw-today-hero-text">
             <p className="paw-today-greeting">{greeting}</p>
             <h1 className="paw-today-headline">{formatTodayGreeting()}</h1>
           </div>
-          <span className="paw-today-cat">
-            <CatIcon size={40} mood={catMood} />
-          </span>
         </div>
 
         {tasks.length > 0 ? (
@@ -313,11 +321,11 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
             </span>
             <dl className="paw-today-metrics">
               <div>
-                <dt>待办</dt>
-                <dd>{unresolvedTasks.length}</dd>
+                <dt>已完成</dt>
+                <dd>{doneCount}/{tasks.length}</dd>
               </div>
               <div>
-                <dt>待办任务估时</dt>
+                <dt>剩余估时</dt>
                 <dd>{minutesLabel(unresolvedMinutes)}</dd>
               </div>
             </dl>
@@ -355,7 +363,6 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
       <section>
         <div className="paw-today-tasks-head">
           <h2 className="paw-today-tasks-title">今日任务</h2>
-          {tasks.length > 0 ? <span className="paw-today-tasks-hint">向下越做越轻</span> : null}
         </div>
 
         {taskActionFeedback ? (
@@ -382,8 +389,10 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
           />
         ) : null}
 
-        <div className="paw-task-list">
-          {tasks.map((task) => {
+        {tasks.length > 0 ? <div className="paw-task-list">
+          {taskGroups.map((group) => <section key={group.key} className="paw-today-task-group" aria-labelledby={`today-group-${group.key}`}>
+            <h3 id={`today-group-${group.key}`} className="paw-today-group-title">{group.label}</h3>
+          {group.tasks.map((task) => {
             const expanded = expandedId === task.id;
             const statusSaving = statusSavingIds.has(task.id);
             return (
@@ -409,9 +418,8 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     <span className="paw-task-title">{task.title}</span>
                   </span>
                   <span className="paw-task-headmeta">
-                    <Clock3 size={12} aria-hidden="true" />
                     {task.timeLabel && task.timeProtected ? <LockKeyhole size={12} aria-label="时段受保护" /> : null}
-                    {task.timeLabel ?? `${segmentLabel[task.segment]} · ${minutesLabel(task.minutes)}`}
+                    {task.timeLabel ?? minutesLabel(task.minutes)}
                     <ChevronDown size={16} className="paw-task-chevron" />
                   </span>
                 </button>
@@ -428,8 +436,8 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   {task.checkpoint ? <p className="paw-row-meta">接着做：{task.checkpoint}</p> : null}
                   <TaskDetailContent detail={task.detail} notes={task.notes} />
                   <div className="paw-task-copy-row">
+                    {task.status !== "done" ? <TaskTimingButton taskId={task.id} className="paw-primary-btn" /> : null}
                     <button type="button" className="paw-secondary-btn" onClick={() => setRecordEditor({ task: { id: task.id, title: task.title } })}><Clock3 size={14} />记录用时</button>
-                    {task.status !== "done" ? <TaskTimingButton taskId={task.id} /> : null}
                     <button type="button" onClick={() => void copyTaskDetails(task)} className="paw-secondary-btn paw-task-copy-button">
                       <Copy size={14} />
                       复制资料
@@ -448,10 +456,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                     <button
                       type="button"
                       onClick={() => openPostpone(task)}
-                      className="paw-act-btn defer primary-secondary"
+                      className="paw-act-btn defer"
                       disabled={savingActionId === task.id || statusSaving}
                     >
-                      <CalendarClock size={13} />
                       延后
                     </button>
                     <button
@@ -460,13 +467,13 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                       className="paw-act-btn archive"
                       disabled={savingActionId === task.id || statusSaving}
                     >
-                      <Archive size={13} />
                       移出排期
                     </button>
                     <TaskDeleteControl
                       taskId={task.id}
                       title={task.title}
                       compact
+                      label="删除"
                       onDeleted={() => {
                         setTasks((current) => current.filter((item) => item.id !== task.id));
                         setExpandedId(null);
@@ -484,19 +491,9 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
             </article>
             );
           })}
-        </div>
+          </section>)}
+        </div> : null}
       </section>
-
-      {unresolvedTasks.length > 0 || data.warnings.length > 0 ? (
-        <Link href="/review" className="paw-today-rebalance">
-          <RotateCcw size={15} />
-          <span>
-            <strong>查看审核与调整</strong>
-            <small>PawPlan 不会自动修改日程</small>
-          </span>
-          <span className="paw-today-rebalance-arrow" aria-hidden="true">→</span>
-        </Link>
-      ) : null}
 
       <ActualRecordsSection today={today} todayState={actualState} onOpen={setRecordEditor} />
       </div>

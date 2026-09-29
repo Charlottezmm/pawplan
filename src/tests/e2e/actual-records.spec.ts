@@ -20,6 +20,68 @@ test.beforeEach(async({context,page})=>{
 test.afterEach(async()=>{await pool.query("delete from workspaces where id=$1",[workspaceId]);});
 test.afterAll(async()=>{await pool.end();});
 
+test("Today groups unfinished tasks and explains timeline states without inferring activity", async ({page,isMobile},info) => {
+ const planId=(await pool.query('select plan_id from tasks where id=$1',[taskId])).rows[0].plan_id;
+ const activeId=randomUUID(),doneId=randomUUID(),eveningId=randomUUID();
+ for(const [id,title,segment,status,start,end,movable] of [
+  [activeId,'下午阅读','afternoon','todo','12:00','13:00',false],
+  [doneId,'已完成的晚间任务','evening','done',null,null,true],
+  [eveningId,'晚间整理','evening','todo',null,null,true],
+ ] as const) await pool.query('insert into tasks(id,workspace_id,plan_id,title,date,day_segment,status,scheduled_start,scheduled_end,movable,estimated_minutes) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,30)',[id,workspaceId,planId,title,`${day()}T00:00:00+08:00`,segment,status,start?`${day()}T${start}:00+08:00`:null,end?`${day()}T${end}:00+08:00`:null,movable]);
+ await pool.query("insert into time_blocks(workspace_id,title,kind,starts_at,ends_at) values($1,'重叠会议','meeting',$2,$3)",[workspaceId,`${day()}T12:30:00+08:00`,`${day()}T13:15:00+08:00`]);
+ await pool.query("insert into time_blocks(workspace_id,title,kind,starts_at,ends_at) values($1,'午休','recovery',$2,$3)",[workspaceId,`${day()}T01:30:00+08:00`,`${day()}T02:00:00+08:00`]);
+ await pool.query("insert into actual_records(workspace_id,task_id,title,starts_at,ends_at) values($1,$2,'已做完的整理',$3,$4)",[workspaceId,doneId,`${day()}T00:40:00+08:00`,`${day()}T01:00:00+08:00`]);
+ await page.clock.install({time:new Date(`${day()}T12:45:00+08:00`)});
+ await page.goto('/today');
+ if(isMobile) await page.setViewportSize({width:320,height:740});
+ const groups=page.locator('.paw-today-task-group');
+ await expect(groups.locator('h3')).toHaveText(['上午','下午','晚上','已完成']);
+ const taskIds=()=>page.locator('.paw-task-list [data-task-id]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-task-id')));
+ await expect.poll(taskIds).toEqual([taskId,activeId,eveningId,doneId]);
+ await expect(page.locator('.paw-today-metrics')).toContainText('已完成1/4');
+ await expect(page.getByText('向下越做越轻',{exact:true})).toHaveCount(0);
+ await expect(page.getByText('查看审核与调整',{exact:true})).toHaveCount(0);
+ await expect(page.getByText(/recovery 不足/)).toHaveCount(0);
+ const active=page.locator(`[data-task-id="${activeId}"]`);
+ await expect(active.locator('.paw-task-headmeta')).toHaveText('12:00–13:00');
+ await expect(active.locator('.paw-task-headmeta').getByLabel('时段受保护')).toBeVisible();
+ await expect(page.locator(`[data-task-id="${eveningId}"] .paw-task-headmeta`)).toHaveText('30m');
+ await active.locator('.paw-task-summary').click();
+ await expect(active.locator('.paw-task-copy-row button')).toHaveText(['安排／收尾','记录用时','复制资料']);
+ await expect(active.locator('.paw-task-actions button')).toHaveText(['卡住','延后','移出排期','删除']);
+ const records=page.getByRole('region',{name:'实际记录',exact:true});
+ await expect(records.getByText('查看日期',{exact:true})).toHaveCount(0);
+ await expect(records.getByLabel('实际记录日期')).toHaveValue(day());
+ await expect(records.getByRole('heading',{name:'已做完的整理'})).toBeVisible();
+ await expect(records.getByText('关联任务已完成')).toBeVisible();
+ expect(await records.getByRole('heading',{name:'实际记录',exact:true}).evaluate(node=>node.closest('header')?.nextElementSibling?.contains(node))).toBe(false);
+ const timeline=page.getByRole('region',{name:'全天时间轴'});
+ const past=timeline.getByRole('button',{name:`计划：${longTitle}，00:00 至 00:30`,exact:true});
+ await expect(past.getByText('待收尾',{exact:true})).toBeVisible();
+ await expect(past.getByText('收尾或续一段')).toBeVisible();
+ const current=timeline.getByRole('button',{name:/计划：下午阅读，/});
+ await expect(current.getByText('当前计划',{exact:true})).toBeVisible();
+ await expect(current.getByText('与其他安排重叠')).toBeVisible();
+ await expect(timeline.getByText('现在 12:45',{exact:true})).toHaveCount(1);
+ await expect(page.getByLabel('时间轴图例')).toHaveText('计划实际记录当前计划');
+ await expect(page.getByText('进行中',{exact:true})).toHaveCount(0);
+ await expect(page.getByText(/空闲/)).toHaveCount(0);
+ const arrange=page.getByRole('button',{name:'安排任务时段',exact:true});
+ expect((await arrange.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.evaluate(()=>window.scrollTo(0,0));
+ await page.screenshot({path:info.outputPath('today-refined-layout.png'),fullPage:true});
+ await page.locator(`[data-task-id="${taskId}"]`).getByRole('button',{name:'标记完成',exact:true}).click();
+ await expect(groups.locator('h3')).toHaveText(['下午','晚上','已完成']);
+ await expect.poll(async()=>(await pool.query('select status from tasks where id=$1',[taskId])).rows[0].status).toBe('done');
+ await page.reload();
+ await expect(groups.locator('h3')).toHaveText(['下午','晚上','已完成']);
+ await page.goto('/plan?view=week');
+ await expect(page.getByRole('heading',{name:'恢复时间',exact:true})).toHaveCount(0);
+ await expect(page.getByText('午休',{exact:true}).first()).toBeVisible();
+ expect((await pool.query("select count(*) from time_blocks where workspace_id=$1 and kind='recovery'",[workspaceId])).rows[0].count).toBe('1');
+});
+
 test("desktop and mobile record, edit, reload, timeline, task completion and safe removal",async({page,isMobile},info)=>{
  await page.goto('/today');
  await expect(page.getByRole('heading',{name:'实际记录',exact:true})).toBeVisible();

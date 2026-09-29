@@ -101,6 +101,7 @@ export function TaskTimingDialog({
   const router = useRouter();
   const [data, setData] = useState<TimingData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<
     (Omit<TimingPreview, "approvalId"> & { approvalId: string | null }) | null
@@ -187,9 +188,30 @@ export function TaskTimingDialog({
       active = false;
     };
   }, [open, taskId, day]);
+  useEffect(() => {
+    if (!open || taskId || !data || !date || data.date === date) {
+      setBatchLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setBatchLoading(true);
+    setError(null);
+    jsonRequest(`/api/task-timing?from=${date}`, { signal: controller.signal })
+      .then((next: TimingData) => {
+        if (controller.signal.aborted) return;
+        setData(next);
+        setBatchLoading(false);
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setError(e.message);
+        setBatchLoading(false);
+      });
+    return () => controller.abort();
+  }, [open, taskId, date, data?.date]);
   const task = data?.tasks.find((t) => t.id === taskId);
   async function propose() {
-    if (busyRef.current) return;
+    if (busyRef.current || (!taskId && (batchLoading || data?.date !== date))) return;
     busyRef.current = true;
     setBusy(true);
     setError(null);
@@ -420,6 +442,7 @@ export function TaskTimingDialog({
                 ) : (
                   <div className={styles.selection}>
                     <p>选择要安排的任务，保留其上午／下午／晚上偏好：</p>
+                    {batchLoading ? <p role="status">正在读取这一天的任务…</p> : null}
                     {options.map((t) => (
                       <label key={t.id}>
                         <input
@@ -436,7 +459,7 @@ export function TaskTimingDialog({
                         {t.title} · {t.estimatedMinutes} 分钟
                       </label>
                     ))}
-                    {!options.length ? (
+                    {!options.length && !batchLoading && !error ? (
                       <p>这一天没有可安排的待办任务。</p>
                     ) : null}
                   </div>
@@ -471,7 +494,10 @@ export function TaskTimingDialog({
                           min={shanghaiDateKey()}
                           onChange={(e) => {
                             setDate(e.target.value);
-                            if (!taskId) setSelected([]);
+                            if (!taskId) {
+                              setSelected([]);
+                              setError(null);
+                            }
                           }}
                         />
                       </label>
@@ -609,7 +635,7 @@ export function TaskTimingDialog({
                   disabled={
                     busy ||
                     (!taskId &&
-                      !selectedTimingTaskIds(data.tasks, date, selected).length)
+                      (batchLoading || data.date !== date || !selectedTimingTaskIds(data.tasks, date, selected).length))
                   }
                   onClick={() => void propose()}
                 >
@@ -628,16 +654,18 @@ export function TaskTimingDialog({
 export function TaskTimingButton({
   taskId,
   label = "安排／收尾",
+  className = "paw-secondary-btn",
 }: {
   taskId: string;
   label?: string;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button
         type="button"
-        className="paw-secondary-btn"
+        className={className}
         onClick={() => setOpen(true)}
       >
         <CalendarClock size={14} />
