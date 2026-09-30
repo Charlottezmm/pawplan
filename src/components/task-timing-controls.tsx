@@ -9,11 +9,8 @@ import { addDaysToDateKey, shanghaiDateKey } from "@/lib/planning/task-actions";
 import {
   localClock,
   clockMinute,
-  segmentFor,
   timingLabel,
   type TimingRequest,
-  type TimingTask,
-  type TimingBlock,
   type TimingPreview,
 } from "@/lib/planning/task-timing";
 import type { TimelineItemView } from "@/lib/planning/view-data";
@@ -24,7 +21,9 @@ import {
 } from "@/lib/client/task-timing-form";
 import styles from "./task-timing-controls.module.css";
 
-type TimingData = { tasks: TimingTask[]; fixed: TimingBlock[]; date: string };
+import { buildTodayPlannedItems, type TodayTimingData } from "@/lib/planning/today-plan-summary";
+
+type TimingData = TodayTimingData;
 async function jsonRequest(url: string, init?: RequestInit) {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const data = await response.json();
@@ -681,22 +680,9 @@ export function TaskTimingButton({
     </>
   );
 }
-export function TodayTaskTimeline({
-  fixedItems,
-  initialData,
-  actualRecords = [], onRecordSelect, actualError,
-}: {
-  fixedItems: TimelineItemView[];
-  initialData?: TimingData;
-  actualRecords?: ActualRecord[];
-  onRecordSelect?: (record: ActualRecord) => void;
-  actualError?: string | null;
-}) {
+export function useTodayTimingData(initialData?: TimingData) {
   const [data, setData] = useState<TimingData | null>(initialData ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | undefined>();
-  const [open, setOpen] = useState(false);
-  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     if (initialData) setData(initialData);
   }, [initialData]);
@@ -712,49 +698,30 @@ export function TodayTaskTimeline({
         })
         .catch((e) => active && setError(e.message));
     if (!initialData) void refresh();
-    setNow(new Date());
-    const timer = setInterval(() => setNow(new Date()), 30000);
     const handler = () => void refresh();
     window.addEventListener(changedEvent, handler);
     return () => {
       active = false;
-      clearInterval(timer);
       window.removeEventListener(changedEvent, handler);
     };
   }, [initialData]);
-  const scheduled =
-    data?.tasks.filter(
-      (t) =>
-        t.date === shanghaiDateKey() &&
-        t.scheduledStart &&
-        t.scheduledEnd &&
-        t.status !== "backlog",
-    ) ?? [];
-  const taskItems: TimelineItemView[] = scheduled.map((t) => ({
-    id: t.id,
-    title: t.title,
-    kind: "task",
-    startsAt: t.scheduledStart!,
-    endsAt: t.scheduledEnd!,
-    minutes:
-      (Date.parse(t.scheduledEnd!) - Date.parse(t.scheduledStart!)) / 60000,
-    segment: t.daySegment,
-    protected: !t.movable,
-  }));
-  const items = data
-    ? [
-        ...data.fixed.map((b) => ({
-          ...b,
-          kind:
-            fixedItems.find((i) => i.id === b.id)?.kind ??
-            ("unavailable" as const),
-          minutes: (Date.parse(b.endsAt) - Date.parse(b.startsAt)) / 60000,
-          segment: segmentFor(clockMinute(localClock(b.startsAt))),
-          protected: true,
-        })),
-        ...taskItems,
-      ]
-    : fixedItems;
+  return { data, error };
+}
+export function TodayTaskTimeline({
+  fixedItems, data, error, now,
+  actualRecords = [], onRecordSelect, actualError,
+}: {
+  fixedItems: TimelineItemView[];
+  data: TimingData | null;
+  error: string | null;
+  now: Date | null;
+  actualRecords?: ActualRecord[];
+  onRecordSelect?: (record: ActualRecord) => void;
+  actualError?: string | null;
+}) {
+  const [selected, setSelected] = useState<string | undefined>();
+  const [open, setOpen] = useState(false);
+  const items = buildTodayPlannedItems(data, fixedItems);
   const activate = (id?: string) => {
     setSelected(id);
     setOpen(true);
@@ -775,7 +742,7 @@ export function TodayTaskTimeline({
         headerAction={<button type="button" className="paw-secondary-btn" onClick={() => activate()}><CalendarClock size={15} />安排任务时段</button>}
         onTaskSelect={activate}
         now={now}
-        completedTaskIds={scheduled
+        completedTaskIds={(data?.tasks ?? [])
           .filter((t) => t.status === "done")
           .map((t) => t.id)}
       />

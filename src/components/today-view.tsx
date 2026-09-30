@@ -10,7 +10,7 @@ import { ActualRecordsSection, ActualRecordEditor, useActualRecords, actualRecor
 import { recordDate } from "@/lib/actual-records/display";
 import { TaskDetailContent } from "./task-detail-content";
 import { TaskDeleteControl } from "./task-transition-controls";
-import { TodayTaskTimeline, TaskTimingButton } from "./task-timing-controls";
+import { TodayTaskTimeline, TaskTimingButton, useTodayTimingData } from "./task-timing-controls";
 import { DialogSheet } from "./ui/dialog-sheet";
 import { ConfirmDialog } from "./ui/confirm-dialog";
 import { Notice } from "./ui/notice";
@@ -23,6 +23,9 @@ import {
 } from "@/lib/planning/task-actions";
 import { displayTask, reconcileTodayTasks, sortTodayTasks, type StatusOverride } from "@/lib/planning/today-task-state";
 import type { TodayViewData } from "@/lib/planning/view-data";
+import { buildTodayPlannedItems, getTodayPlanSummary } from "@/lib/planning/today-plan-summary";
+import { localClock } from "@/lib/planning/task-timing";
+import { redactPrivateTitle } from "@/lib/display/privacy";
 
 type Task = TodayViewData["tasks"][number];
 type PersistedStatus = Task["status"];
@@ -128,6 +131,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   }, [data.tasks]);
   const today = data.timingData?.date ?? recordDate();
   const actualState = useActualRecords(today);
+  const timing = useTodayTimingData(data.timingData);
   const [recordEditor, setRecordEditor] = useState<RecordEditorTarget | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
@@ -151,11 +155,26 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     })),
     { key: "done", label: "已完成", tasks: tasks.filter((task) => task.displayStatus === "done") },
   ].filter((group) => group.tasks.length > 0);
-  // 猫的表情和台词跟随状态（小时数挂载后再取，避免 SSR 时区差异）
-  const [hour, setHour] = useState<number | null>(null);
+  // Summary and timeline share one clock; the first render is neutral so SSR
+  // cannot claim a current activity. Slot boundaries use Shanghai time.
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
-    setHour(new Date().getHours());
+    const tick = () => setNow(new Date());
+    tick();
+    const timer = window.setInterval(tick, 30000);
+    window.addEventListener("focus", tick);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", tick);
+    };
   }, []);
+  const hour = now ? Number(localClock(now.toISOString()).slice(0, 2)) : null;
+  const completedTaskIds = tasks.filter((task) => task.displayStatus === "done").map((task) => task.id);
+  const summaryUnavailable = Boolean(timing.error || data.dataUnavailable);
+  const planSummary = getTodayPlanSummary(
+    buildTodayPlannedItems(timing.data, data.exactFixedItems),
+    today, now, completedTaskIds, actualState.data.records,
+  );
 
   const allDone = tasks.length > 0 && doneCount === tasks.length;
   const blockedCount = tasks.filter((task) => task.displayStatus === "blocked").length;
@@ -287,16 +306,39 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
     <div className="paw-page paw-today-page" id="today-tasks">
       <div className="paw-today-main">
       <section className="paw-today-header">
-        <a href="#today-timeline" className="paw-today-timeline-jump">查看今天的时间轴 ↓</a>
         <div className="paw-today-hero">
           <span className="paw-today-cat">
             <CatIcon size={40} mood={catMood} />
           </span>
           <div className="paw-today-hero-text">
             <p className="paw-today-greeting">{greeting}</p>
-            <h1 className="paw-today-headline">{formatTodayGreeting()}</h1>
+            <h1 className="paw-today-headline">{formatTodayGreeting(new Date(`${today}T12:00:00+08:00`))}</h1>
           </div>
         </div>
+
+        <section className="paw-today-plan-summary" aria-label="当前与下一项计划">
+          <dl>
+            {!summaryUnavailable && planSummary.current.slice(0, 1).map((item) => (
+              <div key={item.id} className="paw-today-plan-current">
+                <dt>当前计划</dt>
+                <dd><span className="paw-today-plan-time">{localClock(item.startsAt)}–{localClock(item.endsAt)}</span><strong>{redactPrivateTitle(item.title)}</strong></dd>
+              </div>
+            ))}
+            {!summaryUnavailable && planSummary.next ? (
+              <div>
+                <dt>下一项计划</dt>
+                <dd><span className="paw-today-plan-time">{localClock(planSummary.next.startsAt)}–{localClock(planSummary.next.endsAt)}</span><strong>{redactPrivateTitle(planSummary.next.title)}</strong></dd>
+              </div>
+            ) : null}
+          </dl>
+          {!summaryUnavailable && planSummary.current.length > 1 ? <p className="paw-today-plan-note">同时还有 {planSummary.current.length - 1} 项计划，详见时间轴。</p> : null}
+          {summaryUnavailable ? <p className="paw-today-plan-note">计划暂时无法核对，请稍后刷新。</p> : null}
+          {!summaryUnavailable && planSummary.state === "loading" ? <p className="paw-today-plan-note">正在核对计划时间…</p> : null}
+          {!summaryUnavailable && planSummary.state === "finished" ? <p className="paw-today-plan-note">今天没有后续的计划时段</p> : null}
+          {!summaryUnavailable && planSummary.state === "empty" ? <p className="paw-today-plan-note">今天还没有具体时段安排</p> : null}
+          {!summaryUnavailable && planSummary.state === "stale" ? <p className="paw-today-plan-note">日期已更新，<a href="/today">查看今天的计划</a></p> : null}
+          <a href="#today-timeline" className="paw-today-plan-link">查看完整时间轴 ↓</a>
+        </section>
 
         {tasks.length > 0 ? (
           <div className="paw-today-progress">
@@ -377,7 +419,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         {tasks.length > 0 && doneCount === tasks.length ? (
           <div className="paw-celebrate" role="status">
             <CatIcon size={44} mood="celebrate" />
-            <p className="paw-celebrate-text">今天全部搞定，收工！</p>
+            <p className="paw-celebrate-text">今日任务已完成</p>
           </div>
         ) : null}
 
@@ -500,7 +542,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
 
       <aside className="paw-today-desktop-timeline" id="today-timeline">
         <a href="#today-tasks" className="paw-today-timeline-jump">↑ 回到任务</a>
-        <TodayTaskTimeline fixedItems={data.exactFixedItems} initialData={data.timingData} actualRecords={actualState.data.records} onRecordSelect={(record) => setRecordEditor({ record })} actualError={actualState.error} />
+        <TodayTaskTimeline fixedItems={data.exactFixedItems} data={timing.data} error={timing.error} now={now} actualRecords={actualState.data.records} onRecordSelect={(record) => setRecordEditor({ record })} actualError={actualState.error} />
       </aside>
 
       {recordEditor ? <ActualRecordEditor target={recordEditor} tasks={tasks} onClose={() => setRecordEditor(null)} /> : null}

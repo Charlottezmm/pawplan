@@ -558,6 +558,24 @@ a {
   animation: none;
 }
 
+/* Keep the current/next plan beside the date, ahead of completed work on mobile. */
+.paw-today-plan-summary {
+  margin-top: 20px;
+  padding: 14px 0;
+  border-top: 1px solid var(--app-line);
+  border-bottom: 1px solid var(--app-line);
+}
+.paw-today-plan-summary dl { display: grid; gap: 12px; margin: 0; }
+.paw-today-plan-summary dl > div { min-width: 0; }
+.paw-today-plan-summary dt { margin-bottom: 4px; color: var(--app-ink-muted); font-size: 12px; font-weight: 600; }
+.paw-today-plan-summary dd { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; margin: 0; align-items: baseline; color: var(--app-ink); font-size: 14px; line-height: 1.55; }
+.paw-today-plan-summary dd strong { font-weight: 600; overflow-wrap: anywhere; }
+.paw-today-plan-time { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.paw-today-plan-current dt, .paw-today-plan-current .paw-today-plan-time { color: var(--app-accent); }
+.paw-today-plan-note { margin: 0; color: var(--app-ink-soft); font-size: 13px; line-height: 1.6; }
+.paw-today-plan-note a { color: var(--app-accent); text-decoration: underline; }
+.paw-today-plan-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 6px; color: var(--app-accent); font-size: 13px; font-weight: 600; }
+
 .paw-today-progress {
   display: flex;
   align-items: center;
