@@ -1,6 +1,6 @@
-import { and, eq, gt, lt } from "drizzle-orm";
+import { and, eq, gt, inArray, lt } from "drizzle-orm";
 import { z } from "zod";
-import { agentPatches, timeBlocks } from "@/lib/db/schema";
+import { agentPatches, timeBlockExceptions, timeBlocks } from "@/lib/db/schema";
 import { parseTimetableCsv, type TimetableImportPreviewRow } from "@/lib/imports/timetable-csv";
 import {
   buildTimetableRowsPreview,
@@ -10,7 +10,11 @@ import {
   type MaterializedTimetableBlock,
 } from "@/lib/imports/timetable-save";
 import { getActivePlanId } from "@/lib/planning/active-plan";
-import { expandRecurringBlocks } from "@/lib/planning/recurring-time-blocks";
+import {
+  expandEffectiveRecurringBlocks,
+  expandRecurringBlocks,
+  type TimeBlockExceptionInput,
+} from "@/lib/planning/recurring-time-blocks";
 
 type PlanningDb = {
   select: (...args: any[]) => any;
@@ -131,7 +135,41 @@ export async function inspectTimetableImportConflicts(
     start,
     end,
   );
-  const existingBlocks = expandRecurringBlocks(existingWithFingerprints, start, end);
+  // Compare against the effective calendar: cancelled occurrences (e.g. holiday
+  // class cancellations) must not count as overlaps, and overridden occurrences
+  // must be checked at their overridden times — same view as the timeline.
+  const existingSeriesIds = (existingRows as Array<{ id: string }>).map((row) => row.id);
+  const exceptionRows: Array<any> = existingSeriesIds.length
+    ? await db
+        .select()
+        .from(timeBlockExceptions)
+        .where(
+          and(
+            eq(timeBlockExceptions.workspaceId, input.workspaceId),
+            inArray(timeBlockExceptions.seriesId, existingSeriesIds),
+          ),
+        )
+    : [];
+  const existingBlocks = expandEffectiveRecurringBlocks(
+    existingWithFingerprints,
+    exceptionRows.map(
+      (row): TimeBlockExceptionInput => ({
+        id: row.id,
+        seriesId: row.seriesId,
+        occurrenceDate: row.occurrenceDate,
+        action: row.action,
+        overrideTitle: row.overrideTitle,
+        overrideKind: row.overrideKind,
+        overrideStartsAt: row.overrideStartsAt,
+        overrideEndsAt: row.overrideEndsAt,
+        overrideLocation: row.overrideLocation,
+        overrideLocationSet: row.overrideLocationSet,
+        overrideProtected: row.overrideProtected,
+      }),
+    ),
+    start,
+    end,
+  );
   const conflicts: string[] = [];
   const conflictFingerprints = new Set<string>();
   for (const block of incomingBlocks) {

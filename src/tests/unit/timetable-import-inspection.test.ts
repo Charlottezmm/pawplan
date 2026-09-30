@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import { materializeTimetableRows, timetableBlockFingerprint } from "@/lib/imports/timetable-save";
 import { inspectTimetableImportConflicts } from "@/lib/mcp/timetable-import";
 
-function fakeDb(rows: Array<Record<string, unknown>>) {
+function fakeDb(rows: Array<Record<string, unknown>>, exceptions: Array<Record<string, unknown>> = []) {
+  let call = 0;
   return {
     select() {
+      const result = call++ === 0 ? rows : exceptions;
       return {
         from() {
           return {
             where() {
-              return Promise.resolve(rows);
+              return Promise.resolve(result);
             },
           };
         },
@@ -76,5 +78,63 @@ describe("timetable import inspection", () => {
 
     expect(inspection.conflicts).toEqual(["Deep Learning Lecture 与 Office Hours 时间重叠"]);
     expect(inspection.conflictFingerprints).toContain(timetableBlockFingerprint(blocks[0]));
+  });
+
+  it("ignores cancelled occurrences of an existing series", async () => {
+    const blocks = materializeTimetableRows([incomingRow]);
+    const inspection = await inspectTimetableImportConflicts(fakeDb(
+      [
+        {
+          id: "existing-3",
+          title: "Office Hours",
+          kind: "meeting",
+          startsAt: new Date("2026-09-07T02:00:00.000Z"),
+          endsAt: new Date("2026-09-14T04:00:00.000Z"),
+          recurrenceRule: "weekly",
+          recurrenceWeekdayMask: 2,
+          location: "Room 205",
+          importFingerprint: null,
+        },
+      ],
+      [
+        { id: "ex-1", seriesId: "existing-3", occurrenceDate: "2026-09-07", action: "cancel" },
+        { id: "ex-2", seriesId: "existing-3", occurrenceDate: "2026-09-14", action: "cancel" },
+      ],
+    ), { workspaceId: "workspace-1", blocks });
+
+    expect(inspection.conflicts).toEqual([]);
+    expect(inspection.conflictFingerprints.size).toBe(0);
+  });
+
+  it("checks overridden occurrences at their overridden time", async () => {
+    const blocks = materializeTimetableRows([incomingRow]);
+    const inspection = await inspectTimetableImportConflicts(fakeDb(
+      [
+        {
+          id: "existing-4",
+          title: "Office Hours",
+          kind: "meeting",
+          startsAt: new Date("2026-09-07T02:00:00.000Z"),
+          endsAt: new Date("2026-09-14T04:00:00.000Z"),
+          recurrenceRule: "weekly",
+          recurrenceWeekdayMask: 2,
+          location: "Room 205",
+          importFingerprint: null,
+        },
+      ],
+      [
+        {
+          id: "ex-3",
+          seriesId: "existing-4",
+          occurrenceDate: "2026-09-07",
+          action: "override",
+          overrideStartsAt: new Date("2026-09-07T06:00:00.000Z"),
+          overrideEndsAt: new Date("2026-09-07T07:00:00.000Z"),
+        },
+        { id: "ex-4", seriesId: "existing-4", occurrenceDate: "2026-09-14", action: "cancel" },
+      ],
+    ), { workspaceId: "workspace-1", blocks });
+
+    expect(inspection.conflicts).toEqual([]);
   });
 });
