@@ -47,7 +47,7 @@ test("Today groups unfinished tasks and explains timeline states without inferri
  await expect(active.locator('.paw-task-headmeta').getByLabel('时段受保护')).toBeVisible();
  await expect(page.locator(`[data-task-id="${eveningId}"] .paw-task-headmeta`)).toHaveText('30m');
  await active.locator('.paw-task-summary').click();
- await expect(active.locator('.paw-task-copy-row button')).toHaveText(['安排／收尾','记录进展','记录用时','复制资料']);
+ await expect(active.locator('.paw-task-copy-row button')).toHaveText(['安排／收尾','记录用时','复制资料']);
  await expect(active.locator('.paw-task-actions button')).toHaveText(['卡住','延后','移出排期','删除']);
  const records=page.getByRole('region',{name:'实际记录',exact:true});
  await expect(records.getByText('查看日期',{exact:true})).toHaveCount(0);

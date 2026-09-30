@@ -1,13 +1,10 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronDown, Clock3, Copy, FilePenLine, LockKeyhole } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Clock3, Copy, LockKeyhole } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { ContinuationSheet } from "./continuation-sheet";
-import { TodayAssistantEntry, NextStepSheet, PlanActualSheet } from "./assistant-insights";
-import type { RecordTaskChoice } from "./actual-records";
 import { CatIcon } from "./cat-icon";
 import { ActualRecordsSection, ActualRecordEditor, useActualRecords, actualRecordsChanged, type RecordEditorTarget } from "./actual-records";
 import { recordDate } from "@/lib/actual-records/display";
@@ -135,10 +132,6 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
   const today = data.timingData?.date ?? recordDate();
   const actualState = useActualRecords(today);
   const timing = useTodayTimingData(data.timingData);
-  const [continuationTarget, setContinuationTarget] = useState<{ task: RecordTaskChoice | null } | null>(null);
-  const [recommendationOpen, setRecommendationOpen] = useState(false);
-  const [comparisonDay, setComparisonDay] = useState<string | null>(null);
-  const [progressSaved, setProgressSaved] = useState(false);
   const [recordEditor, setRecordEditor] = useState<RecordEditorTarget | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<{ taskId: string; message: string } | null>(null);
@@ -409,7 +402,6 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
 
       {beforeTasks}
 
-      <TodayAssistantEntry onRecord={() => setContinuationTarget({ task: null })} onRecommend={() => setRecommendationOpen(true)} saved={progressSaved} />
 
       <section>
         <div className="paw-today-tasks-head">
@@ -488,7 +480,6 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
                   <TaskDetailContent detail={task.detail} notes={task.notes} />
                   <div className="paw-task-copy-row">
                     {task.status !== "done" ? <TaskTimingButton taskId={task.id} className="paw-primary-btn" /> : null}
-                    <button type="button" className="paw-secondary-btn" onClick={() => setContinuationTarget({ task: { id: task.id, title: task.title } })}><FilePenLine size={14} />记录进展</button>
                     <button type="button" className="paw-secondary-btn" onClick={() => setRecordEditor({ task: { id: task.id, title: task.title } })}><Clock3 size={14} />记录用时</button>
                     <button type="button" onClick={() => void copyTaskDetails(task)} className="paw-secondary-btn paw-task-copy-button">
                       <Copy size={14} />
@@ -547,7 +538,7 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         </div> : null}
       </section>
 
-      <ActualRecordsSection today={today} todayState={actualState} onOpen={setRecordEditor} onCompare={setComparisonDay} />
+      <ActualRecordsSection today={today} todayState={actualState} onOpen={setRecordEditor} />
       </div>
 
       <aside className="paw-today-desktop-timeline" id="today-timeline">
@@ -555,9 +546,6 @@ export function TodayView({ data, beforeTasks }: { data: TodayViewData; beforeTa
         <TodayTaskTimeline fixedItems={data.exactFixedItems} data={timing.data} error={timing.error} now={now} actualRecords={actualState.data.records} onRecordSelect={(record) => setRecordEditor({ record })} actualError={actualState.error} />
       </aside>
 
-      {continuationTarget ? <ContinuationSheet target={continuationTarget.task} tasks={tasks} onClose={() => setContinuationTarget(null)} onSaved={() => setProgressSaved(true)} /> : null}
-      {recommendationOpen ? <NextStepSheet onClose={() => setRecommendationOpen(false)} onContinue={(task) => { setRecommendationOpen(false); setContinuationTarget({ task }); }} /> : null}
-      {comparisonDay ? <PlanActualSheet day={comparisonDay} today={today} onClose={() => setComparisonDay(null)} /> : null}
 
       {recordEditor ? <ActualRecordEditor target={recordEditor} tasks={tasks} onClose={() => setRecordEditor(null)} /> : null}
 

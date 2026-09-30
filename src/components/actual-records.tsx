@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Plus, Pencil, Clock3, ChevronRight, Link2, CalendarDays, ChevronDown, ChartNoAxesColumn } from "lucide-react";
+import { Plus, Pencil, Clock3, ChevronRight, Link2, CalendarDays, ChevronDown } from "lucide-react";
 import { RecordTaskPicker } from "./record-task-picker";
 import { DialogSheet } from "./ui/dialog-sheet";
 import { Notice } from "./ui/notice";
@@ -31,7 +31,7 @@ export function useActualRecords(day: string, enabled = true) {
   }, [day, enabled, version]);
   return { ...state, refresh: () => setVersion((v) => v + 1) };
 }
-export function ActualRecordsSection({ today, todayState, onOpen, onCompare }: { today: string; todayState: ReturnType<typeof useActualRecords>; onOpen: (target: RecordEditorTarget) => void; onCompare?: (day: string) => void }) {
+export function ActualRecordsSection({ today, todayState, onOpen }: { today: string; todayState: ReturnType<typeof useActualRecords>; onOpen: (target: RecordEditorTarget) => void }) {
   const [day, setDay] = useState(today);
   const other = useActualRecords(day, day !== today);
   const state = day === today ? todayState : other;
@@ -40,7 +40,6 @@ export function ActualRecordsSection({ today, todayState, onOpen, onCompare }: {
     <header className={styles.header}>
       <h2 id="actual-records-heading" className="paw-today-tasks-title">实际记录</h2>
       <div className={styles.headerActions}>
-        {onCompare ? <button type="button" className="paw-secondary-btn" onClick={() => onCompare(day)}><ChartNoAxesColumn size={15} />计划与实际</button> : null}
         <label className={styles.date}><CalendarDays size={14} /><span>{dateLabel}</span><ChevronDown size={14} /><input aria-label="实际记录日期" type="date" value={day} max={today} onChange={(e) => { if (e.target.value) setDay(e.target.value); }} /></label>
         <button type="button" className="paw-primary-btn" onClick={() => onOpen({ day })}><Plus size={16} />记一段</button>
       </div>
