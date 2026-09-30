@@ -169,6 +169,13 @@
       "when": 1790559213133,
       "tag": "0023_strong_jamie_braddock",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790765096248,
+      "tag": "0024_cloud_assistant",
+      "breakpoints": true
     }
   ]
 }

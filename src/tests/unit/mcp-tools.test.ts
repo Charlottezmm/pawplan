@@ -202,6 +202,7 @@ describe("MCP planning tools", () => {
 
   it("filters write tools out for read-only MCP tokens", () => {
     expect(allowedPawPlanToolNames("read_only")).toEqual([
+      "get_continuation", "recommend_next_tasks", "prepare_meeting_summary", "get_reminder_configuration", "compare_plan_actual",
       "get_task_timing",
       "get_agent_guidance",
       "get_mcp_usage",
@@ -244,6 +245,7 @@ describe("MCP planning tools", () => {
     const reviewOnlyTools = allowedPawPlanToolNames("review_only");
 
     expect(reviewOnlyTools).toEqual([
+      "preview_assistant_change", "get_continuation", "recommend_next_tasks", "prepare_meeting_summary", "get_reminder_configuration", "compare_plan_actual",
       "get_task_timing",
       "propose_task_timing",
       "get_agent_guidance",

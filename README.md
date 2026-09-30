@@ -173,6 +173,8 @@ PawPlan does not recommend recurring daily Review automation. When you explicitl
 
 Before sharing an invite, run the smoke checklist at `docs/public-beta/2026-06-13-public-beta-smoke-checklist.md`.
 
+Staged cloud-assistant backend scope, seven-feature coverage, write contracts, connection blockers, and migration/rollout evidence: [Cloud assistant handoff](docs/assistant/2026-09-30-cloud-assistant.md). This extension has not been deployed or connected to the iOS dot assistant.
+
 Connector guides: `connect-codex.md` · `connect-claude.md` · `review-safety.md` · `agent-runs-troubleshooting.md` (all under `docs/public-beta/`).
 
 ---

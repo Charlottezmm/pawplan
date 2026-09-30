@@ -18,6 +18,13 @@ export class McpPermissionError extends Error {
 }
 
 export const pawPlanToolPermissions = {
+  preview_assistant_change: "review",
+  confirm_assistant_change: "write",
+  get_continuation: "read",
+  recommend_next_tasks: "read",
+  prepare_meeting_summary: "read",
+  get_reminder_configuration: "read",
+  compare_plan_actual: "read",
   get_task_timing: "read",
   update_task_timing: "write",
   propose_task_timing: "review",
@@ -79,7 +86,7 @@ export function isPawPlanWriteTool(name: string) {
 
 // Quota and permissions are separate: some previews persist a Review approval,
 // but never apply a planning change. Keep their existing permission boundary.
-export const hostedMcpQuotaWriteToolNames = pawPlanWriteToolNames.filter((name) => name !== "preview_task_batch");
+export const hostedMcpQuotaWriteToolNames = pawPlanWriteToolNames.filter((name) => !["preview_task_batch", "preview_assistant_change"].includes(name));
 const hostedMcpQuotaWriteToolNameSet = new Set<string>(hostedMcpQuotaWriteToolNames);
 
 export function isHostedMcpQuotaWriteTool(name: string) {

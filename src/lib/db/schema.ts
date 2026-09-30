@@ -720,3 +720,39 @@ export const actualRecordWrites = pgTable("actual_record_writes", {
 }, (table) => ({
   workspaceKey: uniqueIndex("actual_record_writes_workspace_key_unique").on(table.workspaceId, table.idempotencyKey),
 }));
+
+// Cloud assistant proposals are immutable; only explicit confirmation applies them.
+export const assistantDrafts = pgTable("assistant_drafts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),
+  request: jsonb("request").notNull(),
+  before: jsonb("before"),
+  status: varchar("status", { length: 16 }).notNull().default("preview"),
+  result: jsonb("result"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  workspaceKey: uniqueIndex("assistant_drafts_workspace_key_unique").on(table.workspaceId, table.idempotencyKey),
+}));
+
+// Append-only records preserve progress and feedback across devices/conversations.
+export const continuationRecords = pgTable("continuation_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 24 }).notNull(),
+  content: jsonb("content").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  workspaceCreated: index("continuation_records_workspace_created_idx").on(table.workspaceId, table.createdAt),
+}));
+
+// Configuration only. Activation/delivery requires a separately approved adapter.
+export const assistantReminderPreferences = pgTable("assistant_reminder_preferences", {
+  workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  configuration: jsonb("configuration").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

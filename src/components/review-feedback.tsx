@@ -79,6 +79,7 @@ export function ReviewTechnicalDetails({
   createdBy,
   createdAt,
   agentRun,
+  children,
 }: {
   operationType: string;
   patchId: string;
@@ -90,6 +91,7 @@ export function ReviewTechnicalDetails({
     status: string;
     id: string;
   };
+  children?: ReactNode;
 }) {
   return (
     <details className="paw-review-technical-details">
@@ -122,6 +124,7 @@ export function ReviewTechnicalDetails({
           </div>
         ) : null}
       </dl>
+      {children}
     </details>
   );
 }

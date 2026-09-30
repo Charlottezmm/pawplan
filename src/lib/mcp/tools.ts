@@ -1,3 +1,6 @@
+import { assistantToolSchemas } from "@/lib/assistant/schema";
+import { previewAssistantChange, confirmAssistantChange, getContinuation, getReminderConfiguration, prepareMeetingSummary } from "@/lib/assistant/service";
+import { recommendNextTasks, comparePlanActual } from "@/lib/assistant/insights";
 import { actualRecordRangeSchema, saveActualRecordSchema, deleteActualRecordSchema } from "@/lib/actual-records/schema";
 import { getActualRecords, mutateActualRecord } from "@/lib/actual-records/service";
 import { timingRequestSchema, localDateSchema } from "@/lib/planning/task-timing";
@@ -431,6 +434,7 @@ const monthlySummarySchema = z
   .strict();
 
 export const pawPlanToolSchemas = {
+  ...assistantToolSchemas,
   get_task_timing: z.object({ date_from: localDateSchema, date_to: localDateSchema.optional() }),
   update_task_timing: z.object({ request: timingRequestSchema, idempotency_key: z.string().min(8).max(180) }),
   propose_task_timing: z.object({ request: timingRequestSchema, idempotency_key: z.string().min(1).max(180) }),
@@ -732,6 +736,13 @@ export { isPawPlanWriteTool, pawPlanWriteToolNames };
 export const pawPlanToolNames = Object.keys(pawPlanToolSchemas) as PawPlanToolName[];
 
 export const pawPlanAgentGuidance = {
+  cloudAssistant: {
+    writes: "Default chat workflow: preview_assistant_change -> display exact change -> explicit user confirmation -> confirm_assistant_change -> check readback.verification and matchesMutation. Never treat draft/duplicate as application. An agent must not invent user confirmation. Existing direct tools are reserved for already-confirmed exact user edits.",
+    continuation: "Use get_continuation for recorded progress, blockers and next steps. Append a confirmed save_continuation; missing facts remain unknown.",
+    recommendations: "Use recommend_next_tasks with the user's explicit start/time/energy; recommendations do not book slots. Use propose_task_timing for fixed/protected/deadline/capacity-safe schedule proposals and existing approval/apply flow.",
+    meetings: "prepare_meeting_summary requires explicit project selection; save_meeting_feedback accepts user-provided feedback only. Next actions do not become tasks without their own preview and confirmation.",
+    reminders: "configure_reminders only stores disabled preferences. Do not create timers, duplicate reminders, promise delivery, or activate a scheduler. Activation needs a separately authorized supported cloud adapter.",
+  },
   taskTiming: {
     read: "get_task_timing",
     direct: "update_task_timing",
@@ -789,9 +800,16 @@ Required workflow:
 };
 
 export const pawPlanServerInstructions =
-  "User-confirmed ordinary task edits are direct writes: use update_task_status, update_task_schedule, update_task_notes, update_task_timing, archive_task, or one update_tasks_batch call, then verify the returned task IDs. Do not create a second Review for facts the user already confirmed. Rebalance tools create a Review draft only for unconfirmed planning choices and must never run as recurring cleanup. Explicit user-requested fixed-time title/time/location edits can use preview_confirmed_time_block then update_confirmed_time_block without Review, preserving scope, confirmation and readback. Explicit user-confirmed occurrence cancellations use preview_confirmed_time_block_occurrences then cancel_confirmed_time_block_occurrences for at most 20 occurrences across 14 inclusive Shanghai dates; preserve series, audit and verify exception IDs. Other protected moves and permanent deletion require an exact pending approval; apply tools must use its approval_id. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
+  "Default cloud assistant writes use preview_assistant_change, show the preview, wait for explicit user confirmation, then confirm_assistant_change and verify persisted readback. Never invent user confirmation. New tasks start in backlog until separately scheduled through propose_task_timing. Reminder preferences remain disabled with no delivery adapter. User-confirmed ordinary task edits are direct writes: use update_task_status, update_task_schedule, update_task_notes, update_task_timing, archive_task, or one update_tasks_batch call, then verify the returned task IDs. Do not create a second Review for facts the user already confirmed. Rebalance tools create a Review draft only for unconfirmed planning choices and must never run as recurring cleanup. Explicit user-requested fixed-time title/time/location edits can use preview_confirmed_time_block then update_confirmed_time_block without Review, preserving scope, confirmation and readback. Explicit user-confirmed occurrence cancellations use preview_confirmed_time_block_occurrences then cancel_confirmed_time_block_occurrences for at most 20 occurrences across 14 inclusive Shanghai dates; preserve series, audit and verify exception IDs. Other protected moves and permanent deletion require an exact pending approval; apply tools must use its approval_id. An MCP agent cannot approve its own proposal. Before a user-requested planning review, call get_agent_guidance and follow its workflow. Never claim changes are applied until persisted readback succeeds.";
 
 export const pawPlanToolDescriptions: Record<PawPlanToolName, string> = {
+  preview_assistant_change: "Preview an immutable chat task creation/update/completion, continuation, user-provided meeting feedback, or disabled reminder configuration. Creates a draft only; show exact changes and wait for the user to confirm. New tasks start in backlog; use propose_task_timing for schedule placement.",
+  confirm_assistant_change: "Apply the exact assistant draft only after the user confirms the displayed preview. Supply their instruction, never invent confirmation. Workspace-bound, stale/expiry checks, idempotent retry and exact-ID committed readback. Does not activate reminders.",
+  get_continuation: "Read newest-first user-reported progress, blockers, next steps and meeting feedback across conversations, optionally by exact task/project. Missing records are unknown.",
+  recommend_next_tasks: "Suggest tasks fitting an explicitly supplied time window and energy. Respects fixed slots, current scheduled tasks, protection and deadlines. Read-only; use propose_task_timing before booking to validate live capacity.",
+  prepare_meeting_summary: "Prepare a source-grounded Gao/Liu meeting bundle for explicitly selected projects and dates. Reports current task status and recorded progress/questions; no advisor project assignment is inferred and no messages sent. Post-meeting actions require user-provided feedback and separate confirmation.",
+  get_reminder_configuration: "Read stored quiet hours/frequency preferences. Configuration is disabled; no delivery adapter, activation or automatic reminders exist.",
+  compare_plan_actual: "Compare current and captured plan estimates with recorded observed duration. Missing logs are unknown, approximate/clipped/overlapping and truncated data are disclosed; never infer actual duration from completion clicks.",
   get_task_timing: "Read persisted task time windows, protection, deadlines, desired dates and checkpoints, plus fixed arrangements in Asia/Shanghai. No mutation.",
   update_task_timing: "Directly apply exact task times, completion, pause, or checkpoint changes that the user already confirmed, with idempotency and ID-level readback. Protected moves still require Review.",
   propose_task_timing: "Preview exact task slots, extensions, deferred remaining work, completion or backlog placement. Creates one Review, does not change tasks. Use only after user requests planning. schedule.edits are explicit times; arrange tries day-segment preferences first, then uses the explicitly selected clock window and warns about preference changes. Date range is explicit and at most 31 days. Locked tasks must be explicitly unlocked before moving. Wait for the user to approve the exact preview.",
@@ -1184,6 +1202,17 @@ export async function runPawPlanTool(
   const toolName = name as PawPlanToolName;
   if (!canUsePawPlanTool(permission, toolName)) {
     throw new McpPermissionError(permission, toolName);
+  }
+
+  if (toolName === "preview_assistant_change") return previewAssistantChange(db, workspaceId, args);
+  if (toolName === "confirm_assistant_change") return confirmAssistantChange(db, workspaceId, args);
+  if (toolName === "get_continuation") return getContinuation(db, workspaceId, args);
+  if (toolName === "recommend_next_tasks") return recommendNextTasks(db, workspaceId, args);
+  if (toolName === "prepare_meeting_summary") return prepareMeetingSummary(db, workspaceId, args);
+  if (toolName === "compare_plan_actual") return comparePlanActual(db, workspaceId, args);
+  if (toolName === "get_reminder_configuration") {
+    assistantToolSchemas.get_reminder_configuration.parse(args);
+    return getReminderConfiguration(db, workspaceId);
   }
 
   if (toolName === "get_actual_records") return getActualRecords(db, workspaceId, args);

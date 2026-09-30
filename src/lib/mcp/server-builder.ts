@@ -1,3 +1,5 @@
+import { AssistantError } from "@/lib/assistant/schema";
+import { pawPlanToolPermissions } from "@/lib/mcp/tool-metadata";
 import { ActualRecordError } from "@/lib/actual-records/service";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getDb } from "@/lib/db/client";
@@ -75,6 +77,11 @@ export function createPawPlanMcpServer(input: { workspaceId: string; permission:
       toolName,
       {
         description: pawPlanToolDescriptions[toolName],
+        annotations: {
+          readOnlyHint: pawPlanToolPermissions[toolName] === "read",
+          destructiveHint: pawPlanToolPermissions[toolName] === "write",
+          openWorldHint: false,
+        },
         inputSchema: pawPlanToolSchemas[toolName].shape,
       },
       async (args: unknown) => {
@@ -83,6 +90,7 @@ export function createPawPlanMcpServer(input: { workspaceId: string; permission:
         } catch (error) {
           if (error instanceof McpTaskBatchError) return jsonToolError(error, args);
           if (
+            error instanceof AssistantError ||
             error instanceof McpTaskArchiveError ||
             error instanceof ReplacePlanWindowError ||
             error instanceof TimeBlockSeriesError ||

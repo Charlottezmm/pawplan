@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CatIcon } from "./cat-icon";
 import { ConfirmDialog } from "./ui/confirm-dialog";
+import { ReviewImportCard } from "./review-import-card";
 import {
   getReviewSubmitPresentation,
   ReviewItemState,
@@ -398,6 +399,7 @@ export function ReviewPreview({
       {hasVisibleSuggestions ? <section className="paw-suggestion-list">
         {visiblePatchItems.map((item: PatchItem) => {
           const decision = decisions[item.id];
+          if (item.operationType === "import_timetable") return <ReviewImportCard key={item.id} item={item} decision={decision} pending={isApplying} onDecide={decide} onDismiss={dismissPatch} />;
           const userImpact = item.impact.filter(
             (impact) => !/^patch\s/i.test(impact) && !isCapacityText(impact),
           );

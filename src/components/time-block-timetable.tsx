@@ -85,6 +85,12 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function occurrenceTitle(item: TimetableOccurrenceView) {
+  const title=redactPrivateTitle(item.title);
+  const course=redactPrivateTitle(item.courseName?.trim() || item.title);
+  return course === title ? title : `${course}，${title}`;
+}
+
 function positionedDays(week: TimetableWeekView) {
   return week.days.map((day) => ({
     ...day,
@@ -186,14 +192,11 @@ export function TimeBlockTimetable({
   const [now, setNow] = useState(shanghaiNow);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const desktopWeekRef = useRef<HTMLDivElement>(null);
+  const [showAllShort, setShowAllShort] = useState(false);
   const days = useMemo(() => positionedDays(week), [week]);
   const ticks = useMemo(() => hourTicks(week.axis), [week.axis]);
   const selectedDay = days.find((day) => day.dateKey === week.selectedDateKey) ?? days[0];
-  const earliestStartMinute = useMemo(() => {
-    const starts = days.flatMap((day) => day.occurrences.map((item) => item.startMinute));
-    return starts.length > 0 ? Math.min(...starts) : 8 * 60;
-  }, [days]);
+  const shortEvents = days.flatMap(day => day.positioned.filter(item => item.height < 44).map(item => ({day,item})));
   const [, selectedMonth = "", selectedDate = ""] = week.selectedDateKey.split("-");
   const selectedMonthLabel = `${Number(selectedMonth)}月`;
   const selectedDateLabel = String(Number(selectedDate));
@@ -209,13 +212,6 @@ export function TimeBlockTimetable({
     const timer = window.setInterval(() => setNow(shanghaiNow()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (window.matchMedia("(max-width: 760px)").matches) return;
-    const shell = desktopWeekRef.current;
-    if (!shell) return;
-    shell.scrollTop = Math.max(0, earliestStartMinute - week.axis.startMinute - 30);
-  }, [earliestStartMinute, week.axis.startMinute, week.selectedDateKey]);
 
   useEffect(() => {
     if (!selected) return;
@@ -320,7 +316,12 @@ export function TimeBlockTimetable({
         </div>
       ) : null}
 
-      <div ref={desktopWeekRef} className={styles.desktopWeek} hidden={week.unavailable}>
+      {shortEvents.length && !week.unavailable ? <section className={styles.shortEvents} aria-label="短安排快捷查看">
+        <p>短安排 <span>时间轴保留实际长度；点这里看完整内容。</span></p>
+        <div>{shortEvents.slice(0,showAllShort ? undefined : 8).map(({day,item})=><button key={item.id} type="button" style={{"--course-color":item.color} as TimetableStyle} onClick={event=>openDetail(item,event.currentTarget)} aria-label={`查看短安排：${redactPrivateTitle(item.title)}，${day.dateLabel} ${minuteLabel(item.startMinute)} 至 ${minuteLabel(item.endMinute)}`}><span>{day.weekdayLabel} {minuteLabel(item.startMinute)}–{minuteLabel(item.endMinute)}</span><strong>{redactPrivateTitle(item.title)}</strong>{item.conflict ? <AlertTriangle size={14} aria-label="存在时间冲突"/> : null}</button>)}</div>
+        {shortEvents.length>8 ? <button type="button" className={styles.moreShort} onClick={()=>setShowAllShort(value=>!value)}>{showAllShort ? "收起短安排" : `查看全部 ${shortEvents.length} 条短安排`}</button> : null}
+      </section> : null}
+      <div className={styles.desktopWeek} hidden={week.unavailable}>
         <div className={styles.weekHeader}>
           <div aria-hidden="true" />
           {days.map((day) => (
@@ -358,14 +359,13 @@ export function TimeBlockTimetable({
             </Link>
           ))}
         </nav>
-        <div className={styles.mobileGridShell}>
-          <div className={styles.timeAxis} style={gridStyle} aria-hidden="true">
-            {ticks.map((minute) => (
-              <span key={minute} style={{ top: `${minute - week.axis.startMinute}px` }}>{minuteLabel(minute)}</span>
-            ))}
-          </div>
-          <div className={styles.mobileGrid}>{renderGrid(selectedDay)}</div>
-        </div>
+        <section className={styles.agenda} aria-label={`${selectedDay.dateLabel} 日程列表`}>
+          <p className={styles.agendaHint}>按开始时间排列 · 留白不会自动填入任务</p>
+          {!selectedDay.positioned.length ? <p className={styles.agendaEmpty}>这天没有固定日程，可以留白。</p> : selectedDay.positioned.map(item => <button type="button" key={item.id} className={styles.agendaEvent} style={{"--course-color":item.color} as TimetableStyle} onClick={event=>openDetail(item,event.currentTarget)} aria-label={`${occurrenceTitle(item)}，${minuteLabel(item.startMinute)} 至 ${minuteLabel(item.endMinute)}，${redactPrivateTitle(item.location?.trim() || "地点待确认")}${item.conflict ? "，存在时间冲突" : ""}`}>
+            <span className={styles.agendaTime}>{minuteLabel(item.startMinute)}<span>{minuteLabel(item.endMinute)}</span></span>
+            <span className={styles.agendaCopy}><strong>{redactPrivateTitle(item.title)}</strong><span>{kindLabels[item.kind]} · {redactPrivateTitle(item.location?.trim() || "地点待确认")} · {item.endMinute-item.startMinute} 分钟</span>{item.conflict ? <span className={styles.agendaConflict}><AlertTriangle size={14}/>与其他安排重叠</span> : null}</span>
+          </button>)}
+        </section>
       </div>
 
       {selected ? createPortal((

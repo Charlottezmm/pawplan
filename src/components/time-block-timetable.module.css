@@ -997,3 +997,37 @@
     scroll-behavior: auto;
   }
 }
+
+/* Calendar readability: one page scroll, exact duration bars and separate short-event entries. */
+.timetable { --schedule-muted:#596269; --schedule-accent:var(--app-accent); --schedule-accent-soft:var(--app-accent-soft); overflow:visible; }
+.shortEvents { padding:16px 24px; border-bottom:1px solid var(--schedule-line); background:var(--app-surface); }
+.shortEvents > p { font-size:14px; font-weight:600; margin:0 0 10px; }
+.shortEvents > p > span { margin-left:10px; color:var(--schedule-muted); font-size:12px; font-weight:400; }
+.shortEvents > div { display:flex; flex-wrap:wrap; gap:8px; }
+.shortEvents > div > button { display:flex; gap:8px; align-items:center; min-height:44px; max-width:100%; border:1px solid var(--schedule-line-strong); border-left:3px solid var(--course-color); border-radius:9px; background:var(--schedule-card); padding:10px 12px; font-size:13px; cursor:pointer; }
+.shortEvents button span { color:var(--schedule-muted); white-space:nowrap; }
+.shortEvents button strong { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px; }
+.moreShort { border:0; background:transparent; color:var(--schedule-accent); cursor:pointer; padding:10px 0; min-height:44px; font-size:13px; }
+.agenda { padding:0 16px 20px; }
+.agendaHint,.agendaEmpty { font-size:13px; color:var(--schedule-muted); line-height:1.7; }
+.agendaEvent { display:flex; align-items:flex-start; gap:14px; width:100%; min-height:64px; margin-top:10px; border:1px solid var(--schedule-line-strong); border-left:4px solid var(--course-color); border-radius:12px; background:color-mix(in srgb,var(--course-color) 8%,var(--schedule-card)); text-align:left; padding:14px; cursor:pointer; color:var(--schedule-ink); }
+.agendaTime { flex-shrink:0; color:var(--schedule-ink); font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; }
+.agendaTime > span { display:block; margin-top:5px; color:var(--schedule-muted); font-size:12px; font-weight:400; }
+.agendaCopy { display:grid; gap:6px; min-width:0; }
+.agendaCopy strong { font-size:15px; font-weight:600; line-height:1.5; overflow-wrap:anywhere; }
+.agendaCopy > span { font-size:12px; line-height:1.6; color:var(--schedule-muted); overflow-wrap:anywhere; }
+.agendaCopy .agendaConflict { display:flex; align-items:center; gap:5px; color:var(--app-danger); }
+@media(min-width:761px) {
+ .timetable { width:min(1800px,calc(100vw - 48px)); }
+ .desktopWeek { height:auto; min-height:0; overflow:visible; }
+ .weekHeader { position:sticky; top:64px; }
+ .courseBlock { border-left:3px solid var(--course-color); background:color-mix(in srgb,var(--course-color) 12%,var(--schedule-card)); border-radius:7px; padding:6px 8px; }
+ .courseBlock:not(.compactBlock) .blockTitle { font-size:14px; line-height:1.3; }
+ .blockMeta { color:var(--schedule-muted); font-size:12px; }
+ .courseBlock.compactBlock { padding:0 4px; }
+ .compactBlock .blockTitle { font-size:12px; }
+ .compactBlock .blockMeta { font-size:11px; }
+ .dayHeader span { font-size:13px; }
+ .dayHeader strong { font-size:15px; }
+}
+@media(max-width:760px) { .shortEvents { display:none; } .mobileHeading strong { font-size:46px; } .dateStrip { padding-bottom:12px; } }

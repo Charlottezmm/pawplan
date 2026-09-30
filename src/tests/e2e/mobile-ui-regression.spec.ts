@@ -163,13 +163,13 @@ test("keeps Plan navigation and the real timetable usable at 375, 390, and 430px
         contentDirection: getComputedStyle(element.querySelector(":scope > span")!).flexDirection,
         visibleText: element.textContent,
       }));
-      expect(shortMetrics.visualHeight).toBeCloseTo(30, 0);
-      expect(shortMetrics.hitHeight).toBeGreaterThanOrEqual(44);
+      expect(shortMetrics.visualHeight).toBeGreaterThanOrEqual(44);
+      // The mobile agenda gives the event itself a full hit target.
       expect(shortMetrics.contentOverflow).toBe(false);
-      expect(shortMetrics.contentDirection).toBe("row");
+
       expect(shortMetrics.visibleText).toContain("11:30");
-      expect(shortMetrics.visibleText).not.toContain("12:00");
-      expect(shortMetrics.visibleText).not.toContain("Science and Engineering Building");
+      expect(shortMetrics.visibleText).toContain("12:00");
+      expect(shortMetrics.visibleText).toContain("Science and Engineering Building");
 
       await attachScreenshot(page, testInfo, `constraints-${width}`);
     }
